@@ -1,7 +1,13 @@
+import std/options
+import std/os
+import std/strutils
+
 import bindings/zlib
 import img/bitmap
 import types/color
 import utils/endians
+import utils/sandbox
+import utils/twtstr
 
 type PNGWriter = object
   buf: pointer
@@ -504,3 +510,35 @@ proc fromPNG*(iq: openArray[uint8]): Bitmap =
   if not reader.isend:
     reader.err "IEND not found"
   return reader.bmp
+
+proc main() =
+  enterNetworkSandbox()
+  case getEnv("MAPPED_URI_PATH")
+  of "decode":
+    let s = stdin.readAll()
+    let bmp = fromPNG(s.toOpenArrayByte(0, s.high))
+    if bmp != nil:
+      stdout.write("X-Image-Dimensions: " & $bmp.width & "x" & $bmp.height &
+        "\n\n")
+      discard stdout.writeBuffer(addr bmp.px[0], bmp.px.len * sizeof(bmp.px[0]))
+  of "encode":
+    let headers = getEnv("REQUEST_HEADERS")
+    let bmp = Bitmap()
+    for hdr in headers.split('\n'):
+      if hdr.until(':') == "X-Image-Dimensions":
+        let s = hdr.after(':').strip().split('x')
+        #TODO error handling
+        bmp.width = parseUInt64(s[0], allowSign = false).get
+        bmp.height = parseUInt64(s[1], allowSign = false).get
+    let L = bmp.width * bmp.height
+    bmp.px = cast[seq[ARGBColor]](newSeqUninitialized[uint32](L))
+    doAssert stdin.readBuffer(addr bmp.px[0], L * 4) == int(L * 4)
+    var outlen: int
+    stdout.write("X-Image-Dimensions: " & $bmp.width & "x" & $bmp.height &
+      "\n\n")
+    let p = bmp.toPNG(outlen)
+    discard stdout.writeBuffer(p, outlen)
+  else:
+    stdout.write("Cha-Control: ConnectionError 4 invalid command")
+
+main()

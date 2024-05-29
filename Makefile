@@ -51,6 +51,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
+	$(OUTDIR_CGI_BIN)/png \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc \
 	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
 
@@ -167,6 +168,12 @@ $(OUTDIR_CGI_BIN)/gopher: adapter/protocol/gopher.nim adapter/protocol/curlwrap.
 	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) --nimcache:"$(OBJDIR)/$(TARGET)/gopher" \
 		-o:"$(OUTDIR_CGI_BIN)/gopher" adapter/protocol/gopher.nim
 
+$(OUTDIR_CGI_BIN)/png: adapter/img/png.nim src/utils/sandbox.nim
+	@mkdir -p "$(OUTDIR_CGI_BIN)"
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/png" \
+                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) \
+                -o:"$(OUTDIR_CGI_BIN)/png" adapter/img/png.nim
+
 $(OUTDIR_LIBEXEC)/urldec: adapter/tools/urldec.nim src/utils/twtstr.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/urldec" \
@@ -221,6 +228,7 @@ install:
 	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/man" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/png" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/urldec" $(LIBEXECDIR_CHAWAN)/urldec
 	install -m755 "$(OUTDIR_LIBEXEC)/urlenc" $(LIBEXECDIR_CHAWAN)/urlenc
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"

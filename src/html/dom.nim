@@ -17,12 +17,12 @@ import html/script
 import img/bitmap
 import img/painter
 import img/path
-import img/png
 import io/dynstream
 import io/promise
 import js/console
 import js/domexception
 import js/timeout
+import loader/headers
 import loader/loader
 import loader/request
 import monoucha/fromjs
@@ -89,6 +89,8 @@ type
     factory*: CAtomFactory
     loadingResourcePromises*: seq[EmptyPromise]
     images*: bool
+    # ID of the next image
+    imageId: int
 
   # Navigator stuff
   Navigator* = object
@@ -433,6 +435,9 @@ jsDestructor(CSSStyleDeclaration)
 
 proc parseColor(element: Element; s: string): ARGBColor
 
+func console(window: Window): Console =
+  return window.internalConsole
+
 proc resetTransform(state: var DrawingState) =
   state.transformMatrix = newIdentityMatrix(3)
 
@@ -606,12 +611,41 @@ proc clip(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
 # CanvasUserInterface
 
 # CanvasText
+const unifont = readFile"res/unifont_jp-15.0.05.png"
+proc loadUnifont(window: Window) =
+  #TODO this is very wrong, we should move the unifont file in a CGI script or
+  # something
+  if unifontBitmap != nil:
+    return
+  let request = newRequest(
+    newURL("img-codec+png:decode").get,
+    httpMethod = hmPost,
+    body = RequestBody(t: rbtString, s: unifont)
+  )
+  let response = window.loader.doRequest(request)
+  assert response.res == 0
+  let dims = response.headers.table["X-Image-Dimensions"][0]
+  let width = parseUInt64(dims.until('x'), allowSign = false).get
+  let height = parseUInt64(dims.after('x'), allowSign = false).get
+  let len = int(width) * int(height)
+  let bitmap = ImageBitmap(
+    px: cast[seq[ARGBColor]](newSeqUninitialized[uint32](len)),
+    width: width,
+    height: height
+  )
+  window.loader.resume(response.outputId)
+  response.body.recvDataLoop(addr bitmap.px[0], len * 4)
+  response.body.sclose()
+  unifontBitmap = bitmap
+
 #TODO maxwidth
 proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
     {.jsfunc.} =
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
+  #TODO should not be loaded here...
+  ctx.canvas.document_internal.window.loadUnifont()
   let vec = ctx.transform(Vector2D(x: x, y: y))
   ctx.bitmap.fillText(text, vec.x, vec.y, ctx.state.fillStyle,
     ctx.state.textAlign)
@@ -622,6 +656,8 @@ proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
+  #TODO should not be loaded here...
+  ctx.canvas.document_internal.window.loadUnifont()
   let vec = ctx.transform(Vector2D(x: x, y: y))
   ctx.bitmap.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle,
     ctx.state.textAlign)
@@ -1293,7 +1329,7 @@ func supports(tokenList: DOMTokenList; token: string):
     if it[0] == localName:
       let lowercase = token.toLowerAscii()
       return ok(lowercase in it[1])
-  return err(newTypeError("No supported tokens defined for attribute"))
+  return errTypeError("No supported tokens defined for attribute")
 
 func value(tokenList: DOMTokenList): string {.jsfget.} =
   return $tokenList
@@ -1486,7 +1522,7 @@ func url(location: Location): URL =
 proc setLocation*(document: Document; s: string): Err[JSError]
     {.jsfset: "location".} =
   if document.location == nil:
-    return err(newTypeError("document.location is not an object"))
+    return errTypeError("document.location is not an object")
   let url = parseURL(s)
   if url.isNone:
     return errDOMException("Invalid URL", "SyntaxError")
@@ -2823,9 +2859,6 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
 var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
   {.nimcall, noSideEffect.}
 
-func console(window: Window): Console =
-  return window.internalConsole
-
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window; link: HTMLLinkElement) =
@@ -2862,6 +2895,10 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     )
     window.loadingResourcePromises.add(p)
 
+proc getImageId(window: Window): int =
+  result = window.imageId
+  inc window.imageId
+
 proc loadResource(window: Window; image: HTMLImageElement) =
   if not window.images or image.fetchStarted:
     return
@@ -2873,19 +2910,46 @@ proc loadResource(window: Window; image: HTMLImageElement) =
   if url.isSome:
     let url = url.get
     let p = window.loader.fetch(newRequest(url))
-      .then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
+      .then(proc(res: JSResult[Response]): Promise[JSResult[Response]] =
         if res.isNone:
           return
-        let res = res.get
-        if res.getContentType() == "image/png":
-          return res.blob()
-      ).then(proc(pngData: JSResult[Blob]) =
-        if pngData.isNone:
+        let response = res.get
+        let contentType = response.getContentType()
+        if contentType.until('/') != "image":
           return
-        let pngData = pngData.get
-        let buffer = cast[ptr UncheckedArray[uint8]](pngData.buffer)
-        let high = int(pngData.size) - 1
-        image.bitmap = fromPNG(toOpenArray(buffer, 0, high))
+        let request = newRequest(
+          newURL("img-codec+" & contentType.after('/') & ":decode").get,
+          httpMethod = hmPost,
+          body = RequestBody(t: rbtOutput, outputId: response.outputId)
+        )
+        let r = window.loader.fetch(request)
+        window.loader.resume(response.outputId)
+        response.unregisterFun()
+        response.body.sclose()
+        return r
+      ).then(proc(res: JSResult[Response]): EmptyPromise =
+        if res.isNone:
+          return
+        let response = res.get
+        # we can close immediately; loader will not clean this output up until
+        # the `resume' command in pager.
+        response.unregisterFun()
+        response.body.sclose()
+        if "X-Image-Dimensions" notin response.headers.table:
+          window.console.error("X-Image-Dimensions missing")
+          return
+        let dims = response.headers.table["X-Image-Dimensions"][0]
+        let width = parseUInt64(dims.until('x'), allowSign = false)
+        let height = parseUInt64(dims.after('x'), allowSign = false)
+        if width.isNone or height.isNone:
+          window.console.error("wrong X-Image-Dimensions")
+          return
+        image.bitmap = NetworkBitmap(
+          width: width.get,
+          height: height.get,
+          outputId: response.outputId,
+          imageId: window.getImageId()
+        )
       )
     window.loadingResourcePromises.add(p)
 
@@ -2897,7 +2961,7 @@ proc reflectEvent(element: Element; target: EventTarget; name: StaticAtom;
   let fun = ctx.newFunction(["event"], value)
   assert ctx != nil
   if JS_IsException(fun):
-    document.window.console.log("Exception in body content attribute of",
+    document.window.console.error("Exception in body content attribute of",
       urls, ctx.getExceptionMsg())
   else:
     let jsTarget = ctx.toJS(target)
@@ -3587,9 +3651,11 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
   if response.res != 0:
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
+  window.loader.resume(response.outputId)
   let s = response.body.recvAll()
   let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
   let source = s.decodeAll(cs)
+  response.body.sclose()
   let script = window.jsctx.createClassicScript(source, url, options, false)
   element.onComplete(ScriptResult(t: RESULT_SCRIPT, script: script))
 
@@ -3685,11 +3751,12 @@ proc execute*(element: HTMLScriptElement) =
       let urls = script.baseURL.serialize(excludepassword = true)
       let ctx = window.jsctx
       if JS_IsException(script.record):
-        window.console.log("Exception in document", urls, ctx.getExceptionMsg())
+        window.console.error("Exception in document", urls,
+          ctx.getExceptionMsg())
       else:
         let ret = ctx.evalFunction(script.record)
         if JS_IsException(ret):
-          window.console.log("Exception in document", urls,
+          window.console.error("Exception in document", urls,
             ctx.getExceptionMsg())
         JS_FreeValue(ctx, ret)
     document.currentScript = oldCurrentScript
@@ -4174,17 +4241,58 @@ proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
 
 #TODO quality should be `any'
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
-    s = "image/png", quality: float64 = 1): JSValue {.jsfunc.} =
-  var outlen: int
-  let buf = this.bitmap.toPNG(outlen)
-  let blob = newBlob(buf, outlen, "image/png", proc() = dealloc(buf))
-  var jsBlob = toJS(ctx, blob)
-  let res = JS_Call(ctx, callback, JS_UNDEFINED, 1, jsBlob.toJSValueArray())
-  JS_FreeValue(ctx, jsBlob)
-  # Hack. TODO: implement JSValue to callback
-  if res == JS_EXCEPTION:
-    return JS_EXCEPTION
-  JS_FreeValue(ctx, res)
+    contentType = "image/png"; quality: float64 = 1): JSValue {.jsfunc.} =
+  if not contentType.startsWith("image/"):
+    return
+  #TODO this is dumb (and slow)
+  var s = newString(this.bitmap.px.len * 4)
+  copyMem(addr s[0], addr this.bitmap.px[0], this.bitmap.px.len * 4)
+  let request = newRequest(
+    newURL("img-codec+" & contentType.after('/') & ":encode").get,
+    httpMethod = hmPost,
+    headers = newHeaders({
+      "X-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
+    }),
+    body = RequestBody(t: rbtString, s: s)
+  )
+  # callback will go out of scope when we return, so capture a new reference.
+  let callback = JS_DupValue(ctx, callback)
+  let window = this.document.window
+  window.loader.fetch(request).then(proc(res: JSResult[Response]):
+      EmptyPromise =
+    if res.isNone:
+      if contentType != "image/png":
+        # redo as PNG.
+        # Note: this sounds dumb, and is dumb, but also standard mandated so
+        # whatever.
+        discard ctx.toBlob(this, callback, "image/png", quality)
+      else: # the png decoder doesn't work...
+        window.console.error("missing/broken PNG decoder")
+      JS_FreeValue(ctx, callback)
+      return
+    let response = res.get
+    if "X-Image-Dimensions" notin response.headers.table:
+      window.console.error("X-Image-Dimensions missing")
+      JS_FreeValue(ctx, callback)
+      return
+    let dims = response.headers.table["X-Image-Dimensions"][0]
+    let width = parseUInt64(dims.until('x'), allowSign = false)
+    let height = parseUInt64(dims.after('x'), allowSign = false)
+    if width.isNone or height.isNone:
+      window.console.error("wrong X-Image-Dimensions")
+      JS_FreeValue(ctx, callback)
+      return
+    response.blob().then(proc(blob: JSResult[Blob]) =
+      let jsBlob = toJS(ctx, blob)
+      let res = JS_Call(ctx, callback, JS_UNDEFINED, 1, jsBlob.toJSValueArray())
+      if JS_IsException(res):
+        window.console.error("Exception in canvas toBlob:",
+          ctx.getExceptionMsg())
+      else:
+        JS_FreeValue(ctx, res)
+      JS_FreeValue(ctx, callback)
+    )
+  )
   return JS_UNDEFINED
 
 # Forward declaration hack

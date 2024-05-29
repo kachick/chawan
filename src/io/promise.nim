@@ -132,6 +132,14 @@ proc then*[T](promise: Promise[T]; cb: (proc(x: T): EmptyPromise)): EmptyPromise
       next.resolve())
   return next
 
+proc then*[T](promise: EmptyPromise; cb: (proc(): T)): Promise[T]
+    {.discardable.} =
+  let next = Promise[T]()
+  promise.then(proc() =
+    next.res = cb()
+    next.resolve())
+  return next
+
 proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): U)): Promise[U]
     {.discardable.} =
   let next = Promise[U]()
@@ -195,7 +203,7 @@ proc promiseThenCallback(ctx: JSContext; this_val: JSValue; argc: cint;
 
 proc fromJSEmptyPromise*(ctx: JSContext; val: JSValue): JSResult[EmptyPromise] =
   if not JS_IsObject(val):
-    return err(newTypeError("Value is not an object"))
+    return errTypeError("Value is not an object")
   var p = EmptyPromise()
   GC_ref(p)
   let tmp = JS_NewObject(ctx)

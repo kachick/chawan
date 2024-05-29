@@ -2,8 +2,10 @@ import std/options
 import std/sets
 import std/tables
 
+import img/bitmap
 import io/dynstream
 import io/socketstream
+import loader/request
 import types/blob
 import types/color
 import types/formdata
@@ -32,6 +34,8 @@ proc sread*(reader: var BufferedReader; blob: var Blob)
 proc sread*[T](reader: var BufferedReader; o: var Option[T])
 proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E])
 proc sread*(reader: var BufferedReader; c: var ARGBColor) {.inline.}
+proc sread*(reader: var BufferedReader; o: var RequestBody)
+proc sread*(reader: var BufferedReader; bmp: var Bitmap)
 
 proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
   assert len != 0
@@ -169,7 +173,7 @@ proc sread*(reader: var BufferedReader; blob: var Blob) =
     let buffer = alloc(blob.size)
     reader.readData(blob.buffer, int(blob.size))
     blob.buffer = buffer
-    blob.deallocFun = proc() = dealloc(buffer)
+    blob.deallocFun = deallocBlob
 
 proc sread*[T](reader: var BufferedReader; o: var Option[T]) =
   var x: bool
@@ -201,3 +205,38 @@ proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E]) =
 
 proc sread*(reader: var BufferedReader; c: var ARGBColor) =
   reader.sread(uint32(c))
+
+proc sread*(reader: var BufferedReader; o: var RequestBody) =
+  var t: RequestBodyType
+  reader.sread(t)
+  o = RequestBody(t: t)
+  case t
+  of rbtNone: discard
+  of rbtString: reader.sread(o.s)
+  of rbtMultipart: reader.sread(o.multipart)
+  of rbtOutput: reader.sread(o.outputId)
+
+proc sread*(reader: var BufferedReader; bmp: var Bitmap) =
+  var isImageBitmap: bool
+  var width: uint64
+  var height: uint64
+  reader.sread(isImageBitmap)
+  reader.sread(width)
+  reader.sread(height)
+  if isImageBitmap:
+    bmp = ImageBitmap(
+      width: width,
+      height: height
+    )
+    reader.sread(bmp.px)
+  else:
+    var outputId: int
+    var imageId: int
+    reader.sread(outputId)
+    reader.sread(imageId)
+    bmp = NetworkBitmap(
+      width: width,
+      height: height,
+      outputId: outputId,
+      imageId: imageId
+    )

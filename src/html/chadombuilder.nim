@@ -374,7 +374,7 @@ proc parseFromString(ctx: JSContext; parser: DOMParser; str, t: string):
   of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
     return err(newInternalError("XML parsing is not supported yet"))
   else:
-    return err(newTypeError("Invalid mime type"))
+    return errTypeError("Invalid mime type")
 
 proc addHTMLModule*(ctx: JSContext) =
   ctx.registerType(DOMParser)

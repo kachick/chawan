@@ -8,7 +8,11 @@ type
 
   ImageBitmap* = ref object of Bitmap
 
-proc newBitmap*(width, height: uint64): Bitmap =
+  NetworkBitmap* = ref object of Bitmap
+    outputId*: int
+    imageId*: int
+
+proc newBitmap*(width, height: uint64): ImageBitmap =
   return ImageBitmap(
     px: newSeq[ARGBColor](width * height),
     width: width,

@@ -5,8 +5,10 @@ import std/options
 import std/sets
 import std/tables
 
+import img/bitmap
 import io/dynstream
 import io/socketstream
+import loader/request
 import types/blob
 import types/color
 import types/formdata
@@ -34,7 +36,7 @@ proc swrite*(writer: var BufferedWriter; b: bool)
 proc swrite*(writer: var BufferedWriter; url: URL)
 proc swrite*(writer: var BufferedWriter; tup: tuple)
 proc swrite*[I, T](writer: var BufferedWriter; a: array[I, T])
-proc swrite*(writer: var BufferedWriter; s: seq)
+proc swrite*[T](writer: var BufferedWriter; s: openArray[T])
 proc swrite*[U, V](writer: var BufferedWriter; t: Table[U, V])
 proc swrite*(writer: var BufferedWriter; obj: object)
 proc swrite*(writer: var BufferedWriter; obj: ref object)
@@ -43,6 +45,8 @@ proc swrite*(writer: var BufferedWriter; blob: Blob)
 proc swrite*[T](writer: var BufferedWriter; o: Option[T])
 proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E])
 proc swrite*(writer: var BufferedWriter; c: ARGBColor) {.inline.}
+proc swrite*(writer: var BufferedWriter; o: RequestBody)
+proc swrite*(writer: var BufferedWriter; bmp: Bitmap)
 
 const InitLen = sizeof(int) * 2
 const SizeInit = max(64, InitLen)
@@ -130,7 +134,7 @@ proc swrite*[I, T](writer: var BufferedWriter; a: array[I, T]) =
   for x in a:
     writer.swrite(x)
 
-proc swrite*(writer: var BufferedWriter; s: seq) =
+proc swrite*[T](writer: var BufferedWriter; s: openArray[T]) =
   writer.swrite(s.len)
   for x in s:
     writer.swrite(x)
@@ -188,3 +192,21 @@ proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E]) =
 
 proc swrite*(writer: var BufferedWriter; c: ARGBColor) =
   writer.swrite(uint32(c))
+
+proc swrite*(writer: var BufferedWriter; o: RequestBody) =
+  writer.swrite(o.t)
+  case o.t
+  of rbtNone: discard
+  of rbtString: writer.swrite(o.s)
+  of rbtMultipart: writer.swrite(o.multipart)
+  of rbtOutput: writer.swrite(o.outputId)
+
+proc swrite*(writer: var BufferedWriter; bmp: Bitmap) =
+  writer.swrite(bmp of ImageBitmap)
+  writer.swrite(bmp.width)
+  writer.swrite(bmp.height)
+  if bmp of ImageBitmap:
+    writer.swrite(bmp.px)
+  else:
+    writer.swrite(NetworkBitmap(bmp).outputId)
+    writer.swrite(NetworkBitmap(bmp).imageId)

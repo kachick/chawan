@@ -8,7 +8,7 @@ import monoucha/jstypes
 import utils/mimeguess
 
 type
-  DeallocFun = proc() {.closure, raises: [].}
+  DeallocFun = proc(blob: Blob) {.closure, raises: [].}
 
   Blob* = ref object of RootObj
     size* {.jsget.}: uint64
@@ -37,7 +37,7 @@ proc finalize(blob: Blob) {.jsfin.} =
   if blob.fd.isSome:
     discard close(blob.fd.get)
   if blob.deallocFun != nil and blob.buffer != nil:
-    blob.deallocFun()
+    blob.deallocFun(blob)
     blob.buffer = nil
 
 proc finalize(file: WebFile) {.jsfin.} =
@@ -58,6 +58,11 @@ type
   FilePropertyBag = object of BlobPropertyBag
     #TODO lastModified: int64
 
+proc deallocBlob*(blob: Blob) =
+  if blob.buffer != nil:
+    dealloc(blob.buffer)
+    blob.buffer = nil
+
 proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
     options = FilePropertyBag()): WebFile {.jsctor.} =
   let file = WebFile(
@@ -68,7 +73,7 @@ proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
     len += blobPart.len
   let buffer = alloc(len)
   file.buffer = buffer
-  file.deallocFun = proc() = dealloc(buffer)
+  file.deallocFun = deallocBlob
   var buf = cast[ptr UncheckedArray[uint8]](file.buffer)
   var i = 0
   for blobPart in fileBits:

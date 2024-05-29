@@ -75,16 +75,11 @@ layout engine:
 images:
 - more efficient kitty display (use IDs)
 - more efficient sixel display (store encoded images)
-- more efficient display in general (why are we repainting 3-4 times per
-  keypress?)
+- more efficient display in general (why are we repainting twice per keypress?)
 - document it (when performance is acceptable)
-- proper sixel color register allocation (current one is a hack)
+- proper sixel color register allocation, dithering
 - fix race condition where images decoded after buffer load won't display until
   reshape
-- remove in-buffer decoder; instead, decode images in fully locked down CGI
-  scripts
-	* then, the pager can just read the output from the cache on-demand
-	  instead of copying it from buffers
 - incremental decoding, interlaced images, animation
 man:
 - add a DOM -> man page converter so that we do not depend on pandoc

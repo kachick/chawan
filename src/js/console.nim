@@ -35,7 +35,7 @@ proc clear(console: Console) {.jsfunc.} =
 proc debug(console: Console; ss: varargs[string]) {.jsfunc.} =
   console.log(ss)
 
-proc error(console: Console; ss: varargs[string]) {.jsfunc.} =
+proc error*(console: Console; ss: varargs[string]) {.jsfunc.} =
   console.log(ss)
 
 proc info(console: Console; ss: varargs[string]) {.jsfunc.} =

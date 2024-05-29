@@ -3,6 +3,7 @@ import std/net
 import std/tables
 
 import io/bufwriter
+import io/dynstream
 import io/posixstream
 import loader/headers
 
@@ -44,14 +45,15 @@ type
     status*: uint16
 
   ResponseState = enum
-    rsBeforeResult, rsBeforeStatus, rsBeforeHeaders, rsAfterHeaders
+    rsBeforeResult, rsAfterFailure, rsBeforeStatus, rsBeforeHeaders,
+    rsAfterHeaders
 
   LoaderHandle* = ref object
     istream*: PosixStream # stream for taking input
     outputs*: seq[OutputHandle] # list of outputs to be streamed into
     cacheId*: int # if cached, our ID in a client cacheMap
     parser*: HeaderParser # only exists for CGI handles
-    rstate: ResponseState # just an enum for sanity checks
+    rstate: ResponseState # track response state
     when defined(debug):
       url*: URL
 
@@ -69,15 +71,14 @@ when defined(debug):
     return s
 
 # Create a new loader handle, with the output stream ostream.
-proc newLoaderHandle*(ostream: PosixStream; outputId, pid: int;
-    suspended: bool): LoaderHandle =
+proc newLoaderHandle*(ostream: PosixStream; outputId, pid: int): LoaderHandle =
   let handle = LoaderHandle(cacheId: -1)
   handle.outputs.add(OutputHandle(
     ostream: ostream,
     parent: handle,
     outputId: outputId,
     ownerPid: pid,
-    suspended: suspended
+    suspended: true
   ))
   return handle
 
@@ -108,15 +109,17 @@ proc bufferCleared*(output: OutputHandle) =
     output.currentBuffer = nil
 
 proc tee*(outputIn: OutputHandle; ostream: PosixStream; outputId, pid: int) =
-  outputIn.parent.outputs.add(OutputHandle(
-    parent: outputIn.parent,
+  let parent = outputIn.parent
+  parent.outputs.add(OutputHandle(
+    parent: parent,
     ostream: ostream,
     currentBuffer: outputIn.currentBuffer,
     currentBufferIdx: outputIn.currentBufferIdx,
     buffers: outputIn.buffers,
     istreamAtEnd: outputIn.istreamAtEnd,
     outputId: outputId,
-    ownerPid: pid
+    ownerPid: pid,
+    suspended: outputIn.suspended
   ))
 
 template output*(handle: LoaderHandle): OutputHandle =
@@ -133,6 +136,7 @@ proc sendResult*(handle: LoaderHandle; res: int; msg = "") =
     if res == 0: # success
       assert msg == ""
       w.swrite(output.outputId)
+      inc handle.rstate
     else: # error
       w.swrite(msg)
   output.ostream.setBlocking(blocking)
@@ -164,12 +168,27 @@ proc sendData*(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
   assert buffer.len - si > 0
   return ps.sendData(addr buffer.page[si], buffer.len - si)
 
+proc iclose*(handle: LoaderHandle) =
+  if handle.istream != nil:
+    if handle.rstate notin {rsBeforeResult, rsAfterFailure, rsAfterHeaders}:
+      assert handle.outputs.len == 1
+      # not an ideal solution, but better than silently eating malformed
+      # headers
+      try:
+        handle.sendStatus(500)
+        handle.sendHeaders(newHeaders())
+        handle.output.ostream.setBlocking(true)
+        const msg = "Error: malformed header in CGI script"
+        discard handle.output.ostream.sendData(msg)
+      except ErrorBrokenPipe:
+        discard # receiver is dead
+    handle.istream.sclose()
+    handle.istream = nil
+
 proc close*(handle: LoaderHandle) =
+  handle.iclose()
   for output in handle.outputs:
     #TODO assert not output.registered
     if output.ostream != nil:
       output.ostream.sclose()
       output.ostream = nil
-  if handle.istream != nil:
-    handle.istream.sclose()
-    handle.istream = nil

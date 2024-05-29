@@ -291,6 +291,9 @@ func parseOctUInt32*(s: string; allowSign: static bool): Option[uint32] =
 func parseHexUInt32*(s: string; allowSign: static bool): Option[uint32] =
   return parseUIntImpl[uint32](s, allowSign, AsciiHexDigit, 16)
 
+func parseUInt64*(s: string; allowSign: static bool): Option[uint64] =
+  return parseUIntImpl[uint64](s, allowSign)
+
 #TODO not sure where this algorithm is from...
 # (probably from CSS)
 func parseFloat64*(s: string): float64 =

@@ -438,10 +438,10 @@ proc acceptBuffers(client: Client) =
         let pid = container.process
         if item.fdout == item.fdin:
           loader.shareCachedItem(container.cacheId, pid)
-          loader.resume(@[item.istreamOutputId])
+          loader.resume(item.istreamOutputId)
         else:
           outCacheId = loader.addCacheFile(item.ostreamOutputId, pid).outputId
-          loader.resume(@[item.istreamOutputId, item.ostreamOutputId])
+          loader.resume([item.istreamOutputId, item.ostreamOutputId])
         w.swrite(outCacheId)
     if item.fdin != -1:
       # pass down fdout

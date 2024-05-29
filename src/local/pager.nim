@@ -11,6 +11,7 @@ import std/unicode
 import config/chapath
 import config/config
 import config/mailcap
+import img/bitmap
 import io/bufreader
 import io/dynstream
 import io/posixstream
@@ -474,9 +475,34 @@ proc draw*(pager: Pager) =
   else:
     pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
   pager.term.outputGrid()
-  if container != nil and pager.redraw:
+  if container != nil and pager.redraw and pager.term.imageMode != imNone:
     pager.term.clearImages()
     for image in container.images:
+      if image.bmp of NetworkBitmap:
+        # add cache file to pager, but source it from the container.
+        let bmp = NetworkBitmap(image.bmp)
+        let cached = container.findCachedImage(bmp.imageId)
+        if cached == nil:
+          let (cacheId, _) = pager.loader.addCacheFile(bmp.outputId,
+            pager.loader.clientPid, container.process)
+          let request = newRequest(newURL("cache:" & $cacheId).get)
+          # capture bmp for the closure
+          (proc(bmp: Bitmap) =
+            pager.loader.fetch(request).then(proc(res: JSResult[Response]):
+                EmptyPromise =
+              if res.isNone:
+                return nil
+              return res.get.saveToBitmap(bmp)
+            ).then(proc() =
+              pager.redraw = true
+            )
+          )(bmp)
+          pager.loader.resume(bmp.outputId) # get rid of dangling output
+          container.cachedImages.add(bmp)
+          continue
+        image.bmp = cached
+      if uint64(image.bmp.px.len) < image.bmp.width * image.bmp.height:
+        continue # loading
       pager.term.outputImage(image.bmp, image.x - container.fromx,
         image.y - container.fromy, pager.attrs.width, pager.attrs.height - 1)
   if pager.askpromise != nil:
@@ -541,7 +567,6 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     redirectDepth = 0; flags = {cfCanReinterpret, cfUserRequested};
     contentType = none(string); charsetStack: seq[Charset] = @[];
     url = request.url; cacheId = -1; cacheFile = ""): Container =
-  request.suspended = true
   let stream = pager.loader.startRequest(request, loaderConfig)
   pager.loader.registerFun(stream.fd)
   let container = newContainer(
@@ -1021,6 +1046,9 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       loaderConfig.insecureSSLNoVerify = sc.insecure_ssl_no_verify.get
     if sc.autofocus.isSome:
       res.autofocus = sc.autofocus.get
+  if res.images:
+    loaderConfig.filter.allowschemes
+      .add(pager.config.external.urimethodmap.imageProtos)
   return res
 
 # Load request in a new buffer.
@@ -1202,7 +1230,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
 proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
   if pager.loader.redirectToFile(data.outputId, path):
     pager.alert("Saving file to " & path)
-    pager.loader.resume(@[data.outputId])
+    pager.loader.resume(data.outputId)
     data.stream.sclose()
     pager.lineData = nil
   else:
@@ -1544,7 +1572,7 @@ proc filterBuffer(pager: Pager; stream: SocketStream; cmd: string;
   let url = parseURL("stream:" & $pid).get
   pager.loader.passFd(url.pathname, FileHandle(fdout))
   safeClose(fdout)
-  let response = pager.loader.doRequest(newRequest(url, suspended = true))
+  let response = pager.loader.doRequest(newRequest(url))
   return CheckMailcapResult(
     connect: true,
     fdout: response.body.fd,
@@ -1607,7 +1635,7 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
   block needsConnect:
     if entry.flags * {COPIOUSOUTPUT, HTMLOUTPUT, ANSIOUTPUT} == {}:
       # No output. Resume here, so that blocking needsterminal filters work.
-      pager.loader.resume(@[istreamOutputId])
+      pager.loader.resume(istreamOutputId)
       if canpipe:
         pager.runMailcapWritePipe(stream, needsterminal, cmd)
       else:
@@ -1632,7 +1660,7 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
     let url = parseURL("stream:" & $pid).get
     pager.loader.passFd(url.pathname, FileHandle(fdout))
     safeClose(cint(fdout))
-    let response = pager.loader.doRequest(newRequest(url, suspended = true))
+    let response = pager.loader.doRequest(newRequest(url))
     return CheckMailcapResult(
       connect: true,
       fdout: response.body.fd,

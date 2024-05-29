@@ -42,8 +42,8 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI, myDir: string;
   if url.query.isSome:
     putEnv("QUERY_STRING", url.query.get)
   if request.httpMethod == hmPost:
-    if request.multipart.isSome:
-      putEnv("CONTENT_TYPE", request.multipart.get.getContentType())
+    if request.body.t == rbtMultipart:
+      putEnv("CONTENT_TYPE", request.body.multipart.getContentType())
     else:
       putEnv("CONTENT_TYPE", request.headers.getOrDefault("Content-Type", ""))
     putEnv("CONTENT_LENGTH", $contentLen)
@@ -126,7 +126,7 @@ proc handleLine(handle: LoaderHandle; line: string; headers: Headers) =
   headers.add(k, v)
 
 proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
-    prevURL: URL; insecureSSLNoVerify: bool) =
+    prevURL: URL; insecureSSLNoVerify: bool; ostream: var PosixStream) =
   if cgiDir.len == 0:
     handle.sendResult(ERROR_NO_CGI_DIR)
     return
@@ -181,16 +181,11 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     return
   # Pipe the request body as stdin for POST.
   var pipefd_read: array[0..1, cint] # parent -> child
-  let needsPipe = request.body.isSome or request.multipart.isSome
-  if needsPipe:
+  if request.body.t != rbtNone:
     if pipe(pipefd_read) == -1:
       handle.sendResult(ERROR_FAIL_SETUP_CGI)
       return
-  var contentLen = 0
-  if request.body.isSome:
-    contentLen = request.body.get.len
-  elif request.multipart.isSome:
-    contentLen = request.multipart.get.calcLength()
+  let contentLen = request.body.contentLength()
   stdout.flushFile()
   stderr.flushFile()
   let pid = fork()
@@ -199,7 +194,7 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
   elif pid == 0:
     discard close(pipefd[0]) # close read
     discard dup2(pipefd[1], 1) # dup stdout
-    if needsPipe:
+    if request.body.t != rbtNone:
       discard close(pipefd_read[1]) # close write
       if pipefd_read[0] != 0:
         discard dup2(pipefd_read[0], 0) # dup stdin
@@ -220,30 +215,24 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     quit(1)
   else:
     discard close(pipefd[1]) # close write
-    if needsPipe:
+    if request.body.t != rbtNone:
       discard close(pipefd_read[0]) # close read
       let ps = newPosixStream(pipefd_read[1])
-      if request.body.isSome:
-        ps.write(request.body.get)
-      elif request.multipart.isSome:
-        let multipart = request.multipart.get
-        for entry in multipart.entries:
-          ps.writeEntry(entry, multipart.boundary)
-        ps.writeEnd(multipart.boundary)
-      ps.sclose()
+      case request.body.t
+      of rbtString:
+        ps.write(request.body.s)
+        ps.sclose()
+      of rbtMultipart:
+        let boundary = request.body.multipart.boundary
+        for entry in request.body.multipart.entries:
+          ps.writeEntry(entry, boundary)
+        ps.writeEnd(boundary)
+        ps.sclose()
+      of rbtOutput:
+        ostream = ps
+      of rbtNone: discard
     handle.parser = HeaderParser(headers: newHeaders())
     handle.istream = newPosixStream(pipefd[0])
-
-proc killHandle(handle: LoaderHandle) =
-  if handle.parser.state != hpsBeforeLines:
-    # not an ideal solution, but better than silently eating malformed
-    # headers
-    handle.output.ostream.setBlocking(true)
-    handle.sendStatus(500)
-    handle.sendHeaders(newHeaders())
-    const msg = "Error: malformed header in CGI script"
-    discard handle.output.ostream.sendData(msg)
-  handle.parser = nil
 
 proc parseHeaders0(handle: LoaderHandle; buffer: LoaderBuffer): int =
   let parser = handle.parser
@@ -251,7 +240,7 @@ proc parseHeaders0(handle: LoaderHandle; buffer: LoaderBuffer): int =
   let L = if buffer == nil: 1 else: buffer.len
   for i in 0 ..< L:
     template die =
-      handle.killHandle()
+      handle.parser = nil
       return -1
     let c = if buffer != nil:
       char(buffer.page[i])

@@ -58,17 +58,27 @@ type
     of rwtWindow:
       window*: EnvironmentSettings
 
+  RequestBodyType* = enum
+    rbtNone, rbtString, rbtMultipart, rbtOutput
+
+  RequestBody* = object
+    case t*: RequestBodyType
+    of rbtNone:
+      discard
+    of rbtString:
+      s*: string
+    of rbtMultipart:
+      multipart*: FormData
+    of rbtOutput:
+      outputId*: int
+
   Request* = ref object
     httpMethod*: HttpMethod
     url*: URL
     headers*: Headers
-    body*: Option[string]
-    multipart*: Option[FormData]
+    body*: RequestBody
     referrer*: URL
     proxy*: URL #TODO do something with this
-    # when set to true, the loader will not write data from the body (not
-    # headers!) into the output until a resume is received.
-    suspended*: bool
 
   JSRequest* = ref object
     request*: Request
@@ -80,6 +90,13 @@ type
     client*: Option[EnvironmentSettings]
 
 jsDestructor(JSRequest)
+
+proc contentLength*(body: RequestBody): int =
+  case body.t
+  of rbtNone: return 0
+  of rbtString: return body.s.len
+  of rbtMultipart: return body.multipart.calcLength()
+  of rbtOutput: return 0
 
 func headers(this: JSRequest): Headers {.jsfget.} =
   return this.request.headers
@@ -102,17 +119,14 @@ iterator pairs*(headers: Headers): (string, string) =
       yield (k, v)
 
 func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders();
-    body = none(string); multipart = none(FormData); proxy: URL = nil;
-    referrer: URL = nil; suspended = false): Request =
+    body = RequestBody(); proxy: URL = nil; referrer: URL = nil): Request =
   return Request(
     url: url,
     httpMethod: httpMethod,
     headers: headers,
     body: body,
-    multipart: multipart,
     referrer: referrer,
-    proxy: proxy,
-    suspended: suspended
+    proxy: proxy
   )
 
 func createPotentialCORSRequest*(url: URL; destination: RequestDestination;
@@ -178,7 +192,7 @@ proc fromJSBodyInit(ctx: JSContext; val: JSValue): JSResult[BodyInit] =
     let x = fromJS[string](ctx, val)
     if x.isSome:
       return ok(BodyInit(t: bitString, str: x.get))
-  return err(newTypeError("Invalid body init type"))
+  return errTypeError("Invalid body init type")
 
 func newRequest*[T: string|JSRequest](ctx: JSContext; resource: T;
     init = none(RequestInit)): JSResult[JSRequest] {.jsctor.} =
@@ -188,13 +202,12 @@ func newRequest*[T: string|JSRequest](ctx: JSContext; resource: T;
   when T is string:
     let url = ?newURL(resource)
     if url.username != "" or url.password != "":
-      return err(newTypeError("Input URL contains a username or password"))
+      return errTypeError("Input URL contains a username or password")
     var httpMethod = hmGet
     var headers = newHeaders()
     let referrer: URL = nil
     var credentials = cmSameOrigin
-    var body: Option[string]
-    var multipart: Option[FormData]
+    var body = RequestBody()
     var proxyUrl: URL #TODO?
     let fallbackMode = opt(rmCors)
     var window = RequestWindow(t: rwtClient)
@@ -205,7 +218,6 @@ func newRequest*[T: string|JSRequest](ctx: JSContext; resource: T;
     let referrer = resource.request.referrer
     var credentials = resource.credentialsMode
     var body = resource.request.body
-    var multipart = resource.request.multipart
     var proxyUrl = resource.request.proxy #TODO?
     let fallbackMode = none(RequestMode)
     var window = resource.window
@@ -226,8 +238,10 @@ func newRequest*[T: string|JSRequest](ctx: JSContext; resource: T;
     if init.body.isSome:
       let ibody = init.body.get
       case ibody.t
-      of bitFormData: multipart = some(ibody.formData)
-      of bitString: body = some(ibody.str)
+      of bitFormData:
+        body = RequestBody(t: rbtMultipart, multipart: ibody.formData)
+      of bitString:
+        body = RequestBody(t: rbtString, s: ibody.str)
       else: discard #TODO
       if httpMethod in {hmGet, hmHead}:
         return errTypeError("HEAD or GET Request cannot have a body.")
@@ -245,7 +259,6 @@ func newRequest*[T: string|JSRequest](ctx: JSContext; resource: T;
       httpMethod,
       headers,
       body,
-      multipart,
       proxy = proxyUrl,
       referrer = referrer
     ),

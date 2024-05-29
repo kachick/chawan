@@ -12,10 +12,10 @@ import utils/twtstr
 
 func parseLegacyColor*(s: string): JSResult[RGBColor] =
   if s == "":
-    return err(newTypeError("Color value must not be the empty string"))
+    return errTypeError("Color value must not be the empty string")
   let s = s.strip(chars = AsciiWhitespace).toLowerAscii()
   if s == "transparent":
-    return err(newTypeError("Color must not be transparent"))
+    return errTypeError("Color must not be transparent")
   return ok(parseLegacyColor0(s))
 
 proc toJS*(ctx: JSContext; rgb: RGBColor): JSValue =

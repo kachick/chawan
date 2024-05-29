@@ -66,7 +66,7 @@ type
     attrs*: WindowAttributes
     colorMode: ColorMode
     formatMode: FormatMode
-    imageMode: ImageMode
+    imageMode*: ImageMode
     smcup: bool
     tc: Termcap
     tname: string
@@ -717,8 +717,6 @@ proc outputKittyImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
 # x, y, maxw, maxh in cells
 # x, y can be negative, then image starts outside the screen
 proc outputImage*(term: Terminal; bmp: Bitmap; x, y, maxw, maxh: int) =
-  if term.imageMode == imNone:
-    return
   var xpx = x * term.attrs.ppc
   var ypx = y * term.attrs.ppl
   # calculate offset inside image to start from
@@ -737,7 +735,7 @@ proc outputImage*(term: Terminal; bmp: Bitmap; x, y, maxw, maxh: int) =
   let x = max(x, 0)
   let y = max(y, 0)
   case term.imageMode
-  of imNone: discard
+  of imNone: assert false
   of imSixel: term.outputSixelImage(x, y, offx, offy, dispw, disph, bmp)
   of imKitty: term.outputKittyImage(x, y, offx, offy, dispw, disph, bmp)
 

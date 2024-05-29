@@ -207,8 +207,7 @@ proc serialize*(cookiejar: CookieJar; url: URL): string =
     result &= "="
     result &= cookie.value
 
-proc newCookie*(str: string; url: URL = nil): JSResult[Cookie]
-    {.jsctor.} =
+proc newCookie*(str: string; url: URL = nil): JSResult[Cookie] {.jsctor.} =
   let cookie = Cookie(
     expires: -1,
     created: now().toTime().toUnix()
@@ -253,7 +252,7 @@ proc newCookie*(str: string; url: URL = nil): JSResult[Cookie]
         cookie.domain = val
         hasdomain = true
       else:
-        return err(newTypeError("Domains do not match"))
+        return errTypeError("Domains do not match")
   if not hasdomain:
     if url != nil:
       cookie.domain = url.host

@@ -4,7 +4,6 @@ import std/unicode
 import css/cssvalues
 import img/bitmap
 import img/path
-import img/png
 import types/color
 import types/line
 import types/vector
@@ -139,15 +138,12 @@ proc clearRect*(bmp: Bitmap; x0, x1, y0, y1: uint64) =
 proc clear*(bmp: Bitmap) =
   bmp.clearRect(0, bmp.width, 0, bmp.height)
 
-const unifont = readFile"res/unifont_jp-15.0.05.png"
-var unifontBitmap: Bitmap
+var unifontBitmap*: Bitmap = nil
 var glyphCache: seq[tuple[u: uint32, bmp: Bitmap]]
 var glyphCacheI = 0
 proc getCharBmp(u: uint32): Bitmap =
   # We only have the BMP.
   let u = if u <= 0xFFFF: u else: 0xFFFD
-  if unifontBitmap == nil:
-    unifontBitmap = fromPNG(toOpenArrayByte(unifont, 0, unifont.high))
   for (cu, bmp) in glyphCache:
     if cu == u:
       return bmp

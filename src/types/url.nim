@@ -970,7 +970,7 @@ proc newURL*(url: URL): URL =
 proc setHref(url: URL; s: string): Err[JSError] {.jsfset: "href".} =
   let purl = basicParseURL(s)
   if purl.isNone:
-    return err(newTypeError(s & " is not a valid URL"))
+    return errTypeError(s & " is not a valid URL")
   purl.get.cloneInto(url)
 
 func isIP*(url: URL): bool =
@@ -980,7 +980,7 @@ func isIP*(url: URL): bool =
   return host.ipv4.isSome or host.ipv6.isSome
 
 #https://url.spec.whatwg.org/#concept-urlencoded-serializer
-proc parseApplicationXWWWFormUrlEncoded(input: string): seq[(string, string)] =
+proc parseFromURLEncoded(input: string): seq[(string, string)] =
   for s in input.split('&'):
     if s == "":
       continue
@@ -1002,8 +1002,8 @@ proc parseApplicationXWWWFormUrlEncoded(input: string): seq[(string, string)] =
     result.add((percentDecode(name), percentDecode(value)))
 
 #https://url.spec.whatwg.org/#concept-urlencoded-serializer
-proc serializeApplicationXWWWFormUrlEncoded*(kvs: seq[(string, string)];
-    spaceAsPlus = true): string =
+proc serializeFormURLEncoded*(kvs: seq[(string, string)]; spaceAsPlus = true):
+    string =
   for it in kvs:
     let (name, value) = it
     if result != "":
@@ -1013,7 +1013,7 @@ proc serializeApplicationXWWWFormUrlEncoded*(kvs: seq[(string, string)];
     result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
 
 proc initURLSearchParams(params: URLSearchParams; init: string) =
-  params.list = parseApplicationXWWWFormUrlEncoded(init)
+  params.list = parseFromURLEncoded(init)
 
 proc newURLSearchParams[
       T: seq[(string, string)]|
@@ -1034,7 +1034,7 @@ proc newURLSearchParams[
     result.initURLSearchParams(init)
 
 proc `$`*(params: URLSearchParams): string {.jsfunc.} =
-  return serializeApplicationXWWWFormUrlEncoded(params.list)
+  return serializeFormURLEncoded(params.list)
 
 proc update(params: URLSearchParams) =
   if params.url.isNone:
@@ -1076,13 +1076,13 @@ proc parseAPIURL(s: string; base: Option[string]): JSResult[URL] =
   let baseURL = if base.isSome:
     let x = parseURL(base.get)
     if x.isNone:
-      return err(newTypeError(base.get & " is not a valid URL"))
+      return errTypeError(base.get & " is not a valid URL")
     x
   else:
     none(URL)
   let url = parseURL(s, baseURL)
   if url.isNone:
-    return err(newTypeError(s & " is not a valid URL"))
+    return errTypeError(s & " is not a valid URL")
   return ok(url.get)
 
 proc newURL*(s: string; base: Option[string] = none(string)):
@@ -1212,7 +1212,7 @@ proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
   let s = if s[0] == '?': s.substr(1) else: s
   url.query = some("")
   discard basicParseURL(s, url = url, stateOverride = some(usQuery))
-  url.searchParams.list = parseApplicationXWWWFormUrlEncoded(s)
+  url.searchParams.list = parseFromURLEncoded(s)
 
 proc hash*(url: URL): string {.jsfget.} =
   if url.fragment.get("") == "":

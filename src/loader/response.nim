@@ -3,6 +3,8 @@ import std/tables
 
 import chagashi/charset
 import chagashi/decoder
+import img/bitmap
+import io/posixstream
 import io/promise
 import io/socketstream
 import loader/headers
@@ -11,6 +13,7 @@ import monoucha/javascript
 import monoucha/jserror
 import monoucha/quickjs
 import types/blob
+import types/color
 import types/opt
 import types/url
 import utils/mimeguess
@@ -43,9 +46,12 @@ type
     headersGuard: HeadersGuard
     url*: URL #TODO should be urllist?
     unregisterFun*: proc()
-    bodyRead*: Promise[string]
+    resumeFun*: proc(outputId: int)
+    bodyRead*: EmptyPromise
     internalMessage*: string # should NOT be exposed to JS!
     outputId*: int
+    onRead*: proc(response: Response) {.nimcall.}
+    opaque*: RootRef
 
 jsDestructor(Response)
 
@@ -54,7 +60,7 @@ proc newResponse*(res: int; request: Request; stream: SocketStream): Response =
     res: res,
     url: request.url,
     body: stream,
-    bodyRead: Promise[string](),
+    bodyRead: EmptyPromise(),
     outputId: -1
   )
 
@@ -66,7 +72,8 @@ func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
     responseType: TYPE_ERROR,
     status: 0,
     headers: newHeaders(),
-    headersGuard: hgImmutable
+    headersGuard: hgImmutable,
+    bodyUsed: true
   )
 
 func sok(response: Response): bool {.jsfget: "ok".} =
@@ -102,6 +109,25 @@ func getContentType*(this: Response): string =
   # override buffer mime.types
   return DefaultGuess.guessContentType(this.url.pathname)
 
+type TextOpaque = ref object of RootObj
+  buf: string
+
+const BufferSize = 4096
+
+proc onReadText(response: Response) =
+  let opaque = TextOpaque(response.opaque)
+  while true:
+    let olen = opaque.buf.len
+    try:
+      opaque.buf.setLen(olen + BufferSize)
+      let n = response.body.recvData(addr opaque.buf[olen], BufferSize)
+      opaque.buf.setLen(olen + n)
+      if n == 0:
+        break
+    except ErrorAgain:
+      opaque.buf.setLen(olen)
+      break
+
 proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   if response.body == nil:
     let p = newPromise[JSResult[string]]()
@@ -113,40 +139,96 @@ proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
       .err(newTypeError("Body has already been consumed"))
     p.resolve(err)
     return p
-  let bodyRead = response.bodyRead
-  response.bodyRead = nil
-  return bodyRead.then(proc(s: string): JSResult[string] =
+  let opaque = TextOpaque()
+  response.opaque = opaque
+  response.onRead = onReadText
+  response.bodyUsed = true
+  response.resumeFun(response.outputId)
+  response.resumeFun = nil
+  return response.bodyRead.then(proc(): JSResult[string] =
     let charset = response.getCharset(CHARSET_UTF_8)
-    #TODO this is inefficient
-    # maybe add a JS type that turns a seq[char] into JS strings
-    ok(s.decodeAll(charset))
+    ok(opaque.buf.decodeAll(charset))
   )
 
+type BlobOpaque = ref object of RootObj
+  p: pointer
+  len: int
+  size: int
+
+proc onReadBlob(response: Response) =
+  let opaque = BlobOpaque(response.opaque)
+  while true:
+    try:
+      let targetLen = opaque.len + BufferSize
+      if targetLen > opaque.size:
+        opaque.size = targetLen
+        opaque.p = realloc(opaque.p, targetLen)
+      let p = cast[ptr UncheckedArray[uint8]](opaque.p)
+      let n = response.body.recvData(addr p[opaque.len], BufferSize)
+      opaque.len += n
+      if n == 0:
+        break
+    except ErrorAgain:
+      break
+
 proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
-  if response.bodyRead == nil:
+  if response.bodyUsed:
     let p = newPromise[JSResult[Blob]]()
     let err = JSResult[Blob]
       .err(newTypeError("Body has already been consumed"))
     p.resolve(err)
     return p
-  let bodyRead = response.bodyRead
-  response.bodyRead = nil
+  let opaque = BlobOpaque()
+  response.opaque = opaque
+  response.onRead = onReadBlob
+  response.bodyUsed = true
+  response.resumeFun(response.outputId)
+  response.resumeFun = nil
   let contentType = response.getContentType()
-  return bodyRead.then(proc(s: string): JSResult[Blob] =
-    if s.len == 0:
+  return response.bodyRead.then(proc(): JSResult[Blob] =
+    let p = realloc(opaque.p, opaque.len)
+    opaque.p = nil
+    if p == nil:
       return ok(newBlob(nil, 0, contentType, nil))
-    GC_ref(s)
-    let deallocFun = proc() =
-      GC_unref(s)
-    let blob = newBlob(unsafeAddr s[0], s.len, contentType, deallocFun)
-    ok(blob))
+    ok(newBlob(p, opaque.len, contentType, deallocBlob))
+  )
+
+type BitmapOpaque = ref object of RootObj
+  bmp: Bitmap
+  idx: int
+
+proc onReadBitmap(response: Response) =
+  let opaque = BitmapOpaque(response.opaque)
+  let bmp = opaque.bmp
+  while true:
+    try:
+      let p = cast[ptr UncheckedArray[uint8]](addr bmp.px[0])
+      let L = bmp.px.len * 4 - opaque.idx
+      let n = response.body.recvData(addr p[opaque.idx], L)
+      opaque.idx += n
+      if n == 0:
+        break
+    except ErrorAgain:
+      break
+
+proc saveToBitmap*(response: Response; bmp: Bitmap): EmptyPromise =
+  assert not response.bodyUsed
+  let opaque = BitmapOpaque(bmp: bmp, idx: 0)
+  let size = bmp.width * bmp.height
+  bmp.px = cast[seq[ARGBColor]](newSeqUninitialized[uint32](size))
+  response.opaque = opaque
+  response.onRead = onReadBitmap
+  response.bodyUsed = true
+  response.resumeFun(response.outputId)
+  response.resumeFun = nil
+  return response.bodyRead
 
 proc json(ctx: JSContext; this: Response): Promise[JSResult[JSValue]]
     {.jsfunc.} =
   return this.text().then(proc(s: JSResult[string]): JSResult[JSValue] =
     let s = ?s
-    return ok(JS_ParseJSON(ctx, cstring(s), cast[csize_t](s.len),
-      cstring"<input>")))
+    return ok(JS_ParseJSON(ctx, cstring(s), csize_t(s.len), cstring"<input>"))
+  )
 
 proc addResponseModule*(ctx: JSContext) =
   ctx.registerType(Response)

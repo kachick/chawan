@@ -9,6 +9,7 @@ import utils/twtstr
 
 type URIMethodMap* = object
   map*: Table[string, string]
+  imageProtos*: seq[string]
 
 func rewriteURL(pattern, surl: string): string =
   result = ""
@@ -44,6 +45,10 @@ proc findAndRewrite*(this: URIMethodMap; url: var URL): URIMethodMapResult =
     return URI_RESULT_SUCCESS
   return URI_RESULT_NOT_FOUND
 
+proc insert(this: var URIMethodMap; k, v: string) =
+  if not this.map.hasKeyOrPut(k, v) and k.startsWith("img-codec+"):
+    this.imageProtos.add(k.until(':'))
+
 proc parseURIMethodMap*(this: var URIMethodMap; s: string) =
   for line in s.split('\n'):
     if line.len == 0 or line[0] == '#':
@@ -68,7 +73,7 @@ proc parseURIMethodMap*(this: var URIMethodMap; s: string) =
       v = "cgi-bin:" & v.substr("file:///cgi-bin/".len)
     elif v.startsWith("/cgi-bin/"):
       v = "cgi-bin:" & v.substr("/cgi-bin/".len)
-    discard this.map.hasKeyOrPut(k, v)
+    this.insert(k, v)
 
 proc parseURIMethodMap*(s: string): URIMethodMap =
   result = URIMethodMap()
@@ -76,4 +81,4 @@ proc parseURIMethodMap*(s: string): URIMethodMap =
 
 proc append*(this: var URIMethodMap; that: URIMethodMap) =
   for k, v in that.map:
-    discard this.map.hasKeyOrPut(k, v)
+    this.insert(k, v)

@@ -16,3 +16,4 @@ spartan:	cgi-bin:spartan
 man:		cgi-bin:man
 man-k:		cgi-bin:man
 man-l:		cgi-bin:man
+img-codec+png:	cgi-bin:png

@@ -849,6 +849,7 @@ proc rewind(buffer: Buffer; offset: int; unregister = true): bool =
   let response = buffer.loader.doRequest(newRequest(url))
   if response.body == nil:
     return false
+  buffer.loader.resume(response.outputId)
   if unregister:
     buffer.selector.unregister(buffer.fd)
     buffer.loader.unregistered.add(buffer.fd)
@@ -921,13 +922,15 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     return -1
   # suspend outputs before tee'ing
   var ids: seq[int] = @[]
-  for data in buffer.loader.ongoing.values:
-    ids.add(data.response.outputId)
+  for response in buffer.loader.ongoing.values:
+    if response.onRead != nil:
+      ids.add(response.outputId)
   buffer.loader.suspend(ids)
   # ongoing transfers are now suspended; exhaust all data in the internal buffer
   # just to be safe.
-  for fd in buffer.loader.ongoing.keys:
-    buffer.loader.onRead(fd)
+  for fd, response in buffer.loader.ongoing:
+    if response.onRead != nil:
+      buffer.loader.onRead(fd)
   let pid = fork()
   if pid == -1:
     buffer.estream.write("Failed to clone buffer.\n")
@@ -963,29 +966,21 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     else:
       buffer.selector = newSelector[int]()
     #TODO set buffer.window.timeouts.selector
-    var cfds: seq[int] = @[]
-    for fd in buffer.loader.connecting.keys:
-      cfds.add(fd)
-    for fd in cfds:
-      # connecting: just reconnect
-      let data = buffer.loader.connecting[fd]
-      buffer.loader.connecting.del(fd)
-      buffer.loader.reconnect(data)
-    var ongoing: seq[OngoingData] = @[]
-    for data in buffer.loader.ongoing.values:
-      ongoing.add(data)
-      data.response.body.sclose()
+    var ongoing: seq[Response] = @[]
+    for response in buffer.loader.ongoing.values:
+      ongoing.add(response)
+      response.body.sclose()
     buffer.loader.ongoing.clear()
     let myPid = getCurrentProcessId()
-    for data in ongoing.mitems:
+    for response in ongoing.mitems:
       # tee ongoing streams
-      let (stream, outputId) = buffer.loader.tee(data.response.outputId, myPid)
+      let (stream, outputId) = buffer.loader.tee(response.outputId, myPid)
       # if -1, well, this side hasn't exhausted the socket's buffer
       doAssert outputId != -1 and stream != nil
-      data.response.outputId = outputId
-      data.response.body = stream
-      let fd = data.response.body.fd
-      buffer.loader.ongoing[fd] = data
+      response.outputId = outputId
+      response.body = stream
+      let fd = response.body.fd
+      buffer.loader.ongoing[fd] = response
       buffer.selector.registerHandle(fd, {Read}, 0)
     if buffer.istream != nil:
       # We do not own our input stream, so we can't tee it.
@@ -1011,6 +1006,16 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     r.sread(buffer.loader.key)
     buffer.rfd = buffer.pstream.fd
     buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
+    # must reconnect after the new client is set up, or the client pids get
+    # mixed up.
+    var cfds: seq[int] = @[]
+    for fd in buffer.loader.connecting.keys:
+      cfds.add(fd)
+    for fd in cfds:
+      # connecting: just reconnect
+      let data = buffer.loader.connecting[fd]
+      buffer.loader.connecting.del(fd)
+      buffer.loader.reconnect(data)
     return 0
   else: # parent
     discard close(pipefd[1]) # close write
@@ -1227,10 +1232,10 @@ proc cancel*(buffer: Buffer) {.proxy.} =
     buffer.loader.unregistered.add(fd)
     data.stream.sclose()
   buffer.loader.connecting.clear()
-  for fd, data in buffer.loader.ongoing:
+  for fd, response in buffer.loader.ongoing:
     buffer.selector.unregister(fd)
     buffer.loader.unregistered.add(fd)
-    data.response.body.sclose()
+    response.body.sclose()
   buffer.loader.ongoing.clear()
   if buffer.istream != nil:
     buffer.selector.unregister(buffer.fd)
@@ -1247,7 +1252,7 @@ proc cancel*(buffer: Buffer) {.proxy.} =
   buffer.do_reshape()
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
-proc serializeMultipartFormData(entries: seq[FormDataEntry]): FormData =
+proc serializeMultipart(entries: seq[FormDataEntry]): FormData =
   let formData = newFormData0()
   for entry in entries:
     let name = makeCRLF(entry.name)
@@ -1298,7 +1303,7 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      parsedAction.query = some(serializeApplicationXWWWFormUrlEncoded(kvlist))
+      parsedAction.query = some(serializeFormURLEncoded(kvlist))
       return newRequest(parsedAction, httpMethod)
     return newRequest(parsedAction) # get action URL
   of frtMailto:
@@ -1306,18 +1311,16 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       # mailWithHeaders
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      let headers = serializeApplicationXWWWFormUrlEncoded(kvlist,
-        spaceAsPlus = false)
+      let headers = serializeFormURLEncoded(kvlist, spaceAsPlus = false)
       parsedAction.query = some(headers)
       return newRequest(parsedAction, httpMethod)
     # mail as body
     let kvlist = entryList.toNameValuePairs()
     let body = if enctype == fetTextPlain:
-      let text = serializePlainTextFormData(kvlist)
-      percentEncode(text, PathPercentEncodeSet)
+      percentEncode(serializePlainTextFormData(kvlist), PathPercentEncodeSet)
     else:
       #TODO with charset
-      serializeApplicationXWWWFormUrlEncoded(kvlist)
+      serializeFormURLEncoded(kvlist)
     if parsedAction.query.isNone:
       parsedAction.query = some("")
     if parsedAction.query.get != "":
@@ -1329,26 +1332,24 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      let query = serializeApplicationXWWWFormUrlEncoded(kvlist)
+      let query = serializeFormURLEncoded(kvlist)
       parsedAction.query = some(query)
       return newRequest(parsedAction, httpMethod)
     # submit as entity body
-    var body: Option[string]
-    var multipart: Option[FormData]
-    case enctype
+    let body = case enctype
     of fetUrlencoded:
       #TODO with charset
       let kvlist = entryList.toNameValuePairs()
-      body = some(serializeApplicationXWWWFormUrlEncoded(kvlist))
+      RequestBody(t: rbtString, s: serializeFormURLEncoded(kvlist))
     of fetMultipart:
       #TODO with charset
-      multipart = some(serializeMultipartFormData(entryList))
+      RequestBody(t: rbtMultipart, multipart: serializeMultipart(entryList))
     of fetTextPlain:
       #TODO with charset
       let kvlist = entryList.toNameValuePairs()
-      body = some(serializePlainTextFormData(kvlist))
+      RequestBody(t: rbtString, s: serializePlainTextFormData(kvlist))
     let headers = newHeaders({"Content-Type": $enctype})
-    return newRequest(parsedAction, httpMethod, headers, body, multipart)
+    return newRequest(parsedAction, httpMethod, headers, body)
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
 proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element): Request =
@@ -1698,7 +1699,7 @@ proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
   if buffer.config.images:
     for image in buffer.images:
       if image.y <= w.b and
-          image.y + int(image.bmp.height) div buffer.attrs.ppl >= w.a:
+          image.y + int(image.bmp.height) >= w.a * buffer.attrs.ppl:
         result.images.add(image)
 
 proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
@@ -1849,7 +1850,6 @@ proc handleRead(buffer: Buffer; fd: int): bool =
     buffer.onload()
   elif fd in buffer.loader.connecting:
     buffer.loader.onConnected(fd)
-    buffer.loader.onRead(fd)
     if buffer.config.scripting:
       buffer.window.runJSJobs()
   elif fd in buffer.loader.ongoing:

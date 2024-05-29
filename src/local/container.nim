@@ -7,6 +7,7 @@ import std/unicode
 
 import config/config
 import config/mimetypes
+import img/bitmap
 import io/bufstream
 import io/dynstream
 import io/promise
@@ -157,6 +158,7 @@ type
     mainConfig*: Config
     flags*: set[ContainerFlag]
     images*: seq[PosBitmap]
+    cachedImages*: seq[NetworkBitmap]
     luctx: LUContext
 
 jsDestructor(Highlight)
@@ -1740,6 +1742,12 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
       var hlformat = display[y * display.width + x].format
       hlformat.bgcolor = hlcolor
       display[y * display.width + x].format = hlformat
+
+func findCachedImage*(container: Container; id: int): NetworkBitmap =
+  for bmp in container.cachedImages:
+    if bmp.imageId == id:
+      return bmp
+  return nil
 
 proc handleEvent*(container: Container) =
   container.handleCommand()
