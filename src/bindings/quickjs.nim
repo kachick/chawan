@@ -233,6 +233,8 @@ type
       {.cdecl.}
     js_malloc_usable_size*: proc(p: pointer) {.cdecl.}
 
+func `==`*(a, b: JSAtom): bool {.borrow.}
+
 converter toBool*(js: JS_BOOL): bool {.inline.} =
   cast[cint](js) != 0
 
@@ -412,6 +414,8 @@ proc JS_NewBigInt64*(ctx: JSContext; val: int64): JSValue
 proc JS_NewBigUInt64*(ctx: JSContext; val: uint64): JSValue
 proc JS_NewFloat64*(ctx: JSContext; val: cdouble): JSValue
 
+const JS_ATOM_NULL* = JSAtom(0)
+
 proc JS_NewAtomLen*(ctx: JSContext; str: cstring; len: csize_t): JSAtom
 proc JS_NewAtomUInt32*(ctx: JSContext; u: uint32): JSAtom
 proc JS_ValueToAtom*(ctx: JSContext; val: JSValue): JSAtom
@@ -468,8 +472,6 @@ proc JS_DefinePropertyValue*(ctx: JSContext; this_obj: JSValue; prop: JSAtom;
   val: JSValue; flags: cint): cint
 proc JS_DefinePropertyValueUint32*(ctx: JSContext; this_obj: JSValue;
   idx: uint32; val: JSValue; flags: cint): cint
-proc JS_DefinePropertyValueInt64*(ctx: JSContext; this_obj: JSValue; idx: int64;
-  val: JSValue; flags: cint): cint
 proc JS_DefinePropertyValueStr*(ctx: JSContext; this_obj: JSValue;
   prop: cstring; val: JSValue; flags: cint): cint
 proc JS_DefinePropertyValueGetSet*(ctx: JSContext; this_obj: JSValue;

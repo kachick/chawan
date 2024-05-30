@@ -106,6 +106,15 @@ proc defineProperty(ctx: JSContext; this: JSValue; name: JSAtom;
   if JS_DefinePropertyValue(ctx, this, name, prop, flags) <= 0:
     raise newException(Defect, "Failed to define property string")
 
+proc defineProperty(ctx: JSContext; this, name, prop: JSValue;
+    flags = cint(0)) =
+  let atom = JS_ValueToAtom(ctx, prop);
+  JS_FreeValue(ctx, prop);
+  if unlikely(atom == JS_ATOM_NULL):
+    raise newException(Defect, "Failed to define property string")
+  ctx.defineProperty(this, atom, prop, flags)
+  JS_FreeAtom(ctx, atom);
+
 proc definePropertyC*(ctx: JSContext; this: JSValue; name: JSAtom;
     prop: JSValue) =
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
@@ -195,7 +204,7 @@ proc toJS*(ctx: JSContext; opt: Option): JSValue =
     return toJS(ctx, opt.get)
   return JS_NULL
 
-proc toJS[T, E](ctx: JSContext; opt: Result[T, E]): JSValue =
+proc toJS*[T, E](ctx: JSContext; opt: Result[T, E]): JSValue =
   if opt.isSome:
     when not (T is void):
       return toJS(ctx, opt.get)
@@ -207,16 +216,15 @@ proc toJS[T, E](ctx: JSContext; opt: Result[T, E]): JSValue =
         return JS_Throw(ctx, toJS(ctx, opt.error))
     return JS_EXCEPTION
 
-proc toJS(ctx: JSContext; s: seq): JSValue =
+proc toJS*(ctx: JSContext; s: seq): JSValue =
   let a = JS_NewArray(ctx)
   if not JS_IsException(a):
-    for i in 0..s.high:
-      let j = toJS(ctx, s[i])
-      if JS_IsException(j):
-        return j
-      if JS_DefinePropertyValueInt64(ctx, a, int64(i), j,
-          JS_PROP_C_W_E or JS_PROP_THROW) < 0:
-        return JS_EXCEPTION
+    for i, x in s:
+      let val = toJS(ctx, x)
+      if JS_IsException(val):
+        return val
+      ctx.defineProperty(a, JS_NewInt64(ctx, int64(i)), val,
+        JS_PROP_C_W_E or JS_PROP_THROW)
   return a
 
 proc toJS*[T](ctx: JSContext; s: set[T]): JSValue =
@@ -237,12 +245,11 @@ proc toJS(ctx: JSContext; t: tuple): JSValue =
   if not JS_IsException(a):
     var i = 0
     for f in t.fields:
-      let j = toJS(ctx, f)
-      if JS_IsException(j):
-        return j
-      if JS_DefinePropertyValueInt64(ctx, a, int64(i), j,
-          JS_PROP_C_W_E or JS_PROP_THROW) < 0:
-        return JS_EXCEPTION
+      let val = toJS(ctx, f)
+      if JS_IsException(val):
+        return val
+      ctx.defineProperty(a, JS_NewInt64(ctx, int64(i)), val,
+        JS_PROP_C_W_E or JS_PROP_THROW)
       inc i
   return a
 
