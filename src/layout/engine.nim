@@ -241,11 +241,11 @@ type
     lastTextFragment: InlineFragment
 
   InlineState = object
-    computed: CSSComputedValues
-    node: StyledNode
     fragment: InlineFragment
     firstLine: bool
     startOffsetTop: Offset
+    # computed line-height of fragment
+    lineHeight: LayoutUnit
     # we do not want to collapse newlines over tag boundaries, so these are
     # in state
     lastrw: int # last rune width of the previous word
@@ -290,7 +290,7 @@ func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
   if ictx.whitespaceIsLF and state.lastrw == 2 and state.firstrw == 2:
     # skip line feed between double-width characters
     return 0
-  if not state.computed.whitespacepre:
+  if not state.fragment.computed.whitespacepre:
     if ictx.currentLine.atoms.len == 0 or
         ictx.currentLine.atoms[^1].t == iatSpacing:
       return 0
@@ -299,9 +299,8 @@ func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
 proc applyLineHeight(ictx: InlineContext; state: var LineBoxState;
     computed: CSSComputedValues) =
   let lctx = ictx.lctx
-  #TODO this should be computed during cascading.
   let lineHeight = if computed{"line-height"}.auto: # ergo normal
-    lctx.cellHeight.toLayoutUnit
+    lctx.cellHeight.toLayoutUnit()
   else:
     # Percentage: refers to the font size of the element itself.
     computed{"line-height"}.px(lctx, lctx.cellHeight)
@@ -317,7 +316,7 @@ proc newWord(ictx: var InlineContext; state: var InlineState) =
     size: size(w = 0, h = ictx.cellHeight)
   )
   ictx.wordstate = InlineAtomState(
-    vertalign: state.computed{"vertical-align"},
+    vertalign: state.fragment.computed{"vertical-align"},
     baseline: ictx.cellHeight
   )
   ictx.wrappos = -1
@@ -351,30 +350,11 @@ proc horizontalAlignLines(ictx: var InlineContext; align: CSSTextAlign) =
         atom.offset.x += x
         ictx.size.w = max(atom.offset.x + atom.size.w, ictx.size.w)
 
-# Calculate the line's baseline based on its atoms' baseline.
-func calcBaseline(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
-  let lineHeight = currentLine.lineHeight
-  var baseline = lineHeight
-  for i, atom in currentLine.atoms:
-    let iastate = currentLine.atomstates[i]
-    case iastate.vertalign.keyword
-    of VerticalAlignBaseline:
-      let len = iastate.vertalign.length.px(lctx, lineHeight)
-      baseline = max(baseline, iastate.baseline + len)
-    of VerticalAlignTop, VerticalAlignBottom:
-      baseline = max(baseline, atom.size.h)
-    of VerticalAlignMiddle:
-      baseline = max(baseline, atom.size.h div 2)
-    else:
-      baseline = max(baseline, iastate.baseline)
-  return baseline
-
 # Resize the line's height based on atoms' height and baseline.
 # The line height should be at least as high as the highest baseline used by
 # an atom plus that atom's height.
 func resizeLine(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
   let baseline = currentLine.baseline
-  let lineHeight = currentLine.lineHeight
   var h = currentLine.size.h
   for i, atom in currentLine.atoms:
     let iastate = currentLine.atomstates[i]
@@ -384,9 +364,8 @@ func resizeLine(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
     case iastate.vertalign.keyword
     of VerticalAlignBaseline:
       # Line height must be at least as high as
-      # (line baseline) - (atom baseline) + (atom height) + (extra height).
-      let len = iastate.vertalign.length.px(lctx, lineHeight)
-      h = max(baseline - iastate.baseline + atom.size.h + len, h)
+      # (atom baseline) + (atom height) + (extra height) - (line baseline).
+      h = max(atom.offset.y + atom.size.h - baseline, h)
     of VerticalAlignMiddle:
       # Line height must be at least
       # (line baseline) + (atom height / 2).
@@ -401,7 +380,6 @@ func resizeLine(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
 
 # returns marginTop
 proc positionAtoms(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
-  let lineHeight = currentLine.lineHeight
   let baseline = currentLine.baseline
   var marginTop: LayoutUnit = 0
   for i, atom in currentLine.atoms:
@@ -409,8 +387,7 @@ proc positionAtoms(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
     case iastate.vertalign.keyword
     of VerticalAlignBaseline:
       # Atom is placed at (line baseline) - (atom baseline) - len
-      let len = iastate.vertalign.length.px(lctx, lineHeight)
-      atom.offset.y = baseline - iastate.baseline - len
+      atom.offset.y = baseline - atom.offset.y
     of VerticalAlignMiddle:
       # Atom is placed at (line baseline) - ((atom height) / 2)
       atom.offset.y = baseline - atom.size.h div 2
@@ -448,8 +425,9 @@ proc verticalAlignLine(ictx: var InlineContext) =
   let lineHeight = ictx.currentLine.lineHeight
   ictx.currentLine.size.h = lineHeight
   let ch = ictx.cellHeight
-  # Find baseline.
-  ictx.currentLine.baseline = ictx.currentLine.calcBaseline(ictx.lctx).round(ch)
+  # Baseline is what we computed in addAtom, or lineHeight if that's greater.
+  ictx.currentLine.baseline = max(ictx.currentLine.baseline, lineHeight)
+    .round(ch)
   # Resize according to the baseline and atom sizes.
   ictx.currentLine.size.h = ictx.currentLine.resizeLine(ictx.lctx)
   # Now we can calculate the actual position of atoms inside the line.
@@ -484,7 +462,7 @@ proc addSpacing(ictx: var InlineContext; width, height: LayoutUnit;
   let spacing = InlineAtom(
     t: iatSpacing,
     size: size(w = width, h = height),
-    offset: offset(x = ictx.currentLine.size.w, y = 0)
+    offset: offset(x = ictx.currentLine.size.w, y = height)
   )
   let iastate = InlineAtomState(baseline: height)
   if not hang:
@@ -527,7 +505,7 @@ proc initLine(ictx: var InlineContext) =
 proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     force = false) =
   if ictx.currentLine.atoms.len != 0 or force:
-    let whitespace = state.computed{"white-space"}
+    let whitespace = state.fragment.computed{"white-space"}
     if whitespace == WhitespacePre:
       ictx.flushWhitespace(state)
     elif whitespace == WhitespacePreWrap:
@@ -667,7 +645,7 @@ func shouldWrap2(ictx: InlineContext; w: LayoutUnit): bool =
 
 # Start a new line, even if the previous one is empty
 proc flushLine(ictx: var InlineContext; state: var InlineState) =
-  ictx.applyLineHeight(ictx.currentLine, state.computed)
+  ictx.applyLineHeight(ictx.currentLine, state.fragment.computed)
   ictx.finishLine(state, wrap = false, force = true)
 
 # Add an inline atom atom, with state iastate.
@@ -679,7 +657,7 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
   ictx.currentLine.charwidth += ictx.whitespacenum
   ictx.whitespacenum = 0
   # Line wrapping
-  if ictx.shouldWrap(atom.size.w + shift, state.computed):
+  if ictx.shouldWrap(atom.size.w + shift, state.fragment.computed):
     ictx.finishLine(state, wrap = true, force = false)
     result = true
     # Recompute on newline
@@ -687,7 +665,7 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     # For floats: flush lines until we can place the atom.
     #TODO this is inefficient
     while ictx.shouldWrap2(atom.size.w + shift):
-      ictx.applyLineHeight(ictx.currentLine, state.computed)
+      ictx.applyLineHeight(ictx.currentLine, state.fragment.computed)
       ictx.currentLine.lineHeight = max(ictx.currentLine.lineHeight,
         ictx.cellHeight)
       ictx.finishLine(state, wrap = false, force = true)
@@ -697,12 +675,25 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     if shift > 0:
       ictx.addSpacing(shift, ictx.cellHeight, state)
     ictx.root.state.xminwidth = max(ictx.root.state.xminwidth, atom.xminwidth)
-    ictx.applyLineHeight(ictx.currentLine, state.computed)
+    ictx.applyLineHeight(ictx.currentLine, state.fragment.computed)
     if atom.t != iatWord:
       ictx.currentLine.charwidth = 0
     ictx.currentLine.putAtom(atom, iastate, state.fragment)
     atom.offset.x += ictx.currentLine.size.w
     ictx.currentLine.size.w += atom.size.w
+    let baseline = case iastate.vertalign.keyword
+    of VerticalAlignBaseline:
+      let len = iastate.vertalign.length.px(ictx.lctx, state.lineHeight)
+      iastate.baseline + len
+    of VerticalAlignTop, VerticalAlignBottom:
+      atom.size.h
+    of VerticalAlignMiddle:
+      atom.size.h div 2
+    else:
+      iastate.baseline
+    # store for later use in resizeLine/shiftAtoms
+    atom.offset.y = baseline
+    ictx.currentLine.baseline = max(ictx.currentLine.baseline, baseline)
 
 proc addWord(ictx: var InlineContext; state: var InlineState): bool =
   result = false
@@ -728,7 +719,7 @@ proc addWordEOL(ictx: var InlineContext; state: var InlineState): bool =
       result = ictx.addWord(state)
 
 proc checkWrap(ictx: var InlineContext; state: var InlineState; r: Rune) =
-  if state.computed.nowrap:
+  if state.fragment.computed.nowrap:
     return
   let shift = ictx.computeShift(state)
   let rw = r.width()
@@ -739,7 +730,7 @@ proc checkWrap(ictx: var InlineContext; state: var InlineState; r: Rune) =
     # remove wrap opportunity, so we wrap properly on the last CJK char (instead
     # of any dash inside CJK sentences)
     ictx.wrappos = -1
-  case state.computed{"word-break"}
+  case state.fragment.computed{"word-break"}
   of WordBreakNormal:
     if rw == 2 or ictx.wrappos != -1: # break on cjk and wrap opportunities
       let plusWidth = ictx.word.size.w + shift + rw * ictx.cellWidth
@@ -762,7 +753,7 @@ proc checkWrap(ictx: var InlineContext; state: var InlineState; r: Rune) =
 proc processWhitespace(ictx: var InlineContext; state: var InlineState;
     c: char) =
   discard ictx.addWord(state)
-  case state.computed{"white-space"}
+  case state.fragment.computed{"white-space"}
   of WhitespaceNormal, WhitespaceNowrap:
     if ictx.whitespacenum < 1:
       ictx.whitespacenum = 1
@@ -863,7 +854,7 @@ iterator transform(text: seq[string]; v: CSSTextTransform): string {.inline.} =
 
 proc layoutText(ictx: var InlineContext; state: var InlineState;
     text: seq[string]) =
-  for str in text.transform(state.computed{"text-transform"}):
+  for str in text.transform(state.fragment.computed{"text-transform"}):
     ictx.flushWhitespace(state)
     ictx.newWord(state)
     ictx.layoutTextLoop(state, str)
@@ -1445,6 +1436,13 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   discard ictx.addAtom(state, iastate, iblock)
   ictx.whitespacenum = 0
 
+func calcLineHeight(computed: CSSComputedValues; lctx: LayoutContext):
+    LayoutUnit =
+  if computed{"line-height"}.auto: # ergo normal
+    return lctx.cellHeight.toLayoutUnit()
+  # Percentage: refers to the font size of the element itself.
+  return computed{"line-height"}.px(lctx, lctx.cellHeight)
+
 proc layoutChildren(ictx: var InlineContext; state: var InlineState;
     children: seq[InlineFragment]) =
   for child in children:
@@ -1454,9 +1452,8 @@ proc layoutChildren(ictx: var InlineContext; state: var InlineState;
     of DisplayInlineBlock, DisplayInlineTableWrapper, DisplayInlineFlex:
       child.state = InlineFragmentState()
       var state = InlineState(
-        computed: child.computed,
-        node: child.node,
-        fragment: child
+        fragment: child,
+        lineHeight: child.computed.calcLineHeight(ictx.lctx)
       )
       let space = availableSpace(w = fitContent(ictx.space.w), h = ictx.space.h)
       ictx.addInlineBlock(state, child.box, space)
@@ -1469,31 +1466,30 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   if stSplitStart in fragment.splitType:
     let marginLeft = fragment.computed{"margin-left"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += marginLeft
+  let computed = fragment.computed
   var state = InlineState(
-    #TODO do I really have to copy these two?
-    computed: fragment.computed,
-    node: fragment.node,
     fragment: fragment,
     firstLine: true,
     startOffsetTop: offset(
       x = ictx.currentLine.widthAfterWhitespace,
       y = ictx.currentLine.offsety
-    )
+    ),
+    lineHeight: computed.calcLineHeight(lctx)
   )
   if fragment.newline:
     ictx.flushLine(state)
   if stSplitStart in fragment.splitType:
-    let paddingLeft = fragment.computed{"padding-left"}.px(lctx, ictx.space.w)
+    let paddingLeft = computed{"padding-left"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += paddingLeft
   assert fragment.children.len == 0 or fragment.text.len == 0
-  ictx.applyLineHeight(ictx.currentLine, state.computed)
+  ictx.applyLineHeight(ictx.currentLine, computed)
   if ictx.firstTextFragment == nil:
     ictx.firstTextFragment = fragment
   ictx.lastTextFragment = fragment
   if fragment.bmp != nil:
     let h = int(fragment.bmp.height).toLayoutUnit().ceilTo(ictx.cellHeight)
     let iastate = InlineAtomState(
-      vertalign: state.computed{"vertical-align"},
+      vertalign: computed{"vertical-align"},
       baseline: h
     )
     let atom = InlineAtom(
@@ -1507,9 +1503,9 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
     ictx.layoutChildren(state, fragment.children)
   assert fragment.children.len == 0 or fragment.state.atoms.len == 0
   if stSplitEnd in fragment.splitType:
-    let paddingRight = fragment.computed{"padding-right"}.px(lctx, ictx.space.w)
+    let paddingRight = computed{"padding-right"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += paddingRight
-    let marginRight = fragment.computed{"margin-right"}.px(lctx, ictx.space.w)
+    let marginRight = computed{"margin-right"}.px(lctx, ictx.space.w)
     ictx.currentLine.size.w += marginRight
   if state.firstLine:
     fragment.state.startOffset = offset(
@@ -1528,7 +1524,11 @@ proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
   if ictx.firstTextFragment != nil:
     root.fragment.state.startOffset = ictx.firstTextFragment.state.startOffset
   if ictx.lastTextFragment != nil:
-    var state = InlineState(computed: computed, fragment: ictx.lastTextFragment)
+    let fragment = ictx.lastTextFragment
+    var state = InlineState(
+      fragment: fragment,
+      lineHeight: fragment.computed.calcLineHeight(ictx.lctx)
+    )
     ictx.finishLine(state, wrap = false)
   ictx.horizontalAlignLines(computed{"text-align"})
   ictx.addBackgroundAreas(root.fragment)
