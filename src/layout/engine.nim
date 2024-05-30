@@ -940,6 +940,9 @@ proc resolveBlockWidth(sizes: var ResolvedSizes;
     sizes.maxWidth = maxWidth
     if sizes.space.w.t in {scStretch, scFitContent} and
         maxWidth < sizes.space.w.u or sizes.space.w.t == scMaxContent:
+      # Warning: the following line seems to make no sense, but *is* needed.
+      #TODO figure out why.
+      sizes.space.w = stretch(maxWidth)
       if sizes.space.w.t == scStretch:
         # available width would stretch over max-width
         sizes.space.w = stretch(maxWidth)
