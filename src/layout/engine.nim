@@ -1230,7 +1230,8 @@ func canFlushMargins(box: BlockBox; sizes: ResolvedSizes): bool =
   if box.computed{"position"} == PositionAbsolute:
     return false
   return sizes.padding.top != 0 or sizes.padding.bottom != 0 or
-    box.inline != nil or box.computed{"display"} notin DisplayBlockLike
+    box.inline != nil or box.computed{"display"} notin DisplayBlockLike or
+    box.computed{"clear"} != ClearNone
 
 proc flushMargins(bctx: var BlockContext; box: BlockBox) =
   # Apply uncommitted margins.
@@ -2321,6 +2322,8 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
     bctx.flushMargins(child)
     bctx.positionFloats()
     bctx.marginTodo.append(child.state.margin.bottom)
+    if child.computed{"clear"} != ClearNone:
+      state.offset.clearFloats(bctx, child.computed{"clear"})
     if bctx.exclusions.len > 0:
       # Consulting the standard for an important edge case... (abridged)
       #
