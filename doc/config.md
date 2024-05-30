@@ -879,9 +879,14 @@ company or their product in any way.)</td>
 
 <tr>
 <td>`cmd.pager.discardBuffer`</td>
-<td>Discard the current buffer, and move back to its previous sibling buffer,
-or if that doesn't exist, to its parent. If the current buffer is a root buffer
-(i.e. it has no parent), move to the next sibling buffer instead.</td>
+<td>Discard the current buffer, and move back to the previous/next buffer
+depending on what the previously viewed buffer was.</td>
+</tr>
+
+<tr>
+<td>`cmd.pager.discardBufferPrev`, `cmd.pager.discardBufferNext`</td>
+<td>Discard the current buffer, and move back to the previous/next buffer, or
+open the link under the cursor.</td>
 </tr>
 
 <tr>

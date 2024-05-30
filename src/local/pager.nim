@@ -99,6 +99,15 @@ type
     url: URL
     username: string
 
+  NavDirection = enum
+    ndPrev = "prev"
+    ndNext = "next"
+    ndPrevSibling = "prev-sibling"
+    ndNextSibling = "next-sibling"
+    ndParent = "parent"
+    ndFirstChild
+    ndAny = "any"
+
   Pager* = ref object
     alertState: PagerAlertState
     alerts*: seq[string]
@@ -124,6 +133,8 @@ type
     linehist: array[LineMode, LineHistory]
     linemode: LineMode
     loader*: FileLoader
+    luctx: LUContext
+    navDirection {.jsget.}: NavDirection
     notnum*: bool # has a non-numeric character been input already?
     numload*: int # number of pages currently being loaded
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
@@ -136,7 +147,6 @@ type
     statusgrid*: FixedGrid
     term*: Terminal
     unreg*: seq[Container]
-    luctx: LUContext
 
 jsDestructor(Pager)
 
@@ -607,49 +617,118 @@ proc dupeBuffer(pager: Pager; container: Container; url: URL) =
 proc dupeBuffer(pager: Pager) {.jsfunc.} =
   pager.dupeBuffer(pager.container, pager.container.url)
 
-# The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
-# commands by traversing the container tree in a depth-first order.
-proc prevBuffer*(pager: Pager): bool {.jsfunc.} =
-  if pager.container == nil:
-    return false
-  if pager.container.parent == nil:
-    return false
-  let n = pager.container.parent.children.find(pager.container)
+func findPrev(container: Container): Container =
+  if container.parent == nil:
+    return nil
+  let n = container.parent.children.find(container)
   assert n != -1, "Container not a child of its parent"
-  if n > 0:
-    var container = pager.container.parent.children[n - 1]
-    while container.children.len > 0:
-      container = container.children[^1]
-    pager.setContainer(container)
-  else:
-    pager.setContainer(pager.container.parent)
-  return true
+  if n == 0:
+    return container.parent
+  var container = container.parent.children[n - 1]
+  while container.children.len > 0:
+    container = container.children[^1]
+  return container
 
-proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
-  if pager.container == nil:
-    return false
-  if pager.container.children.len > 0:
-    pager.setContainer(pager.container.children[0])
-    return true
-  var container = pager.container
+func findNext(container: Container): Container =
+  if container.children.len > 0:
+    return container.children[0]
+  var container = container
   while container.parent != nil:
     let n = container.parent.children.find(container)
     assert n != -1, "Container not a child of its parent"
     if n < container.parent.children.high:
-      pager.setContainer(container.parent.children[n + 1])
-      return true
+      return container.parent.children[n + 1]
     container = container.parent
-  return false
+  return nil
 
-proc parentBuffer(pager: Pager): bool {.jsfunc.} =
+func findPrevSibling(container: Container): Container =
+  if container.parent == nil:
+    return nil
+  var n = container.parent.children.find(container)
+  assert n != -1, "Container not a child of its parent"
+  if n == 0:
+    n = container.parent.children.len
+  return container.parent.children[n - 1]
+
+func findNextSibling(container: Container): Container =
+  if container.parent == nil:
+    return nil
+  var n = container.parent.children.find(container)
+  assert n != -1, "Container not a child of its parent"
+  if n == container.parent.children.high:
+    n = -1
+  return container.parent.children[n + 1]
+
+func findParent(container: Container): Container =
+  return container.parent
+
+func findFirstChild(container: Container): Container =
+  if container.children.len == 0:
+    return nil
+  return container.children[0]
+
+func findAny(container: Container): Container =
+  let prev = container.findPrev()
+  if prev != nil:
+    return prev
+  return container.findNext()
+
+func opposite(dir: NavDirection): NavDirection =
+  const Map = [
+    ndPrev: ndNext,
+    ndNext: ndPrev,
+    ndPrevSibling: ndNextSibling,
+    ndNextSibling: ndPrevSibling,
+    ndParent: ndFirstChild,
+    ndFirstChild: ndParent,
+    ndAny: ndAny
+  ]
+  return Map[dir]
+
+func find(container: Container; dir: NavDirection): Container =
+  return case dir
+  of ndPrev: container.findPrev()
+  of ndNext: container.findNext()
+  of ndPrevSibling: container.findPrevSibling()
+  of ndNextSibling: container.findNextSibling()
+  of ndParent: container.findParent()
+  of ndFirstChild: container.findFirstChild()
+  of ndAny: container.findAny()
+
+# The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
+# commands by traversing the container tree in a depth-first order.
+proc prevBuffer*(pager: Pager): bool {.jsfunc.} =
+  pager.navDirection = ndPrev
   if pager.container == nil:
     return false
-  if pager.container.parent == nil:
+  let prev = pager.container.findPrev()
+  if prev == nil:
     return false
-  pager.setContainer(pager.container.parent)
+  pager.setContainer(prev)
+  return true
+
+proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
+  pager.navDirection = ndNext
+  if pager.container == nil:
+    return false
+  let next = pager.container.findNext()
+  if next == nil:
+    return false
+  pager.setContainer(next)
+  return true
+
+proc parentBuffer(pager: Pager): bool {.jsfunc.} =
+  pager.navDirection = ndParent
+  if pager.container == nil:
+    return false
+  let parent = pager.container.findParent()
+  if parent == nil:
+    return false
+  pager.setContainer(parent)
   return true
 
 proc prevSiblingBuffer(pager: Pager): bool {.jsfunc.} =
+  pager.navDirection = ndPrevSibling
   if pager.container == nil:
     return false
   if pager.container.parent == nil:
@@ -662,6 +741,7 @@ proc prevSiblingBuffer(pager: Pager): bool {.jsfunc.} =
   return true
 
 proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
+  pager.navDirection = ndNextSibling
   if pager.container == nil:
     return false
   if pager.container.parent == nil:
@@ -699,13 +779,12 @@ proc replace*(pager: Pager; target, container: Container) =
   if pager.container == target:
     pager.setContainer(container)
 
-proc deleteContainer(pager: Pager; container: Container) =
+proc deleteContainer(pager: Pager; container, setTarget: Container) =
   if container.loadState == lsLoading:
     container.cancel()
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
     container.sourcepair = nil
-  var setTarget: Container = nil
   if container.parent != nil:
     let parent = container.parent
     let n = parent.children.find(container)
@@ -715,20 +794,12 @@ proc deleteContainer(pager: Pager; container: Container) =
       child.parent = container.parent
       parent.children.insert(child, n + 1)
     parent.children.delete(n)
-    if n == 0:
-      setTarget = parent
-    else:
-      setTarget = parent.children[n - 1]
   elif container.children.len > 0:
     let parent = container.children[0]
     parent.parent = nil
     for i in 1..container.children.high:
       container.children[i].parent = parent
       parent.children.add(container.children[i])
-    setTarget = parent
-  else:
-    for child in container.children:
-      child.parent = nil
   container.parent = nil
   container.children.setLen(0)
   if container.replace != nil:
@@ -741,18 +812,23 @@ proc deleteContainer(pager: Pager; container: Container) =
     pager.forkserver.removeChild(container.process)
     pager.loader.removeClient(container.process)
 
-proc discardBuffer*(pager: Pager; container = none(Container)) {.jsfunc.} =
-  let c = container.get(pager.container)
-  if c == nil or c.parent == nil and c.children.len == 0:
-    pager.alert("Cannot discard last buffer!")
+proc discardBuffer*(pager: Pager; container = none(Container);
+    dir = none(NavDirection)) {.jsfunc.} =
+  if dir.isSome:
+    pager.navDirection = dir.get.opposite()
+  let container = container.get(pager.container)
+  let dir = pager.navDirection.opposite()
+  let setTarget = container.find(dir)
+  if container == nil or setTarget == nil:
+    pager.alert("No buffer in direction: " & $dir)
   else:
-    pager.deleteContainer(c)
+    pager.deleteContainer(container, setTarget)
 
 proc discardTree(pager: Pager; container = none(Container)) {.jsfunc.} =
   let container = container.get(pager.container)
   if container != nil:
     for c in container.descendants:
-      pager.deleteContainer(c)
+      pager.deleteContainer(container, nil)
   else:
     pager.alert("Buffer has no children!")
 
@@ -956,6 +1032,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     contentType = none(string); cs = CHARSET_UNKNOWN; replace: Container = nil;
     redirectDepth = 0; referrer: Container = nil; save = false;
     url: URL = nil) =
+  pager.navDirection = ndNext
   if referrer != nil and referrer.config.referer_from:
     request.referrer = referrer.url
   let url = if url != nil: url else: request.url
@@ -1579,7 +1656,7 @@ proc redirectTo(pager: Pager; container: Container; request: Request) =
 
 proc fail(pager: Pager; container: Container; errorMessage: string) =
   dec pager.numload
-  pager.deleteContainer(container)
+  pager.deleteContainer(container, container.find(ndAny))
   if container.retry.len > 0:
     pager.gotoURL(newRequest(container.retry.pop()),
       contentType = container.contentType)
@@ -1588,6 +1665,8 @@ proc fail(pager: Pager; container: Container; errorMessage: string) =
 
 proc redirect(pager: Pager; container: Container; response: Response;
     request: Request) =
+  # if redirection fails, then we need some other container to move to...
+  let failTarget = container.find(ndAny)
   # still need to apply response, or we lose cookie jars.
   container.applyResponse(response, pager.config.external.mime_types)
   if container.redirectDepth < pager.config.network.max_redirect:
@@ -1604,7 +1683,7 @@ proc redirect(pager: Pager; container: Container; response: Response;
       )
   else:
     pager.alert("Error: maximum redirection depth reached")
-    pager.deleteContainer(container)
+    pager.deleteContainer(container, failTarget)
 
 proc askDownloadPath(pager: Pager; container: Container; response: Response) =
   var buf = pager.config.external.download_dir
@@ -1618,7 +1697,7 @@ proc askDownloadPath(pager: Pager; container: Container; response: Response) =
     outputId: response.outputId,
     stream: response.body
   )
-  pager.deleteContainer(container)
+  pager.deleteContainer(container, container.find(ndAny))
   pager.redraw = true
   pager.refreshStatusMsg()
   dec pager.numload
@@ -1681,11 +1760,11 @@ proc connected(pager: Pager; container: Container; response: Response) =
       istreamOutputId: response.outputId
     ))
     if container.replace != nil:
-      pager.deleteContainer(container.replace)
+      pager.deleteContainer(container.replace, container.find(ndAny))
       container.replace = nil
   else:
     dec pager.numload
-    pager.deleteContainer(container)
+    pager.deleteContainer(container, container.find(ndAny))
     pager.redraw = true
     pager.refreshStatusMsg()
 
@@ -1816,7 +1895,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
     else:
       let item = pager.connectingContainers[i]
       dec pager.numload
-      pager.deleteContainer(container)
+      pager.deleteContainer(container, container.find(ndAny))
       pager.connectingContainers.del(i)
       pager.selector.unregister(item.stream.fd)
       pager.loader.unregistered.add(item.stream.fd)

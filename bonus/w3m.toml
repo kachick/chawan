@@ -103,7 +103,7 @@ U = 'cmd.pager.load'
 V = 'cmd.pager.load' #TODO file only
 #TODO exec shell
 # Buffer operations
-B = 'cmd.pager.discardBuffer'
+B = 'cmd.pager.discardBufferPrev'
 v = 'cmd.pager.toggleSource'
 #TODO edit
 C-l = 'cmd.buffer.redraw'

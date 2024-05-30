@@ -122,10 +122,10 @@ Use this for loading automatically retrieved (i.e. non-user-provided) URLs.</td>
 </tr>
 
 <tr>
-<td>`discardBuffer()`</td>
-<td>Discard the current buffer, and move back to its previous sibling buffer,
-or if that doesn't exist, to its parent. If the current buffer is a root buffer
-(i.e. it has no parent), move to the next sibling buffer instead.</td>
+<td>`discardBuffer(buffer = pager.buffer, dir = pager.navDirection)`</td>
+<td>Discard `buffer`, then move back to the buffer opposite to `dir`.
+Possible values of `dir` are: "prev", "next", "prev-sibling", "next-sibling",
+"parent", "first-child", "any".</td>
 </tr>
 
 <tr>
