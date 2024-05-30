@@ -1136,7 +1136,7 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
 # availableSize.isDefinite() ? availableSize.u : 0, but for some reason it
 # differs for the root height (TODO: and all heights in quirks mode) in that
 # it uses the lctx height. Therefore we pass percHeight as a separate
-# parameter. (TODO surely there is a better solution to this?)
+# parameter.
 proc resolveSizes(lctx: LayoutContext; space: AvailableSpace;
     percHeight: Option[LayoutUnit]; computed: CSSComputedValues):
     ResolvedSizes =
@@ -1161,12 +1161,15 @@ proc append(a: var Strut; b: LayoutUnit) =
 func sum(a: Strut): LayoutUnit =
   return a.pos + a.neg
 
+# forward declarations
 proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
   space: AvailableSpace; computed: CSSComputedValues; offset, bfcOffset: Offset)
 proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutTableWrapper(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutInline(ictx: var InlineContext; fragment: InlineFragment)
+proc layoutRootBlock(lctx: LayoutContext; box: BlockBox;
+    space: AvailableSpace; offset: Offset; marginBottomOut: var LayoutUnit)
 
 # Note: padding must still be applied after this.
 proc applySize(box: BlockBox; sizes: ResolvedSizes;
@@ -1560,6 +1563,9 @@ proc positionRelative(parent, box: BlockBox) =
   elif not box.computed{"bottom"}.auto:
     box.state.offset.y += parent.state.size.h - box.state.positioned.bottom -
       box.state.size.h
+
+func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
+  return box.state.margin.dimSum(dim) + box.state.size[dim]
 
 # Note: caption is not included here
 const RowGroupBox = {
@@ -1974,26 +1980,21 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
   table.state.size.h = applySizeConstraint(y, sizes.space.h)
 
 proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
-  let percHeight = tctx.space.h.toPercSize()
   let space = availableSpace(w = stretch(parent.state.size.w), h = maxContent())
-  let sizes = tctx.lctx.resolveSizes(space, percHeight, box.computed)
-  box.state = BlockBoxLayoutState(
-    margin: sizes.margin,
-    positioned: sizes.positioned
-  )
-  var bctx = BlockContext(lctx: tctx.lctx)
-  bctx.layoutFlow(box, sizes)
-  assert bctx.unpositionedFloats.len == 0
-  let outerHeight = box.state.offset.y + box.state.size.h +
-    bctx.marginTodo.sum()
-  parent.state.size.h += outerHeight
-  parent.state.size.w = max(parent.state.size.w, box.state.size.w)
+  var marginBottomOut: LayoutUnit
+  tctx.lctx.layoutRootBlock(box, space, offset(x = 0, y = 0), marginBottomOut)
+  box.state.offset.x += box.state.margin.left
+  box.state.offset.y += box.state.margin.top
+  let outerHeight = box.outerSize(dtVertical) + marginBottomOut
+  let outerWidth = box.outerSize(dtHorizontal)
+  let table = parent.nested[0]
   case box.computed{"caption-side"}
   of CaptionSideTop, CaptionSideBlockStart:
-    let table = parent.nested[0]
     table.state.offset.y += outerHeight
   of CaptionSideBottom, CaptionSideBlockEnd:
-    box.state.offset.y += outerHeight
+    box.state.offset.y += table.state.size.h
+  parent.state.size.h += outerHeight
+  parent.state.size.w = max(parent.state.size.w, outerWidth)
 
 # Table layout. We try to emulate w3m's behavior here:
 # 1. Calculate minimum and preferred width of each column
@@ -2091,9 +2092,6 @@ type
     pending: seq[FlexPendingItem]
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
-
-func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
-  return box.state.margin.dimSum(dim) + box.state.size[dim]
 
 proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox) =
   for dim in DimensionType:
