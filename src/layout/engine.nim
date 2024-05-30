@@ -859,7 +859,7 @@ func spx(l: CSSLength; lctx: LayoutContext; p: SizeConstraint;
 proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
     containingWidth: SizeConstraint; computed: CSSComputedValues;
     isauto = false) =
-  if not sizes.space.w.isDefinite():
+  if not sizes.space.w.isDefinite() or not containingWidth.isDefinite():
     # width is indefinite, so no conflicts can be resolved here.
     return
   let total = widthpx + sizes.margin.dimSum(dtHorizontal) +
@@ -940,9 +940,6 @@ proc resolveBlockWidth(sizes: var ResolvedSizes;
     sizes.maxWidth = maxWidth
     if sizes.space.w.t in {scStretch, scFitContent} and
         maxWidth < sizes.space.w.u or sizes.space.w.t == scMaxContent:
-      # Warning: the following line seems to make no sense, but *is* needed.
-      #TODO figure out why.
-      sizes.space.w = stretch(maxWidth)
       if sizes.space.w.t == scStretch:
         # available width would stretch over max-width
         sizes.space.w = stretch(maxWidth)
