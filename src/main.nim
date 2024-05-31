@@ -1,8 +1,9 @@
 import version
 
 # Note: we can't just import std/os or the compiler cries. (No idea why.)
-from std/os import getEnv, putEnv, commandLineParams, getCurrentDir, createDir
+from std/os import getEnv, putEnv, commandLineParams, getCurrentDir
 import std/options
+import std/posix
 
 import server/forkserver
 import config/chapath
@@ -208,8 +209,8 @@ proc main() =
       help(1)
   # make sure tmpdir & sockdir both exist; if we do this later, then
   # forkserver may try to open an empty dir
-  createDir(config.external.tmpdir)
-  createDir(config.external.sockdir)
+  discard mkdir(cstring(config.external.tmpdir), 0o700)
+  discard mkdir(cstring(config.external.sockdir), 0o700)
   forkserver.loadForkServerConfig(config)
   let client = newClient(config, forkserver, jsctx, warnings)
   try:
