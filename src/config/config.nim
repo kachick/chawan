@@ -682,7 +682,14 @@ proc parseConfig(config: Config; dir: string; t: TomlValue): ParseConfigResult =
       var includes = config.`include`
       config.`include`.setLen(0)
       for s in includes:
-        let res = config.parseConfig(dir, openFileExpand(dir, s))
+        let fs = openFileExpand(dir, s)
+        if fs == nil:
+          return ParseConfigResult(
+            success: false,
+            warnings: ctx.warnings,
+            errorMsg: "include file not found: " & s
+          )
+        let res = config.parseConfig(dir, fs)
         if not res.success:
           return res
         myRes.warnings.add(res.warnings)
@@ -713,12 +720,13 @@ proc parseConfig*(config: Config; dir, s: string; name = "<input>";
 const defaultConfig = staticRead"res/config.toml"
 
 proc readConfig(config: Config; dir, name: string): ParseConfigResult =
-  let fs = if name.len > 0 and name[0] == '/':
-    newFileStream(name)
+  let path = if name.len > 0 and name[0] == '/':
+    name
   else:
-    newFileStream(dir / name)
+    dir / name
+  let fs = newFileStream(path)
   if fs != nil:
-    return config.parseConfig(dir, fs)
+    return config.parseConfig(parentDir(path), fs)
   return ParseConfigResult(success: true)
 
 proc loadConfig*(config: Config; s: string) {.jsfunc.} =

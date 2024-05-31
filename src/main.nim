@@ -180,7 +180,7 @@ proc main() =
   var warnings = newSeq[string]()
   let (config, res) = readConfig(ctx.configPath, jsctx)
   if not res.success:
-    stderr.write(res.errorMsg)
+    stderr.writeLine(res.errorMsg)
     quit(1)
   warnings.add(res.warnings)
   for opt in ctx.opts:
