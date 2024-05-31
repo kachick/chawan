@@ -56,8 +56,8 @@ func minHeight(sizes: ResolvedSizes): LayoutUnit =
 func maxHeight(sizes: ResolvedSizes): LayoutUnit =
   return sizes.minMaxSizes[dtVertical].send
 
-func dimSum(rect: RelativeRect; dim: DimensionType): LayoutUnit =
-  return rect[dim].start + rect[dim].send
+func sum(span: Span): LayoutUnit =
+  return span.start + span.send
 
 func opposite(dim: DimensionType): DimensionType =
   case dim
@@ -145,7 +145,7 @@ func applySizeConstraint(u: LayoutUnit; availableSize: SizeConstraint):
     return min(u, availableSize.u)
 
 func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
-  return box.state.margin.dimSum(dim) + box.state.size[dim]
+  return box.state.margin[dim].sum() + box.state.size[dim]
 
 type
   BlockContext = object
@@ -864,8 +864,8 @@ proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
   if not sizes.space.w.isDefinite() or not parentWidth.isDefinite():
     # width is indefinite, so no conflicts can be resolved here.
     return
-  let total = widthpx + sizes.margin.dimSum(dtHorizontal) +
-    sizes.padding.dimSum(dtHorizontal)
+  let total = widthpx + sizes.margin[dtHorizontal].sum() +
+    sizes.padding[dtHorizontal].sum()
   let underflow = parentWidth.u - total
   if isauto or sizes.space.w.t == scFitContent:
     if underflow >= 0:
@@ -1004,8 +1004,8 @@ proc resolveAbsoluteSize(sizes: var ResolvedSizes; space: AvailableSpace;
   # Note: cvalLeft, cvalRight are top/bottom when called with vertical dim
   if cvalSize.auto:
     if space[dim].isDefinite:
-      let u = max(space[dim].u - sizes.positioned.dimSum(dim) -
-        sizes.margin.dimSum(dim) - sizes.padding.dimSum(dim), 0)
+      let u = max(space[dim].u - sizes.positioned[dim].sum() -
+        sizes.margin[dim].sum() - sizes.padding[dim].sum(), 0)
       if not cvalLeft.auto and not cvalRight.auto:
         # width is auto and left & right are not auto.
         # Solve for width.
@@ -1016,7 +1016,7 @@ proc resolveAbsoluteSize(sizes: var ResolvedSizes; space: AvailableSpace;
     else:
       sizes.space[dim] = space[dim]
   else:
-    let padding = sizes.padding.dimSum(dim)
+    let padding = sizes.padding[dim].sum()
     let sizepx = cvalSize.spx(lctx, space[dim], computed, padding)
     # We could solve for left/right here, as available width is known.
     # Nevertheless, it is only needed for positioning, so we do not solve
@@ -1026,8 +1026,8 @@ proc resolveAbsoluteSize(sizes: var ResolvedSizes; space: AvailableSpace;
 proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     computed: CSSComputedValues): ResolvedSizes =
   let padding = resolvePadding(space.w, lctx, computed)
-  let inlinePadding = padding.dimSum(dtHorizontal)
-  let blockPadding = padding.dimSum(dtVertical)
+  let inlinePadding = padding[dtHorizontal].sum()
+  let blockPadding = padding[dtVertical].sum()
   var sizes = ResolvedSizes(
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
@@ -1077,8 +1077,8 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
     preserveHeight: bool; computed: CSSComputedValues):
     ResolvedSizes =
   let padding = resolvePadding(space.w, lctx, computed)
-  let inlinePadding = padding.dimSum(dtHorizontal)
-  let blockPadding = padding.dimSum(dtVertical)
+  let inlinePadding = padding[dtHorizontal].sum()
+  let blockPadding = padding[dtVertical].sum()
   var sizes = ResolvedSizes(
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
@@ -1157,8 +1157,8 @@ proc applyHeight(box: BlockBox; sizes: ResolvedSizes;
   box.applySize(sizes, maxChildHeight, sizes.space, dtVertical)
 
 proc applyPadding(box: BlockBox; padding: RelativeRect) =
-  box.state.size.w += padding.dimSum(dtHorizontal)
-  box.state.size.h += padding.dimSum(dtVertical)
+  box.state.size.w += padding[dtHorizontal].sum()
+  box.state.size.h += padding[dtVertical].sum()
 
 func bfcOffset(bctx: BlockContext): Offset =
   if bctx.parentBps != nil:
@@ -1173,8 +1173,7 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   bctx.layoutRootInline(box.inline, sizes.space, box.computed, offset,
     bfcOffset)
   box.state.xminwidth = max(box.state.xminwidth, box.inline.state.xminwidth)
-  box.state.size.w = box.inline.state.size.w +
-    sizes.padding.dimSum(dtHorizontal)
+  box.state.size.w = box.inline.state.size.w + sizes.padding[dtHorizontal].sum()
   box.applyWidth(sizes, box.inline.state.size.w)
   box.applyHeight(sizes, box.inline.state.size.h)
   box.applyPadding(sizes.padding)
@@ -1290,8 +1289,8 @@ proc positionFloat(bctx: var BlockContext; child: BlockBox;
   if clear != ClearNone:
     child.state.offset.clearFloats(bctx, clear)
   let size = size(
-    w = child.state.margin.dimSum(dtHorizontal) + child.state.size.w,
-    h = child.state.margin.dimSum(dtVertical) + child.state.size.h
+    w = child.outerSize(dtHorizontal),
+    h = child.outerSize(dtVertical)
   )
   let childBfcOffset = offset(
     x = bfcOffset.x + child.state.offset.x - child.state.margin.left,
@@ -1929,7 +1928,7 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
     tctx.layoutTableRow(roww, table, row)
     row.state.offset.y += y
     row.state.offset.x += sizes.padding.left
-    row.state.size.w += sizes.padding.dimSum(dtHorizontal)
+    row.state.size.w += sizes.padding[dtHorizontal].sum()
     y += tctx.blockSpacing
     y += row.state.size.h
     table.state.size.w = max(row.state.size.w, table.state.size.w)
@@ -2097,7 +2096,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
             diff += u - maxu
             it.weights[wt] = 0
           u = maxu
-        it.sizes.space[dim] = stretch(u - it.sizes.padding.dimSum(dim))
+        it.sizes.space[dim] = stretch(u - it.sizes.padding[dim].sum())
         totalWeight += it.weights[wt]
         #TODO we should call this only on freeze, and then put another loop to
         # the end for non-freezed items
@@ -2109,14 +2108,14 @@ proc flushMain(mctx: var FlexMainContext; box: BlockBox; sizes: ResolvedSizes;
   let odim = dim.opposite
   let lctx = mctx.lctx
   mctx.redistributeMainSize(sizes, dim)
-  let h = mctx.maxSize[odim] + mctx.maxMargin.dimSum(odim)
+  let h = mctx.maxSize[odim] + mctx.maxMargin[odim].sum()
   var offset = mctx.offset
   for it in mctx.pending.mitems:
     if it.child.state.size[odim] < h and not it.sizes.space[odim].isDefinite:
       # if the max height is greater than our height, then take max height
       # instead. (if the box's available height is definite, then this will
       # change nothing, so we skip it as an optimization.)
-      it.sizes.space[odim] = stretch(h - it.sizes.margin.dimSum(odim))
+      it.sizes.space[odim] = stretch(h - it.sizes.margin[odim].sum())
       lctx.layoutFlexChild(it.child, it.sizes)
     it.child.state.offset[dim] += offset[dim]
     # margins are added here, since they belong to the flex item.
