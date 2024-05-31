@@ -44,17 +44,17 @@ type
 
 const DefaultSpan = Span(start: 0, send: LayoutUnit.high)
 
-proc `minWidth=`(sizes: var ResolvedSizes; w: LayoutUnit) =
-  sizes.minMaxSizes[dtHorizontal].start = w
+func minWidth(sizes: ResolvedSizes): LayoutUnit =
+  return sizes.minMaxSizes[dtHorizontal].start
 
-proc `maxWidth=`(sizes: var ResolvedSizes; w: LayoutUnit) =
-  sizes.minMaxSizes[dtHorizontal].send = w
+func maxWidth(sizes: ResolvedSizes): LayoutUnit =
+  return sizes.minMaxSizes[dtHorizontal].send
 
-proc `minHeight=`(sizes: var ResolvedSizes; h: LayoutUnit) =
-  sizes.minMaxSizes[dtVertical].start = h
+func minHeight(sizes: ResolvedSizes): LayoutUnit =
+  return sizes.minMaxSizes[dtVertical].start
 
-proc `maxHeight=`(sizes: var ResolvedSizes; h: LayoutUnit) =
-  sizes.minMaxSizes[dtVertical].send = h
+func maxHeight(sizes: ResolvedSizes): LayoutUnit =
+  return sizes.minMaxSizes[dtVertical].send
 
 func dimSum(rect: RelativeRect; dim: DimensionType): LayoutUnit =
   return rect[dim].start + rect[dim].send
@@ -859,14 +859,14 @@ func spx(l: CSSLength; lctx: LayoutContext; p: SizeConstraint;
   return max(u, 0)
 
 proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
-    containingWidth: SizeConstraint; computed: CSSComputedValues;
+    parentWidth: SizeConstraint; computed: CSSComputedValues;
     isauto = false) =
-  if not sizes.space.w.isDefinite() or not containingWidth.isDefinite():
+  if not sizes.space.w.isDefinite() or not parentWidth.isDefinite():
     # width is indefinite, so no conflicts can be resolved here.
     return
   let total = widthpx + sizes.margin.dimSum(dtHorizontal) +
     sizes.padding.dimSum(dtHorizontal)
-  let underflow = containingWidth.u - total
+  let underflow = parentWidth.u - total
   if isauto or sizes.space.w.t == scFitContent:
     if underflow >= 0:
       sizes.space.w = SizeConstraint(t: sizes.space.w.t, u: underflow)
@@ -926,69 +926,77 @@ func resolvePositioned(space: AvailableSpace; lctx: LayoutContext;
     )
   ]
 
-proc resolveBlockWidth(sizes: var ResolvedSizes;
-    containingWidth: SizeConstraint; computed: CSSComputedValues;
+func resolveMinMaxSize(length: CSSLength; sc: SizeConstraint;
+    fallback, padding: LayoutUnit; computed: CSSComputedValues;
+    lctx: LayoutContext): LayoutUnit =
+  if length.canpx(sc):
+    return length.spx(lctx, sc, computed, padding)
+  return fallback
+
+func resolveMinMaxSizes(lctx: LayoutContext; space: AvailableSpace;
+    inlinePadding, blockPadding: LayoutUnit; computed: CSSComputedValues):
+    array[DimensionType, Span] =
+  return [
+    dtHorizontal: Span(
+      start: computed{"min-width"}.resolveMinMaxSize(space.w, 0, inlinePadding,
+        computed, lctx),
+      send: computed{"max-width"}.resolveMinMaxSize(space.w, LayoutUnit.high,
+        inlinePadding, computed, lctx)
+    ),
+    dtVertical: Span(
+      start: computed{"min-height"}.resolveMinMaxSize(space.h, 0, blockPadding,
+        computed, lctx),
+      send: computed{"max-height"}.resolveMinMaxSize(space.h, LayoutUnit.high,
+        blockPadding, computed, lctx)
+    )
+  ]
+
+proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
+    inlinePadding: LayoutUnit; computed: CSSComputedValues;
     lctx: LayoutContext) =
   let width = computed{"width"}
-  let padding = sizes.padding.dimSum(dtHorizontal)
   var widthpx: LayoutUnit = 0
-  if width.canpx(containingWidth):
-    widthpx = width.spx(lctx, containingWidth, computed, padding)
+  if width.canpx(parentWidth):
+    widthpx = width.spx(lctx, parentWidth, computed, inlinePadding)
     sizes.space.w = stretch(widthpx)
-  sizes.resolveContentWidth(widthpx, containingWidth, computed, width.auto)
-  if computed{"max-width"}.canpx(containingWidth):
-    let maxWidth = computed{"max-width"}.spx(lctx, containingWidth, computed,
-      padding)
-    sizes.maxWidth = maxWidth
-    if sizes.space.w.t in {scStretch, scFitContent} and
-        maxWidth < sizes.space.w.u or sizes.space.w.t == scMaxContent:
-      if sizes.space.w.t == scStretch:
-        # available width would stretch over max-width
-        sizes.space.w = stretch(maxWidth)
-      else: # scFitContent
-        # available width could be higher than max-width (but not necessarily)
-        sizes.space.w = fitContent(maxWidth)
-      sizes.resolveContentWidth(maxWidth, containingWidth, computed)
-  if computed{"min-width"}.canpx(containingWidth):
-    let minWidth = computed{"min-width"}.spx(lctx, containingWidth, computed,
-      padding)
-    sizes.minWidth = minWidth
-    if sizes.space.w.t in {scStretch, scFitContent} and
-        minWidth > sizes.space.w.u or sizes.space.w.t == scMinContent:
-      # two cases:
-      # * available width is stretched under min-width. in this case,
-      #   stretch to min-width instead.
-      # * available width is fit under min-width. in this case, stretch to
-      #   min-width as well (as we must satisfy min-width >= width).
-      sizes.space.w = stretch(minWidth)
-      sizes.resolveContentWidth(minWidth, containingWidth, computed)
+  sizes.resolveContentWidth(widthpx, parentWidth, computed, width.auto)
+  if sizes.space.w.isDefinite() and sizes.maxWidth < sizes.space.w.u or
+      sizes.maxWidth < LayoutUnit.high and sizes.space.w.t == scMaxContent:
+    if sizes.space.w.t == scStretch:
+      # available width would stretch over max-width
+      sizes.space.w = stretch(sizes.maxWidth)
+    else: # scFitContent
+      # available width could be higher than max-width (but not necessarily)
+      sizes.space.w = fitContent(sizes.maxWidth)
+    sizes.resolveContentWidth(sizes.maxWidth, parentWidth, computed)
+  if sizes.space.w.isDefinite() and sizes.minWidth > sizes.space.w.u or
+      sizes.minWidth > 0 and sizes.space.w.t == scMinContent:
+    # two cases:
+    # * available width is stretched under min-width. in this case,
+    #   stretch to min-width instead.
+    # * available width is fit under min-width. in this case, stretch to
+    #   min-width as well (as we must satisfy min-width >= width).
+    sizes.space.w = stretch(sizes.minWidth)
+    sizes.resolveContentWidth(sizes.minWidth, parentWidth, computed)
 
-proc resolveBlockHeight(sizes: var ResolvedSizes; percHeight: SizeConstraint;
-    computed: CSSComputedValues; lctx: LayoutContext) =
+proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
+    blockPadding: LayoutUnit; computed: CSSComputedValues;
+    lctx: LayoutContext) =
   let height = computed{"height"}
-  let padding = sizes.padding.top + sizes.padding.bottom
-  if height.canpx(percHeight):
-    let heightpx = height.spx(lctx, percHeight, computed, padding)
+  if height.canpx(parentHeight):
+    let heightpx = height.spx(lctx, parentHeight, computed, blockPadding)
     sizes.space.h = stretch(heightpx)
-  if computed{"max-height"}.canpx(percHeight):
-    let maxHeight = computed{"max-height"}.spx(lctx, percHeight, computed,
-      padding)
-    sizes.maxHeight = maxHeight
-    if sizes.space.h.t in {scStretch, scFitContent} and
-        maxHeight < sizes.space.h.u or sizes.space.h.t == scMaxContent:
-      # same reasoning as for width.
-      if sizes.space.h.t == scStretch:
-        sizes.space.h = stretch(maxHeight)
-      else: # scFitContent
-        sizes.space.h = fitContent(maxHeight)
-  if computed{"min-height"}.canpx(percHeight):
-    let minHeight = computed{"min-height"}.spx(lctx, percHeight, computed,
-      padding)
-    sizes.minHeight = minHeight
-    if sizes.space.h.t in {scStretch, scFitContent} and
-        minHeight > sizes.space.h.u or sizes.space.h.t == scMinContent:
-      # same reasoning as for width.
-      sizes.space.h = stretch(minHeight)
+  if sizes.space.h.isDefinite() and sizes.maxHeight < sizes.space.h.u or
+      sizes.maxHeight < LayoutUnit.high and sizes.space.h.t == scMaxContent:
+    # same reasoning as for width.
+    if sizes.space.h.t == scStretch:
+      sizes.space.h = stretch(sizes.maxHeight)
+    else: # scFitContent
+      sizes.space.h = fitContent(sizes.maxHeight)
+  if sizes.space.h.isDefinite() and sizes.minHeight > sizes.space.h.u or
+      sizes.minHeight > 0 and sizes.space.h.t == scMinContent:
+    # same reasoning as for width.
+    sizes.space.h = stretch(sizes.minHeight)
 
 proc resolveAbsoluteSize(sizes: var ResolvedSizes; space: AvailableSpace;
     dim: DimensionType; cvalSize, cvalLeft, cvalRight: CSSLength;
@@ -1016,23 +1024,35 @@ proc resolveAbsoluteSize(sizes: var ResolvedSizes; space: AvailableSpace;
     sizes.space[dim] = stretch(sizepx)
 
 proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
-    percHeight: SizeConstraint; computed: CSSComputedValues):
-    ResolvedSizes =
+    computed: CSSComputedValues): ResolvedSizes =
+  let padding = resolvePadding(space.w, lctx, computed)
+  let inlinePadding = padding.dimSum(dtHorizontal)
+  let blockPadding = padding.dimSum(dtVertical)
   var sizes = ResolvedSizes(
     margin: resolveMargins(space.w, lctx, computed),
-    padding: resolvePadding(space.w, lctx, computed),
+    padding: padding,
     # Take defined sizes if our width/height resolves to auto.
     # For block boxes, this is:
     # (width: stretch(parentWidth), height: max-content)
     space: space,
-    minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
+    minMaxSizes: lctx.resolveMinMaxSizes(space, inlinePadding, blockPadding,
+      computed)
   )
+  if computed{"display"} == DisplayTableWrapper:
+    sizes.space.w = fitContent(sizes.space.w)
+  # height is max-content normally, but fit-content for clip.
+  sizes.space.h = if computed{"overflow"} != OverflowClip:
+    maxContent()
+  else:
+    fitContent(sizes.space.h)
   if computed{"position"} == PositionRelative:
     # only compute this when needed
     sizes.positioned = resolvePositioned(space, lctx, computed)
   # Finally, calculate available width and height.
-  sizes.resolveBlockWidth(space.w, computed, lctx)
-  sizes.resolveBlockHeight(percHeight, computed, lctx)
+  sizes.resolveBlockWidth(space.w, inlinePadding, computed, lctx)
+  #TODO parent height should be lctx height in quirks mode for percentage
+  # resolution.
+  sizes.resolveBlockHeight(space.h, blockPadding, computed, lctx)
   return sizes
 
 # Calculate and resolve available width & height for absolutely positioned
@@ -1048,78 +1068,53 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; computed: CSSComputedValues):
   )
   sizes.resolveAbsoluteSize(space, dtHorizontal, computed{"width"},
     computed{"left"}, computed{"right"}, computed, lctx)
-  #TODO this might be incorrect because of percHeight?
   sizes.resolveAbsoluteSize(space, dtVertical, computed{"height"},
     computed{"top"}, computed{"bottom"}, computed, lctx)
   return sizes
 
 # Calculate and resolve available width & height for floating boxes.
 proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
-    percHeight: SizeConstraint; computed: CSSComputedValues):
+    preserveHeight: bool; computed: CSSComputedValues):
     ResolvedSizes =
-  var space = availableSpace(
-    w = fitContent(space.w),
-    h = space.h
-  )
   let padding = resolvePadding(space.w, lctx, computed)
   let inlinePadding = padding.dimSum(dtHorizontal)
   let blockPadding = padding.dimSum(dtVertical)
-  let minWidth: LayoutUnit = if not computed{"min-width"}.auto:
-    computed{"min-width"}.spx(lctx, space.w, computed, inlinePadding)
-  else:
-    0
-  let maxWidth = if not computed{"max-width"}.auto:
-    computed{"max-width"}.spx(lctx, space.w, computed, inlinePadding)
-  else:
-    high(LayoutUnit)
-  let width = computed{"width"}
-  if width.canpx(space.w):
-    let widthpx = width.spx(lctx, space.w, computed, inlinePadding)
-    space.w = stretch(clamp(widthpx, minWidth, maxWidth))
-  elif space.w.isDefinite():
-    space.w = fitContent(clamp(space.w.u, minWidth, maxWidth))
-  let minHeight = if computed{"min-height"}.canpx(percHeight):
-    computed{"min-height"}.spx(lctx, percHeight, computed, blockPadding)
-  else:
-    0
-  let maxHeight = if computed{"max-height"}.canpx(percHeight):
-    computed{"max-height"}.spx(lctx, percHeight, computed, blockPadding)
-  else:
-    high(LayoutUnit)
-  let height = computed{"height"}
-  if height.canpx(space.h):
-    let heightpx = height.px(lctx, space.h)
-    space.h = stretch(clamp(heightpx, minHeight, maxHeight))
-  elif space.h.isDefinite():
-    space.h = fitContent(clamp(space.h.u, minHeight, maxHeight))
-  return ResolvedSizes(
+  var sizes = ResolvedSizes(
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
-    space: space,
-    minMaxSizes: [
-      dtHorizontal: Span(start: minWidth, send: maxWidth),
-      dtVertical: Span(start: minHeight, send: maxHeight)
-    ]
+    space: availableSpace(w = fitContent(space.w), h = space.h),
+    # note: we use parent's space here intentionally.
+    minMaxSizes: lctx.resolveMinMaxSizes(space, inlinePadding, blockPadding,
+      computed)
   )
+  if not preserveHeight: # Note: preserveHeight is only true for flex.
+    sizes.space.h = maxContent()
+  if computed{"width"}.canpx(sizes.space.w):
+    let widthpx = computed{"width"}.spx(lctx, sizes.space.w, computed,
+      inlinePadding)
+    sizes.space.w = stretch(clamp(widthpx, sizes.minWidth, sizes.maxWidth))
+  elif sizes.space.w.isDefinite():
+    sizes.space.w = fitContent(clamp(sizes.space.w.u, sizes.minWidth,
+      sizes.maxWidth))
+  if computed{"height"}.canpx(sizes.space.h):
+    let heightpx = computed{"height"}.spx(lctx, sizes.space.h, computed,
+      blockPadding)
+    sizes.space.h = stretch(clamp(heightpx, sizes.minHeight, sizes.maxHeight))
+  elif sizes.space.h.isDefinite():
+    sizes.space.h = fitContent(clamp(sizes.space.h.u, sizes.minHeight,
+      sizes.maxHeight))
+  return sizes
 
-# Calculate and resolve available width & height for box children.
-# space: width/height of the containing box
-# Note that this is not the final content size, just the amount of space
-# available for content.
-# The percentage width/height is generally
-# availableSize.isDefinite() ? availableSize.u : 0, but for some reason it
-# differs for the root height (TODO: and all heights in quirks mode) in that
-# it uses the lctx height. Therefore we pass percHeight as a separate
-# parameter.
+# Calculate and resolve available width, height, padding, margins, etc.
+# space is the width/height of the containing box.
 proc resolveSizes(lctx: LayoutContext; space: AvailableSpace;
-    percHeight: SizeConstraint; computed: CSSComputedValues):
-    ResolvedSizes =
+    computed: CSSComputedValues): ResolvedSizes =
   if computed{"position"} == PositionAbsolute:
     return lctx.resolveAbsoluteSizes(computed)
   elif computed{"float"} != FloatNone:
-    return lctx.resolveFloatSizes(space, percHeight, computed)
+    return lctx.resolveFloatSizes(space, preserveHeight = false, computed)
   else:
-    return lctx.resolveBlockSizes(space, percHeight, computed)
+    return lctx.resolveBlockSizes(space, computed)
 
 proc append(a: var Strut; b: LayoutUnit) =
   if b < 0:
@@ -1362,13 +1357,11 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
   of ListStylePositionInside:
     bctx.layoutFlow(box, sizes)
 
-# space: width/height of the containing block.
 proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     box: BlockBox; space: AvailableSpace) =
   let lctx = ictx.lctx
-  let percHeight = space.h
-  let space = availableSpace(w = space.w, h = maxContent())
-  let sizes = lctx.resolveFloatSizes(space, percHeight, box.computed)
+  let sizes = lctx.resolveFloatSizes(space, preserveHeight = false,
+    box.computed)
   box.state = BlockBoxLayoutState(
     margin: sizes.margin,
     positioned: sizes.positioned
@@ -2148,7 +2141,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
   while i < box.nested.len:
     let child = box.nested[i]
-    var childSizes = lctx.resolveFloatSizes(sizes.space, sizes.space.h,
+    var childSizes = lctx.resolveFloatSizes(sizes.space, preserveHeight = true,
       child.computed)
     let flexBasis = child.computed{"flex-basis"}
     if not flexBasis.auto:
@@ -2191,14 +2184,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
 # Build an outer block box inside an existing block formatting context.
 proc layoutBlockChild(bctx: var BlockContext; box: BlockBox;
     space: AvailableSpace; offset: Offset; appendMargins: bool) =
-  let percHeight = space.h
-  var space = availableSpace(
-    w = space.w,
-    h = maxContent() #TODO fit-content when clip
-  )
-  if box.computed{"display"} == DisplayTableWrapper:
-    space.w = fitContent(space.w)
-  let sizes = bctx.lctx.resolveSizes(space, percHeight, box.computed)
+  let sizes = bctx.lctx.resolveSizes(space, box.computed)
   if appendMargins:
     # for nested blocks that do not establish their own BFC, and thus take part
     # in margin collapsing.
