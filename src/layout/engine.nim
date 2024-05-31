@@ -144,6 +144,9 @@ func applySizeConstraint(u: LayoutUnit; availableSize: SizeConstraint):
   of scFitContent:
     return min(u, availableSize.u)
 
+func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
+  return box.state.margin.dimSum(dim) + box.state.size[dim]
+
 type
   BlockContext = object
     lctx: LayoutContext
@@ -400,13 +403,12 @@ proc positionAtoms(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
 
 proc shiftAtoms(currentLine: var LineBoxState; marginTop: LayoutUnit;
     cellHeight: int) =
-  let paddingTop = currentLine.paddingTop
   let offsety = currentLine.offsety
+  let shiftTop = marginTop + currentLine.paddingTop
   for atom in currentLine.atoms:
-    let atomy = atom.offset.y
-    atom.offset.y = (atomy + marginTop + paddingTop + offsety).round(cellHeight)
-    currentLine.minHeight = max(currentLine.minHeight,
-      atomy - offsety + atom.size.h)
+    atom.offset.y = (atom.offset.y + shiftTop + offsety).round(cellHeight)
+    let minHeight = atom.offset.y - offsety + atom.size.h
+    currentLine.minHeight = max(currentLine.minHeight, minHeight)
 
 # Align atoms (inline boxes, text, etc.) vertically (i.e. along the block/y
 # axis) inside the line.
@@ -1393,7 +1395,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     innerbox: box,
     offset: offset(x = sizes.margin.left, y = 0),
     size: size(
-      w = box.state.size.w + sizes.margin.dimSum(dtHorizontal),
+      w = box.outerSize(dtHorizontal),
       h = box.state.size.h
     )
   )
@@ -1416,10 +1418,7 @@ func calcLineHeight(computed: CSSComputedValues; lctx: LayoutContext):
 proc layoutChildren(ictx: var InlineContext; state: var InlineState;
     children: seq[InlineFragment]) =
   for child in children:
-    case child.computed{"display"}
-    of DisplayInline:
-      ictx.layoutInline(child)
-    of DisplayInlineBlock, DisplayInlineTableWrapper, DisplayInlineFlex:
+    if child.box != nil:
       child.state = InlineFragmentState()
       var state = InlineState(
         fragment: child,
@@ -1428,7 +1427,7 @@ proc layoutChildren(ictx: var InlineContext; state: var InlineState;
       let space = availableSpace(w = fitContent(ictx.space.w), h = ictx.space.h)
       ictx.addInlineBlock(state, child.box, space)
     else:
-      assert false
+      ictx.layoutInline(child)
 
 proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   let lctx = ictx.lctx
@@ -1530,9 +1529,6 @@ proc positionRelative(parent, box: BlockBox) =
   elif not box.computed{"bottom"}.auto:
     box.state.offset.y += parent.state.size.h - box.state.positioned.bottom -
       box.state.size.h
-
-func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
-  return box.state.margin.dimSum(dim) + box.state.size[dim]
 
 # Note: caption is not included here
 const RowGroupBox = {
@@ -2697,7 +2693,7 @@ proc buildFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
     of DisplayInlineTable: ctx.buildTable(styledNode)
     of DisplayInlineFlex: ctx.buildFlex(styledNode)
     else: nil
-    let wrapper = InlineFragment(computed: childBox.computed, box: childBox)
+    let wrapper = InlineFragment(computed: computed, box: childBox)
     ctx.ibox.children.add(wrapper)
     ctx.iflush()
   of DisplayTable:
