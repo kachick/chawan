@@ -54,16 +54,25 @@ type
     areas*: seq[Area] # background that should be painted by fragment
     atoms*: seq[InlineAtom]
 
+  InlineFragmentType* = enum
+    iftParent, iftText, iftNewline, iftBitmap, iftBox
+
   InlineFragment* = ref object
-    children*: seq[InlineFragment]
+    state*: InlineFragmentState
     computed*: CSSComputedValues
     node*: StyledNode
     splitType*: set[SplitType]
-    state*: InlineFragmentState
-    text*: seq[string]
-    newline*: bool #TODO enumify
-    bmp*: Bitmap
-    box*: BlockBox
+    case t*: InlineFragmentType
+    of iftParent:
+      children*: seq[InlineFragment]
+    of iftText:
+      text*: string
+    of iftNewline:
+      discard
+    of iftBitmap:
+      bmp*: Bitmap
+    of iftBox:
+      box*: BlockBox
 
   Span* = object
     start*: LayoutUnit
@@ -86,11 +95,11 @@ type
     baseline*: LayoutUnit
 
   BlockBox* = ref object
+    state*: BlockBoxLayoutState
     computed*: CSSComputedValues
     node*: StyledNode
     inline*: RootInlineFragment
     nested*: seq[BlockBox]
-    state*: BlockBoxLayoutState
 
 func offset*(x, y: LayoutUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]

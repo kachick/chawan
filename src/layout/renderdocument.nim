@@ -350,12 +350,14 @@ proc paintInlineFragment(grid: var FlexibleGrid; state: var RenderState;
 
 proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     fragment: InlineFragment; offset: Offset) =
-  assert fragment.state.atoms.len == 0 or fragment.children.len == 0
   let bgcolor = fragment.computed{"background-color"}
   if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.argbcolor.a > 0:
     #TODO color blending
     grid.paintInlineFragment(state, fragment, offset, bgcolor)
-  if fragment.state.atoms.len > 0:
+  if fragment.t == iftParent:
+    for child in fragment.children:
+      grid.renderInlineFragment(state, child, offset)
+  else:
     let format = fragment.computed.toFormat()
     for atom in fragment.state.atoms:
       case atom.t
@@ -371,9 +373,6 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
           y: (offset.y div state.attrs.ppl).toInt,
           bmp: atom.bmp
         ))
-  else:
-    for child in fragment.children:
-      grid.renderInlineFragment(state, child, offset)
   if fragment.computed{"position"} != PositionStatic:
     if fragment.splitType != {stSplitStart, stSplitEnd}:
       if stSplitStart in fragment.splitType:

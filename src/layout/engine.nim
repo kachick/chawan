@@ -230,7 +230,7 @@ type
     word: InlineAtom
     wordstate: InlineAtomState
     wrappos: int # position of last wrapping opportunity, or -1
-    firstTextFragment: InlineFragment
+    textFragmentSeen: bool
     lastTextFragment: InlineFragment
 
   InlineState = object
@@ -581,8 +581,9 @@ proc addBackgroundAreas(ictx: var InlineContext; rootFragment: InlineFragment) =
                 ))
             continue
           traverseStack.add(nil) # sentinel
-          for i in countdown(thisNode.children.high, 0):
-            traverseStack.add(thisNode.children[i])
+          if thisNode.t == iftParent:
+            for i in countdown(thisNode.children.high, 0):
+              traverseStack.add(thisNode.children[i])
           thisNode.state.areas.add(Area(
             offset: offset(x = atom.offset.x, y = line.offsety),
             size: size(w = atom.size.w, h = line.height)
@@ -828,28 +829,22 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
   let shift = ictx.computeShift(state)
   ictx.currentLine.widthAfterWhitespace = ictx.currentLine.size.w + shift
 
-iterator transform(text: seq[string]; v: CSSTextTransform): string {.inline.} =
-  if v == TextTransformNone:
-    for str in text:
-      yield str
+proc layoutText(ictx: var InlineContext; state: var InlineState; s: string) =
+  ictx.flushWhitespace(state)
+  ictx.newWord(state)
+  let transform = state.fragment.computed{"text-transform"}
+  if transform == TextTransformNone:
+    ictx.layoutTextLoop(state, s)
   else:
-    for str in text:
-      let str = case v
-      of TextTransformCapitalize: str.capitalizeLU()
-      of TextTransformUppercase: str.toUpperLU()
-      of TextTransformLowercase: str.toLowerLU()
-      of TextTransformFullWidth: str.fullwidth()
-      of TextTransformFullSizeKana: str.fullsize()
-      of TextTransformChaHalfWidth: str.halfwidth()
-      else: ""
-      yield str
-
-proc layoutText(ictx: var InlineContext; state: var InlineState;
-    text: seq[string]) =
-  for str in text.transform(state.fragment.computed{"text-transform"}):
-    ictx.flushWhitespace(state)
-    ictx.newWord(state)
-    ictx.layoutTextLoop(state, str)
+    let s = case transform
+    of TextTransformCapitalize: s.capitalizeLU()
+    of TextTransformUppercase: s.toUpperLU()
+    of TextTransformLowercase: s.toLowerLU()
+    of TextTransformFullWidth: s.fullwidth()
+    of TextTransformFullSizeKana: s.fullsize()
+    of TextTransformChaHalfWidth: s.halfwidth()
+    else: ""
+    ictx.layoutTextLoop(state, s)
 
 func spx(l: CSSLength; lctx: LayoutContext; p: SizeConstraint;
     computed: CSSComputedValues; padding: LayoutUnit): LayoutUnit =
@@ -1357,9 +1352,9 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     bctx.layoutFlow(box, sizes)
 
 proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
-    box: BlockBox; space: AvailableSpace) =
+    box: BlockBox) =
   let lctx = ictx.lctx
-  let sizes = lctx.resolveFloatSizes(space, preserveHeight = false,
+  let sizes = lctx.resolveFloatSizes(ictx.space, preserveHeight = false,
     box.computed)
   box.state = BlockBoxLayoutState(
     margin: sizes.margin,
@@ -1400,6 +1395,20 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   discard ictx.addAtom(state, iastate, iblock)
   ictx.whitespacenum = 0
 
+proc addInlineImage(ictx: var InlineContext; state: var InlineState;
+    bmp: Bitmap) =
+  let h = int(bmp.height).toLayoutUnit().ceilTo(ictx.cellHeight)
+  let iastate = InlineAtomState(
+    vertalign: state.fragment.computed{"vertical-align"},
+    baseline: h
+  )
+  let atom = InlineAtom(
+    t: iatImage,
+    bmp: bmp,
+    size: size(w = int(bmp.width), h = h), #TODO overflow
+  )
+  discard ictx.addAtom(state, iastate, atom)
+
 func calcLineHeight(computed: CSSComputedValues; lctx: LayoutContext):
     LayoutUnit =
   if computed{"line-height"}.auto: # ergo normal
@@ -1407,27 +1416,13 @@ func calcLineHeight(computed: CSSComputedValues; lctx: LayoutContext):
   # Percentage: refers to the font size of the element itself.
   return computed{"line-height"}.px(lctx, lctx.cellHeight)
 
-proc layoutChildren(ictx: var InlineContext; state: var InlineState;
-    children: seq[InlineFragment]) =
-  for child in children:
-    if child.box != nil:
-      child.state = InlineFragmentState()
-      var state = InlineState(
-        fragment: child,
-        lineHeight: child.computed.calcLineHeight(ictx.lctx)
-      )
-      let space = availableSpace(w = fitContent(ictx.space.w), h = ictx.space.h)
-      ictx.addInlineBlock(state, child.box, space)
-    else:
-      ictx.layoutInline(child)
-
 proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   let lctx = ictx.lctx
+  let computed = fragment.computed
   fragment.state = InlineFragmentState()
   if stSplitStart in fragment.splitType:
-    let marginLeft = fragment.computed{"margin-left"}.px(lctx, ictx.space.w)
-    ictx.currentLine.size.w += marginLeft
-  let computed = fragment.computed
+    ictx.currentLine.size.w += computed{"margin-left"}.px(lctx, ictx.space.w)
+    ictx.currentLine.size.w += computed{"padding-left"}.px(lctx, ictx.space.w)
   var state = InlineState(
     fragment: fragment,
     firstLine: true,
@@ -1437,37 +1432,22 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
     ),
     lineHeight: computed.calcLineHeight(lctx)
   )
-  if fragment.newline:
-    ictx.flushLine(state)
-  if stSplitStart in fragment.splitType:
-    let paddingLeft = computed{"padding-left"}.px(lctx, ictx.space.w)
-    ictx.currentLine.size.w += paddingLeft
-  assert fragment.children.len == 0 or fragment.text.len == 0
   ictx.applyLineHeight(ictx.currentLine, computed)
-  if ictx.firstTextFragment == nil:
-    ictx.firstTextFragment = fragment
-  ictx.lastTextFragment = fragment
-  if fragment.bmp != nil:
-    let h = int(fragment.bmp.height).toLayoutUnit().ceilTo(ictx.cellHeight)
-    let iastate = InlineAtomState(
-      vertalign: computed{"vertical-align"},
-      baseline: h
-    )
-    let atom = InlineAtom(
-      t: iatImage,
-      bmp: fragment.bmp,
-      size: size(w = int(fragment.bmp.width), h = h), #TODO overflow
-    )
-    discard ictx.addAtom(state, iastate, atom)
-  else:
+  case fragment.t
+  of iftNewline:
+    ictx.flushLine(state)
+  of iftBox:
+    ictx.addInlineBlock(state, fragment.box)
+  of iftBitmap:
+    ictx.addInlineImage(state, fragment.bmp)
+  of iftText:
     ictx.layoutText(state, fragment.text)
-    ictx.layoutChildren(state, fragment.children)
-  assert fragment.children.len == 0 or fragment.state.atoms.len == 0
+  of iftParent:
+    for child in fragment.children:
+      ictx.layoutInline(child)
   if stSplitEnd in fragment.splitType:
-    let paddingRight = computed{"padding-right"}.px(lctx, ictx.space.w)
-    ictx.currentLine.size.w += paddingRight
-    let marginRight = computed{"margin-right"}.px(lctx, ictx.space.w)
-    ictx.currentLine.size.w += marginRight
+    ictx.currentLine.size.w += computed{"padding-right"}.px(lctx, ictx.space.w)
+    ictx.currentLine.size.w += computed{"margin-right"}.px(lctx, ictx.space.w)
   if state.firstLine:
     fragment.state.startOffset = offset(
       x = state.startOffsetTop.x,
@@ -1475,6 +1455,11 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
     )
   else:
     fragment.state.startOffset = offset(x = 0, y = ictx.currentLine.offsety)
+  if fragment.t != iftParent:
+    if not ictx.textFragmentSeen:
+      ictx.textFragmentSeen = true
+      ictx.root.fragment.state.startOffset = fragment.state.startOffset
+    ictx.lastTextFragment = fragment
 
 proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
     space: AvailableSpace; computed: CSSComputedValues;
@@ -1482,8 +1467,6 @@ proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
   root.state = RootInlineFragmentState(offset: offset)
   var ictx = bctx.initInlineContext(space, bfcOffset, root)
   ictx.layoutInline(root.fragment)
-  if ictx.firstTextFragment != nil:
-    root.fragment.state.startOffset = ictx.firstTextFragment.state.startOffset
   if ictx.lastTextFragment != nil:
     let fragment = ictx.lastTextFragment
     var state = InlineState(
@@ -2479,8 +2462,9 @@ proc newMarkerBox(computed: CSSComputedValues; listItemCounter: int):
   # Use pre, so the space at the end of the default markers isn't ignored.
   computed{"white-space"} = WhitespacePre
   return InlineFragment(
+    t: iftText,
     computed: computed,
-    text: @[computed{"list-style-type"}.listMarker(listItemCounter)]
+    text: computed{"list-style-type"}.listMarker(listItemCounter)
   )
 
 type BlockGroup = object
@@ -2491,10 +2475,8 @@ type BlockGroup = object
 
 type InnerBlockContext = object
   styledNode: StyledNode
-  blockgroup: BlockGroup
+  blockGroup: BlockGroup
   lctx: LayoutContext
-  ibox: InlineFragment
-  iroot: InlineFragment
   anonRow: BlockBox
   anonTableWrapper: BlockBox
   quoteLevel: int
@@ -2502,32 +2484,33 @@ type InnerBlockContext = object
   listItemReset: bool
   parent: ptr InnerBlockContext
   inlineStack: seq[StyledNode]
+  inlineStackFragments: seq[InlineFragment]
 
-proc add(blockgroup: var BlockGroup; box: InlineFragment) =
+proc add(blockGroup: var BlockGroup; box: InlineFragment) =
   assert box.computed{"display"} == DisplayInline
-  if blockgroup.inline == nil:
-    blockgroup.inline = RootInlineFragment(
-      fragment: InlineFragment(computed: blockgroup.lctx.myRootProperties)
+  if blockGroup.inline == nil:
+    blockGroup.inline = RootInlineFragment(
+      fragment: InlineFragment(
+        t: iftParent,
+        computed: blockGroup.lctx.myRootProperties
+      )
     )
-  blockgroup.inline.fragment.children.add(box)
+  blockGroup.inline.fragment.children.add(box)
 
-proc flush(blockgroup: var BlockGroup) =
-  if blockgroup.inline != nil:
-    assert blockgroup.parent.computed{"display"} != DisplayInline
-    let computed = blockgroup.parent.computed.inheritProperties()
+proc flush(blockGroup: var BlockGroup) =
+  if blockGroup.inline != nil:
+    assert blockGroup.parent.computed{"display"} != DisplayInline
+    let computed = blockGroup.parent.computed.inheritProperties()
     computed{"display"} = DisplayBlock
-    let box = BlockBox(
-      computed: computed,
-      inline: blockgroup.inline
-    )
-    blockgroup.parent.nested.add(box)
-    blockgroup.inline = nil
+    let box = BlockBox(computed: computed, inline: blockGroup.inline)
+    blockGroup.parent.nested.add(box)
+    blockGroup.inline = nil
 
 # Don't build empty anonymous inline blocks between block boxes
-func canBuildAnonymousInline(blockgroup: BlockGroup;
+func canBuildAnonymousInline(blockGroup: BlockGroup;
     computed: CSSComputedValues; str: string): bool =
-  return blockgroup.inline != nil and
-      blockgroup.inline.fragment.children.len > 0 or
+  let inline = blockGroup.inline
+  return inline != nil and inline.fragment.children.len > 0 or
     computed.whitespacepre or not str.onlyWhitespace()
 
 proc buildTable(parent: var InnerBlockContext; styledNode: StyledNode): BlockBox
@@ -2573,8 +2556,8 @@ proc createAnonTable(ctx: var InnerBlockContext; computed: CSSComputedValues) =
 
 proc flushTableRow(ctx: var InnerBlockContext) =
   if ctx.anonRow != nil:
-    if ctx.blockgroup.parent.computed{"display"} in ProperTableRowParent:
-      ctx.blockgroup.parent.nested.add(ctx.anonRow)
+    if ctx.blockGroup.parent.computed{"display"} in ProperTableRowParent:
+      ctx.blockGroup.parent.nested.add(ctx.anonRow)
     else:
       ctx.createAnonTable(ctx.styledNode.computed)
       ctx.anonTableWrapper.nested[0].nested.add(ctx.anonRow)
@@ -2583,19 +2566,10 @@ proc flushTableRow(ctx: var InnerBlockContext) =
 proc flushTable(ctx: var InnerBlockContext) =
   ctx.flushTableRow()
   if ctx.anonTableWrapper != nil:
-    ctx.blockgroup.parent.nested.add(ctx.anonTableWrapper)
+    ctx.blockGroup.parent.nested.add(ctx.anonTableWrapper)
 
 proc iflush(ctx: var InnerBlockContext) =
-  if ctx.iroot != nil:
-    assert ctx.iroot.computed{"display"} in {DisplayInline, DisplayInlineBlock,
-      DisplayInlineTable, DisplayInlineFlex}
-    ctx.blockgroup.add(ctx.iroot)
-    ctx.iroot = nil
-    ctx.ibox = nil
-
-proc bflush(ctx: var InnerBlockContext) =
-  ctx.iflush()
-  ctx.blockgroup.flush()
+  ctx.inlineStackFragments.setLen(0)
 
 proc flushInherit(ctx: var InnerBlockContext) =
   if ctx.parent != nil:
@@ -2604,128 +2578,171 @@ proc flushInherit(ctx: var InnerBlockContext) =
     ctx.parent.quoteLevel = ctx.quoteLevel
 
 proc flush(ctx: var InnerBlockContext) =
-  ctx.blockgroup.flush()
+  ctx.blockGroup.flush()
   ctx.flushTableRow()
   ctx.flushTable()
   ctx.flushInherit()
 
-proc reconstructInlineParents(ctx: var InnerBlockContext): InlineFragment =
-  let rootNode = ctx.inlineStack[0]
-  var parent = InlineFragment(
-    computed: rootNode.computed,
-    node: rootNode
+proc reconstructInlineParents(ctx: var InnerBlockContext) =
+  if ctx.inlineStackFragments.len == 0:
+    var parent = InlineFragment(
+      t: iftParent,
+      computed: ctx.inlineStack[0].computed,
+      node: ctx.inlineStack[0]
+    )
+    ctx.inlineStackFragments.add(parent)
+    ctx.blockGroup.add(parent)
+    for i in 1 ..< ctx.inlineStack.len:
+      let node = ctx.inlineStack[i]
+      let child = InlineFragment(
+        t: iftParent,
+        computed: node.computed,
+        node: node
+      )
+      parent.children.add(child)
+      ctx.inlineStackFragments.add(child)
+      parent = child
+
+proc buildSomeBlock(ctx: var InnerBlockContext; styledNode: StyledNode):
+    BlockBox =
+  return case styledNode.computed{"display"}
+  of DisplayBlock, DisplayFlowRoot, DisplayInlineBlock:
+    ctx.buildBlock(styledNode)
+  of DisplayFlex, DisplayInlineFlex: ctx.buildFlex(styledNode)
+  of DisplayTable, DisplayInlineTable: ctx.buildTable(styledNode)
+  else: nil
+
+# Note: these also pop
+proc pushBlock(ctx: var InnerBlockContext; styledNode: StyledNode) =
+  ctx.iflush()
+  ctx.flush()
+  let box = ctx.buildSomeBlock(styledNode)
+  ctx.blockGroup.parent.nested.add(box)
+
+proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment) =
+  if ctx.inlineStack.len == 0:
+    ctx.blockGroup.add(fragment)
+  else:
+    ctx.reconstructInlineParents()
+    ctx.inlineStackFragments[^1].children.add(fragment)
+
+proc pushInlineText(ctx: var InnerBlockContext; computed: CSSComputedValues;
+    styledNode: StyledNode; text: string) =
+  let box = InlineFragment(
+    t: iftText,
+    computed: computed,
+    node: styledNode,
+    text: text
   )
-  ctx.iroot = parent
-  for i in 1 ..< ctx.inlineStack.len:
-    let node = ctx.inlineStack[i]
-    let nbox = InlineFragment(computed: node.computed, node: node)
-    assert nbox.computed{"display"} != DisplayTableCell
-    parent.children.add(nbox)
-    parent = nbox
-  return parent
+  ctx.pushInline(box)
+
+proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode) =
+  let wrapper = InlineFragment(
+    t: iftBox,
+    computed: styledNode.computed.inheritProperties(),
+    node: styledNode,
+    box: ctx.buildSomeBlock(styledNode)
+  )
+  ctx.pushInline(wrapper)
+
+proc pushListItem(ctx: var InnerBlockContext; styledNode: StyledNode) =
+  ctx.iflush()
+  ctx.flush()
+  inc ctx.listItemCounter
+  let marker = newMarkerBox(styledNode.computed, ctx.listItemCounter)
+  let position = styledNode.computed{"list-style-position"}
+  let content = case position
+  of ListStylePositionOutside: ctx.buildBlock(styledNode)
+  of ListStylePositionInside: ctx.buildBlock(styledNode, marker)
+  let box = case position
+  of ListStylePositionOutside:
+    content.computed = content.computed.copyProperties()
+    content.computed{"display"} = DisplayBlock
+    let markerComputed = marker.computed.copyProperties()
+    markerComputed{"display"} = DisplayBlock
+    let marker = BlockBox(
+      computed: marker.computed,
+      inline: RootInlineFragment(fragment: marker)
+    )
+    let child = BlockBox(
+      computed: styledNode.computed,
+      nested: @[marker, content]
+    )
+    child
+  of ListStylePositionInside:
+    content
+  ctx.blockGroup.parent.nested.add(box)
+
+proc pushTableRow(ctx: var InnerBlockContext; styledNode: StyledNode) =
+  let box = ctx.blockGroup.parent
+  ctx.iflush()
+  ctx.blockGroup.flush()
+  ctx.flushTableRow()
+  let child = ctx.buildTableRow(styledNode)
+  if box.computed{"display"} in ProperTableRowParent:
+    box.nested.add(child)
+  else:
+    ctx.createAnonTable(box.computed)
+    ctx.anonTableWrapper.nested[0].nested.add(child)
+
+proc pushTableRowGroup(ctx: var InnerBlockContext; styledNode: StyledNode) =
+  let box = ctx.blockGroup.parent
+  ctx.iflush()
+  ctx.blockGroup.flush()
+  ctx.flushTableRow()
+  let child = ctx.buildTableRowGroup(styledNode)
+  if box.computed{"display"} in {DisplayTable, DisplayInlineTable}:
+    box.nested.add(child)
+  else:
+    ctx.createAnonTable(box.computed)
+    ctx.anonTableWrapper.nested[0].nested.add(child)
+
+proc pushTableCell(ctx: var InnerBlockContext; styledNode: StyledNode) =
+  let box = ctx.blockGroup.parent
+  ctx.iflush()
+  ctx.blockGroup.flush()
+  let child = ctx.buildTableCell(styledNode)
+  if box.computed{"display"} == DisplayTableRow:
+    box.nested.add(child)
+  else:
+    if ctx.anonRow == nil:
+      let wrapperVals = box.computed.inheritProperties()
+      wrapperVals{"display"} = DisplayTableRow
+      ctx.anonRow = BlockBox(computed: wrapperVals)
+    ctx.anonRow.nested.add(child)
+
+proc pushTableCaption(ctx: var InnerBlockContext; styledNode: StyledNode) =
+  let box = ctx.blockGroup.parent
+  ctx.iflush()
+  ctx.blockGroup.flush()
+  ctx.flushTableRow()
+  let child = ctx.buildTableCaption(styledNode)
+  if box.computed{"display"} in {DisplayTable, DisplayInlineTable}:
+    box.nested.add(child)
+  else:
+    ctx.createAnonTable(box.computed)
+    # only add first caption
+    if ctx.anonTableWrapper.nested.len == 1:
+      ctx.anonTableWrapper.nested.add(child)
 
 proc buildFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
-  let box = ctx.blockgroup.parent
   case styledNode.computed{"display"}
-  of DisplayBlock, DisplayFlowRoot:
-    ctx.iflush()
-    ctx.flush()
-    box.nested.add(ctx.buildBlock(styledNode))
-  of DisplayFlex:
-    ctx.iflush()
-    ctx.flush()
-    box.nested.add(ctx.buildFlex(styledNode))
+  of DisplayBlock, DisplayFlowRoot, DisplayFlex, DisplayTable:
+    ctx.pushBlock(styledNode)
+  of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
+    ctx.pushInlineBlock(styledNode)
   of DisplayListItem:
-    ctx.flush()
-    inc ctx.listItemCounter
-    let marker = newMarkerBox(styledNode.computed, ctx.listItemCounter)
-    let position = styledNode.computed{"list-style-position"}
-    let content = case position
-    of ListStylePositionOutside: ctx.buildBlock(styledNode)
-    of ListStylePositionInside: ctx.buildBlock(styledNode, marker)
-    case position
-    of ListStylePositionOutside:
-      content.computed = content.computed.copyProperties()
-      content.computed{"display"} = DisplayBlock
-      let markerComputed = marker.computed.copyProperties()
-      markerComputed{"display"} = DisplayBlock
-      let marker = BlockBox(
-        computed: marker.computed,
-        inline: RootInlineFragment(fragment: marker)
-      )
-      let child = BlockBox(
-        computed: styledNode.computed,
-        nested: @[marker, content]
-      )
-      box.nested.add(child)
-    of ListStylePositionInside:
-      box.nested.add(content)
+    ctx.pushListItem(styledNode)
   of DisplayInline:
     ctx.buildInlineBoxes(styledNode)
-  of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
-    # create a new inline box that we can safely put our inline block into
-    ctx.iflush()
-    let computed = styledNode.computed.inheritProperties()
-    ctx.ibox = InlineFragment(computed: computed, node: styledNode)
-    if ctx.inlineStack.len > 0:
-      let iparent = ctx.reconstructInlineParents()
-      iparent.children.add(ctx.ibox)
-      ctx.iroot = iparent
-    else:
-      ctx.iroot = ctx.ibox
-    let childBox = case styledNode.computed{"display"}
-    of DisplayInlineBlock: ctx.buildBlock(styledNode)
-    of DisplayInlineTable: ctx.buildTable(styledNode)
-    of DisplayInlineFlex: ctx.buildFlex(styledNode)
-    else: nil
-    let wrapper = InlineFragment(computed: computed, box: childBox)
-    ctx.ibox.children.add(wrapper)
-    ctx.iflush()
-  of DisplayTable:
-    #TODO why no ctx.iflush()?
-    ctx.flush()
-    let child = ctx.buildTable(styledNode)
-    box.nested.add(child)
   of DisplayTableRow:
-    ctx.bflush()
-    ctx.flushTableRow()
-    let child = ctx.buildTableRow(styledNode)
-    if box.computed{"display"} in ProperTableRowParent:
-      box.nested.add(child)
-    else:
-      ctx.createAnonTable(box.computed)
-      ctx.anonTableWrapper.nested[0].nested.add(child)
+    ctx.pushTableRow(styledNode)
   of DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup:
-    ctx.bflush()
-    ctx.flushTableRow()
-    let child = ctx.buildTableRowGroup(styledNode)
-    if box.computed{"display"} in {DisplayTable, DisplayInlineTable}:
-      box.nested.add(child)
-    else:
-      ctx.createAnonTable(box.computed)
-      ctx.anonTableWrapper.nested[0].nested.add(child)
+    ctx.pushTableRowGroup(styledNode)
   of DisplayTableCell:
-    ctx.bflush()
-    let child = ctx.buildTableCell(styledNode)
-    if box.computed{"display"} == DisplayTableRow:
-      box.nested.add(child)
-    else:
-      if ctx.anonRow == nil:
-        let wrapperVals = box.computed.inheritProperties()
-        wrapperVals{"display"} = DisplayTableRow
-        ctx.anonRow = BlockBox(computed: wrapperVals)
-      ctx.anonRow.nested.add(child)
+    ctx.pushTableCell(styledNode)
   of DisplayTableCaption:
-    ctx.bflush()
-    ctx.flushTableRow()
-    let child = ctx.buildTableCaption(styledNode)
-    if box.computed{"display"} in {DisplayTable, DisplayInlineTable}:
-      box.nested.add(child)
-    else:
-      ctx.createAnonTable(box.computed)
-      # only add first caption
-      if ctx.anonTableWrapper.nested.len == 1:
-        ctx.anonTableWrapper.nested.add(child)
+    ctx.pushTableCaption(styledNode)
   of DisplayTableColumn:
     discard #TODO
   of DisplayTableColumnGroup:
@@ -2734,21 +2751,8 @@ proc buildFromElem(ctx: var InnerBlockContext; styledNode: StyledNode) =
   of DisplayTableWrapper, DisplayInlineTableWrapper:
     assert false
 
-proc buildAnonymousInlineText(ctx: var InnerBlockContext; text: string;
-    styledNode: StyledNode; bmp: Bitmap = nil) =
-  if ctx.iroot == nil:
-    let computed = styledNode.computed.inheritProperties()
-    ctx.ibox = InlineFragment(computed: computed, node: styledNode)
-    if ctx.inlineStack.len > 0:
-      let iparent = ctx.reconstructInlineParents()
-      iparent.children.add(ctx.ibox)
-      ctx.iroot = iparent
-    else:
-      ctx.iroot = ctx.ibox
-  ctx.ibox.bmp = bmp
-  ctx.ibox.text.add(text)
-
-proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode) =
+proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode;
+    computed: CSSComputedValues) =
   case child.content.t
   of ContentOpenQuote:
     let quotes = parent.computed{"quotes"}
@@ -2758,7 +2762,7 @@ proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode) =
     elif quotes.auto:
       text = quoteStart(ctx.quoteLevel)
     else: return
-    ctx.buildAnonymousInlineText(text, parent)
+    ctx.pushInlineText(computed, parent, text)
     inc ctx.quoteLevel
   of ContentCloseQuote:
     if ctx.quoteLevel > 0: dec ctx.quoteLevel
@@ -2769,64 +2773,69 @@ proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode) =
     elif quotes.auto:
       text = quoteEnd(ctx.quoteLevel)
     else: return
-    ctx.buildAnonymousInlineText(text, parent)
+    ctx.pushInlineText(computed, parent, text)
   of ContentNoOpenQuote:
     inc ctx.quoteLevel
   of ContentNoCloseQuote:
     if ctx.quoteLevel > 0: dec ctx.quoteLevel
   of ContentString:
-    #TODO canBuildAnonymousInline?
-    ctx.buildAnonymousInlineText(child.content.s, parent)
+    ctx.pushInlineText(computed, parent, child.content.s)
   of ContentImage:
     #TODO idk
-    ctx.buildAnonymousInlineText("[img]", parent, child.content.bmp)
+    if child.content.bmp != nil:
+      let wrapper = InlineFragment(
+        t: iftBitmap,
+        computed: computed,
+        node: parent,
+        bmp: child.content.bmp
+      )
+      ctx.pushInline(wrapper)
+    else:
+      ctx.pushInlineText(computed, parent, "[img]")
   of ContentVideo:
-    ctx.buildAnonymousInlineText("[video]", parent)
+    ctx.pushInlineText(computed, parent, "[video]")
   of ContentAudio:
-    ctx.buildAnonymousInlineText("[audio]", parent)
+    ctx.pushInlineText(computed, parent, "[audio]")
   of ContentNewline:
-    ctx.iflush()
-    #TODO ??
-    # this used to set ibox (before we had iroot), now I'm not sure if we
-    # should reconstruct here first
-    ctx.iroot = InlineFragment(
-      computed: parent.computed.inheritProperties(),
-      newline: true
+    let fragment = InlineFragment(
+      t: iftNewline,
+      computed: computed,
+      node: child
     )
-    ctx.iflush()
+    ctx.pushInline(fragment)
 
 proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode) =
-  ctx.iflush()
+  let parent = InlineFragment(
+    t: iftParent,
+    computed: styledNode.computed,
+    splitType: {stSplitStart}
+  )
+  if ctx.inlineStack.len == 0:
+    ctx.blockGroup.add(parent)
+  else:
+    ctx.reconstructInlineParents()
+    ctx.inlineStackFragments[^1].children.add(parent)
   ctx.inlineStack.add(styledNode)
-  var lbox = ctx.reconstructInlineParents()
-  lbox.splitType.incl(stSplitStart)
-  ctx.ibox = lbox
+  ctx.inlineStackFragments.add(parent)
   for child in styledNode.children:
     case child.t
     of stElement:
       ctx.buildFromElem(child)
     of stText:
-      if ctx.ibox != lbox:
-        ctx.iflush()
-        lbox = ctx.reconstructInlineParents()
-        ctx.ibox = lbox
-      lbox.text.add(child.textData)
+      ctx.pushInlineText(styledNode.computed, styledNode, child.textData)
     of stReplacement:
-      ctx.buildReplacement(child, styledNode)
-  if ctx.ibox != lbox:
-    ctx.iflush()
-    lbox = ctx.reconstructInlineParents()
-    ctx.ibox = lbox
-  lbox.splitType.incl(stSplitEnd)
-  ctx.inlineStack.setLen(ctx.inlineStack.len - 1)
-  ctx.iflush()
+      ctx.buildReplacement(child, styledNode, styledNode.computed)
+  ctx.reconstructInlineParents()
+  let fragment = ctx.inlineStackFragments.pop()
+  fragment.splitType.incl(stSplitEnd)
+  ctx.inlineStack.setLen(ctx.inlineStack.high)
 
 proc newInnerBlockContext(styledNode: StyledNode; box: BlockBox;
     lctx: LayoutContext; parent: ptr InnerBlockContext): InnerBlockContext =
   assert box.computed{"display"} != DisplayInline
   var ctx = InnerBlockContext(
     styledNode: styledNode,
-    blockgroup: BlockGroup(parent: box, lctx: lctx),
+    blockGroup: BlockGroup(parent: box, lctx: lctx),
     lctx: lctx,
     parent: parent
   )
@@ -2840,19 +2849,19 @@ proc newInnerBlockContext(styledNode: StyledNode; box: BlockBox;
   return ctx
 
 proc buildInnerBlockBox(ctx: var InnerBlockContext) =
-  let box = ctx.blockgroup.parent
+  let box = ctx.blockGroup.parent
   assert box.computed{"display"} != DisplayInline
+  let inlineComputed = box.computed.inheritProperties()
   for child in ctx.styledNode.children:
     case child.t
     of stElement:
-      ctx.iflush()
       ctx.buildFromElem(child)
     of stText:
       let text = child.textData
-      if canBuildAnonymousInline(ctx.blockgroup, box.computed, text):
-        ctx.buildAnonymousInlineText(text, ctx.styledNode)
+      if ctx.blockGroup.canBuildAnonymousInline(box.computed, text):
+        ctx.pushInlineText(inlineComputed, ctx.styledNode, text)
     of stReplacement:
-      ctx.buildReplacement(child, ctx.styledNode)
+      ctx.buildReplacement(child, ctx.styledNode, inlineComputed)
   ctx.iflush()
 
 proc buildBlock(styledNode: StyledNode; lctx: LayoutContext;
@@ -2861,8 +2870,7 @@ proc buildBlock(styledNode: StyledNode; lctx: LayoutContext;
   let box = BlockBox(computed: styledNode.computed, node: styledNode)
   var ctx = newInnerBlockContext(styledNode, box, lctx, parent)
   if marker != nil:
-    ctx.iroot = marker
-    ctx.iflush()
+    ctx.pushInline(marker)
   ctx.buildInnerBlockBox()
   # Flush anonymous tables here, to avoid setting inline layout with tables.
   ctx.flushTableRow()
@@ -2870,16 +2878,17 @@ proc buildBlock(styledNode: StyledNode; lctx: LayoutContext;
   # (flush here, because why not)
   ctx.flushInherit()
   # Avoid unnecessary anonymous block boxes. This also helps set our layout to
-  # inline even if no inner anonymous block was buildd.
+  # inline even if no inner anonymous block was built.
   if box.nested.len == 0:
-    box.inline = if ctx.blockgroup.inline != nil:
-      ctx.blockgroup.inline
+    box.inline = if ctx.blockGroup.inline != nil:
+      ctx.blockGroup.inline
     else:
       RootInlineFragment(fragment: InlineFragment(
+        t: iftParent,
         computed: lctx.myRootProperties
       ))
-    ctx.blockgroup.inline = nil
-  ctx.blockgroup.flush()
+    ctx.blockGroup.inline = nil
+  ctx.blockGroup.flush()
   return box
 
 proc buildFlex(styledNode: StyledNode; lctx: LayoutContext;
@@ -2887,10 +2896,10 @@ proc buildFlex(styledNode: StyledNode; lctx: LayoutContext;
   let box = BlockBox(computed: styledNode.computed, node: styledNode)
   var ctx = newInnerBlockContext(styledNode, box, lctx, parent)
   assert box.computed{"display"} != DisplayInline
+  let inlineComputed = box.computed.inheritProperties()
   for child in ctx.styledNode.children:
     case child.t
     of stElement:
-      ctx.iflush()
       let display = child.computed{"display"}.blockify()
       if display != child.computed{"display"}:
         #TODO this is a hack.
@@ -2905,17 +2914,17 @@ proc buildFlex(styledNode: StyledNode; lctx: LayoutContext;
         ctx.buildFromElem(child)
     of stText:
       let text = child.textData
-      if ctx.blockgroup.canBuildAnonymousInline(box.computed, text):
-        ctx.buildAnonymousInlineText(text, ctx.styledNode)
+      if ctx.blockGroup.canBuildAnonymousInline(box.computed, text):
+        ctx.pushInlineText(inlineComputed, ctx.styledNode, text)
     of stReplacement:
-      ctx.buildReplacement(child, ctx.styledNode)
+      ctx.buildReplacement(child, ctx.styledNode, inlineComputed)
   ctx.iflush()
   # Flush anonymous tables here, to avoid setting inline layout with tables.
   ctx.flushTableRow()
   ctx.flushTable()
   # (flush here, because why not)
   ctx.flushInherit()
-  ctx.blockgroup.flush()
+  ctx.blockGroup.flush()
   assert box.inline == nil
   const FlexReverse = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
   if box.computed{"flex-direction"} in FlexReverse:
