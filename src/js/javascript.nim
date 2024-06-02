@@ -53,7 +53,6 @@ import js/fromjs
 import js/jsopaque
 import js/tojs
 import types/opt
-import utils/twtstr
 
 import bindings/quickjs
 
@@ -151,11 +150,6 @@ func getClass*(ctx: JSContext; class: string): JSClassID =
 
 func hasClass*(ctx: JSContext; class: type): bool =
   return $class in ctx.getOpaque().creg
-
-func newJSCFunction*(ctx: JSContext; name: string; fun: JSCFunction;
-    argc = 0; proto = JS_CFUNC_generic; magic = 0): JSValue =
-  return JS_NewCFunction2(ctx, fun, cstring(name), cint(argc), proto,
-    cint(magic))
 
 proc free*(ctx: JSContext) =
   var opaque = ctx.getOpaque()
@@ -309,8 +303,8 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
       JS_SetPropertyFunctionList(ctx, global, addr uf[][0], cint(uf[].len))
     JS_FreeValue(ctx, global)
   JS_FreeValue(ctx, news)
-  let jctor = ctx.newJSCFunction($cdef.class_name, ctor, 0,
-    JS_CFUNC_constructor)
+  let jctor = JS_NewCFunction2(ctx, ctor, cstring($cdef.class_name), 0,
+    JS_CFUNC_constructor, 0)
   if staticfuns.len > 0:
     rtOpaque.flist.add(@staticfuns)
     JS_SetPropertyFunctionList(ctx, jctor, addr rtOpaque.flist[^1][0],
@@ -845,9 +839,9 @@ func getFuncName(fun: NimNode; jsname, staticName: string): string =
   if jsname != "":
     return jsname
   if staticName != "":
-    let name = staticName.after(':')
-    if name != "":
-      return name
+    let i = staticName.find(':')
+    if i != -1:
+      return staticName.substr(i + 1)
   let x = $fun[0]
   if x == "$":
     # stringifier
@@ -896,6 +890,13 @@ func getActualMinArgs(gen: var JSFuncGenerator): int =
     dec ma
   assert ma >= 0
   return ma
+
+func until(s: string; c: char; starti = 0): string =
+  result = ""
+  for i, cc in s:
+    if cc == c:
+      break
+    result &= cc
 
 proc initGenerator(fun: NimNode; t: BoundFunctionType; thisname = some("this");
     jsname = ""; unforgeable = false; staticName = ""): JSFuncGenerator =
@@ -1692,9 +1693,10 @@ proc getMemoryUsage*(rt: JSRuntime): string =
       $m.binary_object_size
   return s
 
-proc eval*(ctx: JSContext; s, file: string; eval_flags: int): JSValue =
+proc eval*(ctx: JSContext; s, file: string; evalFlags = JS_EVAL_TYPE_GLOBAL):
+    JSValue =
   return JS_Eval(ctx, cstring(s), csize_t(s.len), cstring(file),
-    cint(eval_flags))
+    cint(evalFlags))
 
 proc compileScript*(ctx: JSContext; s, file: string): JSValue =
   return ctx.eval(s, file, JS_EVAL_FLAG_COMPILE_ONLY)
