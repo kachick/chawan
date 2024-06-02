@@ -101,13 +101,18 @@ proc setText(grid: var FlexibleGrid; linestr: string; x, y: int; format: Format;
     grid[y].str &= ' '.repeat(padwidth)
 
   grid[y].str &= linestr
-  let linestrwidth = linestr.twidth(x)
+  var linestrwidth = linestr.twidth(x)
 
   i = 0
   var nx = x # last x of new string
   while nx < x + linestrwidth and i < ostr.len:
     fastRuneAt(ostr, i, r)
     nx += r.twidth(nx)
+
+  while x + linestrwidth < nx:
+    # we ate half of a double width char; pad it out with spaces.
+    grid[y].str &= ' '
+    inc linestrwidth
 
   if i < ostr.len:
     grid[y].str &= ostr.substr(i)
