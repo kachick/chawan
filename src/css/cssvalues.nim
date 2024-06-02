@@ -404,14 +404,6 @@ type
     val: CSSComputedValue
     global: CSSGlobalType
 
-  CSSComputedEntries = seq[CSSComputedEntry]
-
-  CSSComputedValuesBuilder* = object
-    parent*: CSSComputedValues
-    normalProperties: array[CSSOrigin, CSSComputedEntries]
-    importantProperties: array[CSSOrigin, CSSComputedEntries]
-    preshints*: CSSComputedValues
-
 const ShorthandNames = block:
   var tab = initTable[string, CSSShorthandType]()
   for t in CSSShorthandType:
@@ -575,7 +567,7 @@ macro `{}=`*(vals: CSSComputedValues; s: static string, val: typed) =
       `vs`: `val`
     )
 
-func inherited(t: CSSPropertyType): bool =
+func inherited*(t: CSSPropertyType): bool =
   return t in InheritedProperties
 
 func em_to_px(em: float64; window: WindowAttributes): LayoutUnit =
@@ -1350,7 +1342,7 @@ func getInitialTable(): array[CSSPropertyType, CSSComputedValue] =
 
 let defaultTable = getInitialTable()
 
-template getDefault(t: CSSPropertyType): CSSComputedValue =
+template getDefault*(t: CSSPropertyType): CSSComputedValue =
   {.cast(noSideEffect).}:
     defaultTable[t]
 
@@ -1538,17 +1530,8 @@ proc parseComputedValues*(name: string; value: seq[CSSComponentValue]):
     return res
   return @[]
 
-proc addValues*(builder: var CSSComputedValuesBuilder;
-    decls: seq[CSSDeclaration]; origin: CSSOrigin) =
-  for decl in decls:
-    let vals = parseComputedValues(decl.name, decl.value)
-    if decl.important:
-      builder.importantProperties[origin].add(vals)
-    else:
-      builder.normalProperties[origin].add(vals)
-
-proc applyValue(vals: CSSComputedValues; entry: CSSComputedEntry;
-    parent: CSSComputedValues; previousOrigin: CSSComputedValues) =
+proc applyValue*(vals: CSSComputedValues; entry: CSSComputedEntry;
+    parent, previousOrigin: CSSComputedValues) =
   let parentVal = if parent != nil:
     parent[entry.t]
   else:
@@ -1621,54 +1604,3 @@ func splitTable*(computed: CSSComputedValues):
       innerComputed[prop] = computed[prop]
   outerComputed{"display"} = computed{"display"}
   return (outerComputed, innerComputed)
-
-func hasValues*(builder: CSSComputedValuesBuilder): bool =
-  for origin in CSSOrigin:
-    if builder.normalProperties[origin].len > 0:
-      return true
-    if builder.importantProperties[origin].len > 0:
-      return true
-  return false
-
-func buildComputedValues*(builder: CSSComputedValuesBuilder):
-    CSSComputedValues =
-  new(result)
-  var previousOrigins: array[CSSOrigin, CSSComputedValues]
-  for entry in builder.normalProperties[coUserAgent]: # user agent
-    result.applyValue(entry, builder.parent, nil)
-  previousOrigins[coUserAgent] = result.copyProperties()
-  # Presentational hints override user agent style, but respect user/author
-  # style.
-  if builder.preshints != nil:
-    for prop in CSSPropertyType:
-      if builder.preshints[prop] != nil:
-        result[prop] = builder.preshints[prop]
-  for entry in builder.normalProperties[coUser]: # user
-    result.applyValue(entry, builder.parent, previousOrigins[coUserAgent])
-  # save user origins so author can use them
-  previousOrigins[coUser] = result.copyProperties()
-  for entry in builder.normalProperties[coAuthor]: # author
-    result.applyValue(entry, builder.parent, previousOrigins[coUser])
-  # no need to save user origins
-  for entry in builder.importantProperties[coAuthor]: # author important
-    result.applyValue(entry, builder.parent, previousOrigins[coUser])
-  # important, so no need to save origins
-  for entry in builder.importantProperties[coUser]: # user important
-    result.applyValue(entry, builder.parent, previousOrigins[coUserAgent])
-  # important, so no need to save origins
-  for entry in builder.importantProperties[coUserAgent]: # user agent important
-    result.applyValue(entry, builder.parent, nil)
-  # important, so no need to save origins
-  # set defaults
-  for prop in CSSPropertyType:
-    if result[prop] == nil:
-      if inherited(prop) and builder.parent != nil and
-          builder.parent[prop] != nil:
-        result[prop] = builder.parent[prop]
-      else:
-        result[prop] = getDefault(prop)
-  if result{"float"} != FloatNone:
-    #TODO it may be better to handle this in layout
-    let display = result{"display"}.blockify()
-    if display != result{"display"}:
-      result{"display"} = display

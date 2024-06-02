@@ -20,12 +20,12 @@ import types/opt
 import chame/tags
 
 type
-  DeclarationList* = array[PseudoElem, seq[CSSDeclaration]]
+  RuleList* = array[PseudoElem, seq[CSSRuleDef]]
 
-  DeclarationListMap* = ref object
-    ua: DeclarationList # user agent
-    user: DeclarationList
-    author: seq[DeclarationList]
+  RuleListMap* = ref object
+    ua: RuleList # user agent
+    user: RuleList
+    author: seq[RuleList]
 
 func appliesLR(feature: MediaFeature; window: Window;
     n: LayoutUnit): bool =
@@ -86,24 +86,24 @@ func applies*(mqlist: MediaQueryList; window: Window): bool =
 appliesFwdDecl = applies
 
 type
-  ToSorts = array[PseudoElem, seq[(int, seq[CSSDeclaration])]]
+  ToSorts = array[PseudoElem, seq[(int, CSSRuleDef)]]
 
 proc calcRule(tosorts: var ToSorts; styledNode: StyledNode; rule: CSSRuleDef) =
   for sel in rule.sels:
     if styledNode.selectorsMatch(sel):
       let spec = getSpecificity(sel)
-      tosorts[sel.pseudo].add((spec, rule.decls))
+      tosorts[sel.pseudo].add((spec, rule))
 
-func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): DeclarationList =
+func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
   var tosorts: ToSorts
   let elem = Element(styledNode.node)
   for rule in sheet.genRules(elem.localName, elem.id, elem.classList.toks):
     tosorts.calcRule(styledNode, rule)
   for i in PseudoElem:
-    tosorts[i].sort((proc(x, y: (int, seq[CSSDeclaration])): int =
+    tosorts[i].sort((proc(x, y: (int, CSSRuleDef)): int =
       cmp(x[0], y[0])
     ), order = Ascending)
-    result[i] = newSeqOfCap[CSSDeclaration](tosorts[i].len)
+    result[i] = newSeqOfCap[CSSRuleDef](tosorts[i].len)
     for item in tosorts[i]:
       result[i].add(item[1])
 
@@ -257,58 +257,126 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_list_type_ul
   else: discard
 
+type
+  CSSValueEntryObj = object
+    normal: seq[CSSComputedEntry]
+    important: seq[CSSComputedEntry]
+
+  CSSValueEntryMap = array[CSSOrigin, CSSValueEntryObj]
+
+func buildComputedValues(rules: CSSValueEntryMap; presHints, parent:
+    CSSComputedValues): CSSComputedValues =
+  new(result)
+  var previousOrigins: array[CSSOrigin, CSSComputedValues]
+  for entry in rules[coUserAgent].normal: # user agent
+    result.applyValue(entry, parent, nil)
+  previousOrigins[coUserAgent] = result.copyProperties()
+  # Presentational hints override user agent style, but respect user/author
+  # style.
+  if presHints != nil:
+    for prop in CSSPropertyType:
+      if presHints[prop] != nil:
+        result[prop] = presHints[prop]
+  for entry in rules[coUser].normal: # user
+    result.applyValue(entry, parent, previousOrigins[coUserAgent])
+  # save user origins so author can use them
+  previousOrigins[coUser] = result.copyProperties()
+  for entry in rules[coAuthor].normal: # author
+    result.applyValue(entry, parent, previousOrigins[coUser])
+  # no need to save user origins
+  for entry in rules[coAuthor].important: # author important
+    result.applyValue(entry, parent, previousOrigins[coUser])
+  # important, so no need to save origins
+  for entry in rules[coUser].important: # user important
+    result.applyValue(entry, parent, previousOrigins[coUserAgent])
+  # important, so no need to save origins
+  for entry in rules[coUserAgent].important: # user agent important
+    result.applyValue(entry, parent, nil)
+  # important, so no need to save origins
+  # set defaults
+  for prop in CSSPropertyType:
+    if result[prop] == nil:
+      if prop.inherited and parent != nil and parent[prop] != nil:
+        result[prop] = parent[prop]
+      else:
+        result[prop] = getDefault(prop)
+  if result{"float"} != FloatNone:
+    #TODO it may be better to handle this in layout
+    let display = result{"display"}.blockify()
+    if display != result{"display"}:
+      result{"display"} = display
+
+proc add(map: var CSSValueEntryObj; rules: seq[CSSRuleDef]) =
+  for rule in rules:
+    map.normal.add(rule.normalVals)
+    map.important.add(rule.importantVals)
+
 proc applyDeclarations(styledNode: StyledNode; parent: CSSComputedValues;
-    map: DeclarationListMap) =
-  let pseudo = peNone
-  var builder = CSSComputedValuesBuilder(parent: parent)
-  builder.addValues(map.ua[pseudo], coUserAgent)
-  builder.addValues(map.user[pseudo], coUser)
+    map: RuleListMap) =
+  var rules: CSSValueEntryMap
+  var presHints: CSSComputedValues = nil
+  rules[coUserAgent].add(map.ua[peNone])
+  rules[coUser].add(map.user[peNone])
   for rule in map.author:
-    builder.addValues(rule[pseudo], coAuthor)
+    rules[coAuthor].add(rule[peNone])
   if styledNode.node != nil:
     let element = Element(styledNode.node)
     let style = element.style_cached
     if style != nil:
-      builder.addValues(style.decls, coAuthor)
-    builder.preshints = element.calcPresentationalHints()
-  styledNode.computed = builder.buildComputedValues()
+      for decl in style.decls:
+        let vals = parseComputedValues(decl.name, decl.value)
+        if decl.important:
+          rules[coAuthor].important.add(vals)
+        else:
+          rules[coAuthor].normal.add(vals)
+    presHints = element.calcPresentationalHints()
+  styledNode.computed = rules.buildComputedValues(presHints, parent)
+
+func hasValues(rules: CSSValueEntryMap): bool =
+  for origin in CSSOrigin:
+    if rules[origin].normal.len > 0 or rules[origin].important.len > 0:
+      return true
+  return false
 
 # Either returns a new styled node or nil.
 proc applyDeclarations(pseudo: PseudoElem; styledParent: StyledNode;
-    map: DeclarationListMap): StyledNode =
-  var builder = CSSComputedValuesBuilder(parent: styledParent.computed)
-  builder.addValues(map.ua[pseudo], coUserAgent)
-  builder.addValues(map.user[pseudo], coUser)
+    map: RuleListMap): StyledNode =
+  var rules: CSSValueEntryMap
+  rules[coUserAgent].add(map.ua[pseudo])
+  rules[coUser].add(map.user[pseudo])
   for rule in map.author:
-    builder.addValues(rule[pseudo], coAuthor)
-  if builder.hasValues():
-    let cvals = builder.buildComputedValues()
-    result = styledParent.newStyledElement(pseudo, cvals)
+    rules[coAuthor].add(rule[pseudo])
+  if rules.hasValues():
+    let cvals = rules.buildComputedValues(nil, styledParent.computed)
+    return styledParent.newStyledElement(pseudo, cvals)
+  return nil
 
 func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
-  if ss == nil: return nil
-  new(result)
-  result[] = ss[]
+  if ss == nil:
+    return nil
+  var res = CSSStylesheet()
+  res[] = ss[]
   for mq in ss.mqList:
     if mq.query.applies(window):
-      result.add(mq.children.applyMediaQuery(window))
+      res.add(mq.children.applyMediaQuery(window))
+  return res
 
 func calcRules(styledNode: StyledNode; ua, user: CSSStylesheet;
-    author: seq[CSSStylesheet]): DeclarationListMap =
+    author: seq[CSSStylesheet]): RuleListMap =
   let uadecls = calcRules(styledNode, ua)
-  var userdecls: DeclarationList
+  var userdecls: RuleList
   if user != nil:
     userdecls = calcRules(styledNode, user)
-  var authordecls: seq[DeclarationList]
+  var authordecls: seq[RuleList]
   for rule in author:
     authordecls.add(calcRules(styledNode, rule))
-  return DeclarationListMap(
+  return RuleListMap(
     ua: uadecls,
     user: userdecls,
     author: authordecls
   )
 
-proc applyStyle(parent, styledNode: StyledNode; map: DeclarationListMap) =
+proc applyStyle(parent, styledNode: StyledNode; map: RuleListMap) =
   let parentComputed = if parent != nil:
     parent.computed
   else:
@@ -320,7 +388,7 @@ type CascadeFrame = object
   child: Node
   pseudo: PseudoElem
   cachedChild: StyledNode
-  parentDeclMap: DeclarationListMap
+  parentDeclMap: RuleListMap
 
 proc getAuthorSheets(document: Document): seq[CSSStylesheet] =
   var author: seq[CSSStylesheet]
@@ -350,7 +418,7 @@ proc applyRulesFrameValid(frame: CascadeFrame): StyledNode =
   return styledChild
 
 proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
-    author: seq[CSSStylesheet]; declmap: var DeclarationListMap): StyledNode =
+    author: seq[CSSStylesheet]; declmap: var RuleListMap): StyledNode =
   var styledChild: StyledNode
   let pseudo = frame.pseudo
   let styledParent = frame.styledParent
@@ -460,7 +528,7 @@ proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
 
 proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
     styledParent: StyledNode; pseudo: PseudoElem; i: var int;
-    parentDeclMap: DeclarationListMap = nil) =
+    parentDeclMap: RuleListMap = nil) =
   if frame.cachedChild != nil:
     var cached: StyledNode
     let oldi = i
@@ -494,7 +562,7 @@ proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
 
 # Append children to styledChild.
 proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
-    styledChild: StyledNode; parentDeclMap: DeclarationListMap) =
+    styledChild: StyledNode; parentDeclMap: RuleListMap) =
   # i points to the child currently being inspected.
   var idx = if frame.cachedChild != nil:
     frame.cachedChild.children.len - 1
@@ -532,7 +600,7 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
   var root: StyledNode
   while styledStack.len > 0:
     var frame = styledStack.pop()
-    var declmap: DeclarationListMap
+    var declmap: RuleListMap
     let styledParent = frame.styledParent
     let valid = frame.cachedChild != nil and frame.cachedChild.isValid()
     let styledChild = if valid:

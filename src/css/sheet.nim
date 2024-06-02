@@ -2,6 +2,7 @@ import std/algorithm
 import std/tables
 
 import css/cssparser
+import css/cssvalues
 import css/mediaquery
 import css/selectorparser
 import html/catom
@@ -11,7 +12,8 @@ type
 
   CSSRuleDef* = ref object of CSSRuleBase
     sels*: SelectorList
-    decls*: seq[CSSDeclaration]
+    normalVals*: seq[CSSComputedEntry]
+    importantVals*: seq[CSSComputedEntry]
     # Absolute position in the stylesheet; used for sorting rules after
     # retrieval from the cache.
     idx: int
@@ -137,7 +139,7 @@ iterator genRules*(sheet: CSSStylesheet; tag, id: CAtom; classes: seq[CAtom]):
   for rule in rules:
     yield rule
 
-proc add(sheet: var CSSStylesheet; rule: CSSRuleDef) =
+proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
   var hashes: SelectorHashes
   for cxsel in rule.sels:
     hashes.getSelectorIds(cxsel)
@@ -159,7 +161,7 @@ proc add(sheet: var CSSStylesheet; rule: CSSRuleDef) =
     else:
       sheet.generalList.add(rule)
 
-proc add*(sheet: var CSSStylesheet; sheet2: CSSStylesheet) =
+proc add*(sheet, sheet2: CSSStylesheet) =
   sheet.generalList.add(sheet2.generalList)
   for key, value in sheet2.tagTable.pairs:
     sheet.tagTable.withValue(key, p):
@@ -177,18 +179,27 @@ proc add*(sheet: var CSSStylesheet; sheet2: CSSStylesheet) =
     do:
       sheet.classTable[key] = value
 
-proc addRule(stylesheet: var CSSStylesheet; rule: CSSQualifiedRule) =
+proc addRule(stylesheet: CSSStylesheet; rule: CSSQualifiedRule) =
   let sels = parseSelectors(rule.prelude, stylesheet.factory)
   if sels.len > 0:
-    let r = CSSRuleDef(
+    var normalVals: seq[CSSComputedEntry] = @[]
+    var importantVals: seq[CSSComputedEntry] = @[]
+    let decls = rule.oblock.value.parseDeclarations2()
+    for decl in decls:
+      let vals = parseComputedValues(decl.name, decl.value)
+      if decl.important:
+        importantVals.add(vals)
+      else:
+        normalVals.add(vals)
+    stylesheet.add(CSSRuleDef(
       sels: sels,
-      decls: rule.oblock.value.parseDeclarations2(),
+      normalVals: normalVals,
+      importantVals: importantVals,
       idx: stylesheet.len
-    )
-    stylesheet.add(r)
+    ))
     inc stylesheet.len
 
-proc addAtRule(stylesheet: var CSSStylesheet; atrule: CSSAtRule) =
+proc addAtRule(stylesheet: CSSStylesheet; atrule: CSSAtRule) =
   case atrule.name
   of "media":
     if atrule.oblock == nil:
@@ -212,9 +223,10 @@ proc addAtRule(stylesheet: var CSSStylesheet; atrule: CSSAtRule) =
 
 proc parseStylesheet*(ibuf: string; factory: CAtomFactory): CSSStylesheet =
   let raw = parseStylesheet(ibuf)
-  result = newStylesheet(raw.value.len, factory)
+  let sheet = newStylesheet(raw.value.len, factory)
   for v in raw.value:
     if v of CSSAtRule:
-      result.addAtRule(CSSAtRule(v))
+      sheet.addAtRule(CSSAtRule(v))
     else:
-      result.addRule(CSSQualifiedRule(v))
+      sheet.addRule(CSSQualifiedRule(v))
+  return sheet

@@ -253,9 +253,8 @@ proc consumeEscape(state: var CSSTokenizerState): string =
     return $c #NOTE this assumes the caller doesn't care about non-ascii
 
 proc consumeString(state: var CSSTokenizerState): CSSToken =
-  var s: string
+  var s = ""
   let ending = state.curr
-
   while state.has():
     let c = state.consume()
     case c
@@ -276,32 +275,31 @@ proc consumeString(state: var CSSTokenizerState): CSSToken =
   return CSSToken(tokenType: cttString, value: s)
 
 proc consumeIdentSequence(state: var CSSTokenizerState): string =
+  var s = ""
   while state.has():
     let c = state.consume()
     if state.isValidEscape():
-      result &= state.consumeEscape()
+      s &= state.consumeEscape()
     elif c in Ident:
-      result &= c
+      s &= c
     else:
       state.reconsume()
-      return result
+      return s
+  return s
 
 proc consumeNumber(state: var CSSTokenizerState): (tflagb, float64) =
   var t = tflagbInteger
-  var repr: string
+  var repr = ""
   if state.has() and state.peek() in {'+', '-'}:
     repr &= state.consume()
-
   while state.has() and state.peek() in AsciiDigit:
     repr &= state.consume()
-
   if state.has(1) and state.peek() == '.' and state.peek(1) in AsciiDigit:
     repr &= state.consume()
     repr &= state.consume()
     t = tflagbNumber
     while state.has() and state.peek() in AsciiDigit:
       repr &= state.consume()
-
   if state.has(1) and state.peek() in {'E', 'e'} and
         state.peek(1) in AsciiDigit or
       state.has(2) and state.peek() in {'E', 'e'} and
@@ -315,8 +313,7 @@ proc consumeNumber(state: var CSSTokenizerState): (tflagb, float64) =
     t = tflagbNumber
     while state.has() and state.peek() in AsciiDigit:
       repr &= state.consume()
-
-  let val = parseFloat64($repr)
+  let val = parseFloat64(repr)
   return (t, val)
 
 proc consumeNumericToken(state: var CSSTokenizerState): CSSToken =
