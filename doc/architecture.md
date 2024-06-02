@@ -235,25 +235,18 @@ console.log(document.querySelector("html").canary); /* chirp */
 
 ### JS in the pager
 
-Currently this is very limited: keybindings can be assigned JavaScript functions
-in the config, and then the pager executes those when the keybindings are
-pressed.
-
-(This turns out to be a rather poor configuration system, so we have a plan to
-improve it [here](https://todo.sr.ht/~bptato/chawan/6). Just need to implement
-it some time...)
+Keybindings can be assigned JavaScript functions in the config, and then the
+pager executes those when the keybindings are pressed.
 
 Also, contents of the start.startup-script option are executed at startup. This
 is used when `cha` is called with the `-r` flag.
 
-There *is* an API, but it's somewhat underdocumented. Web APIs are exposed to
+There *is* an API, described at [api.md](api.md). Web APIs are exposed to
 pager too, but you cannot operate on the DOMs themselves from the pager, unless
 you create one yourself with DOMParser.parseFromString.
 
 [config.md](config.md) describes all commands that are used in the default
 config.
-
-A more complete description of the API can be found in [api.md](api.md).
 
 ### JS in the buffer
 

@@ -15,7 +15,7 @@ It can also be used as a terminal pager.
 
 Note: a POSIX-compliant operating system is required.
 
-1. Clone the Chawan repository:
+1. Clone the Chawan repository:  
    `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
 2. Install the Nim compiler: <https://nim-lang.org/install.html>
 	* Please use 1.6.14 or newer, ideally 2.0.4. Versions older than 1.6.14
@@ -33,7 +33,7 @@ Note: a POSIX-compliant operating system is required.
 	* TL;DR for Debian:
 	  `apt install libcurl4-openssl-dev zlib1g-dev pkg-config make ncurses-base libseccomp-dev`
 4. Download parts of Chawan found in other repositories: `make submodule`
-5. Run `make`.
+5. Run `make` (without arguments).
 6. Install using `make install` (e.g. `sudo make install`).
 
 Then, try:
