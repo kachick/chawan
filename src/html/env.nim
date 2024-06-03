@@ -1,6 +1,5 @@
 import std/selectors
 
-import bindings/quickjs
 import html/catom
 import html/chadombuilder
 import html/dom
@@ -14,17 +13,19 @@ import js/base64
 import js/console
 import js/domexception
 import js/encoding
-import js/jserror
 import js/intl
-import js/javascript
-import js/jstypes
 import js/timeout
-import js/tojs
 import loader/headers
 import loader/loader
 import loader/request
 import loader/response
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/jstypes
+import monoucha/quickjs
+import monoucha/tojs
 import types/blob
+import types/opt
 import types/url
 import types/winattrs
 

@@ -1,3 +1,4 @@
+import chame/tags
 import html/catom
 import html/dom
 import html/enums
@@ -5,13 +6,12 @@ import io/dynstream
 import io/posixstream
 import js/base64
 import js/domexception
-import js/javascript
-import js/tojs
+import monoucha/javascript
+import monoucha/tojs
 import types/blob
 import types/formdata
+import types/opt
 import utils/twtstr
-
-import chame/tags
 
 proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
     encoding = "UTF-8"): seq[FormDataEntry]

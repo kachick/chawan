@@ -8,8 +8,6 @@ import std/selectors
 import std/tables
 import std/unicode
 
-import bindings/libregexp
-import bindings/quickjs
 import config/chapath
 import config/config
 import config/mailcap
@@ -21,13 +19,6 @@ import io/socketstream
 import io/stdio
 import io/tempfile
 import io/urlfilter
-import js/fromjs
-import js/javascript
-import js/jserror
-import js/jsregex
-import js/jstypes
-import js/jsutils
-import js/tojs
 import loader/connecterror
 import loader/headers
 import loader/loader
@@ -36,6 +27,15 @@ import local/container
 import local/lineedit
 import local/select
 import local/term
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/jsregex
+import monoucha/jstypes
+import monoucha/jsutils
+import monoucha/libregexp
+import monoucha/quickjs
+import monoucha/tojs
 import server/buffer
 import server/forkserver
 import types/cell
@@ -46,6 +46,7 @@ import types/url
 import types/winattrs
 import utils/luwrap
 import utils/mimeguess
+import utils/regexutils
 import utils/strwidth
 import utils/twtstr
 

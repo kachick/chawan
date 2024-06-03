@@ -2,7 +2,7 @@ import std/selectors
 import std/tables
 
 import io/dynstream
-import js/javascript
+import monoucha/javascript
 
 type TimeoutState* = object
   timeoutid: int32

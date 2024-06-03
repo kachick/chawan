@@ -1,4 +1,4 @@
-import js/javascript
+import monoucha/javascript
 import types/referrer
 import types/url
 

@@ -3,6 +3,7 @@ import std/net
 import std/options
 import std/os
 import std/posix
+import std/tables
 import std/unicode
 
 import config/config
@@ -12,18 +13,19 @@ import io/dynstream
 import io/promise
 import io/serversocket
 import io/socketstream
-import js/javascript
-import js/jsregex
-import js/jstypes
 import layout/renderdocument
 import loader/headers
 import loader/loader
 import loader/request
 import local/select
+import monoucha/javascript
+import monoucha/jsregex
+import monoucha/jstypes
 import server/buffer
 import types/cell
 import types/color
 import types/cookie
+import types/opt
 import types/referrer
 import types/url
 import types/winattrs

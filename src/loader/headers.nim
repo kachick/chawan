@@ -1,9 +1,10 @@
 import std/tables
 
-import bindings/quickjs
-import js/jserror
-import js/fromjs
-import js/javascript
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/quickjs
+import types/opt
 import utils/twtstr
 
 type

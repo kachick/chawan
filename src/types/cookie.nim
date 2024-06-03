@@ -2,9 +2,9 @@ import std/strutils
 import std/times
 
 import io/urlfilter
-import js/jserror
-import js/javascript
-import js/jsregex
+import monoucha/jserror
+import monoucha/javascript
+import monoucha/jsregex
 import types/url
 import types/opt
 import utils/twtstr

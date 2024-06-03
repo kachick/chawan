@@ -1,18 +1,18 @@
 import std/deques
 import std/options
+import std/tables
 
+import chagashi/charset
+import chame/htmlparser
+import chame/tags
 import html/catom
 import html/dom
 import html/enums
-import js/jserror
-import js/fromjs
-import js/javascript
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import types/opt
 import types/url
-
-import chagashi/charset
-
-import chame/htmlparser
-import chame/tags
 
 export htmlparser.ParseResult
 
@@ -259,6 +259,9 @@ proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
   parser.finish()
   builder.finish()
   return root.childList
+
+# Forward declaration hack
+domParseHTMLFragment = parseHTMLFragment
 
 proc newHTML5ParserWrapper*(window: Window; url: URL; factory: CAtomFactory;
     confidence: CharsetConfidence; charset: Charset): HTML5ParserWrapper =

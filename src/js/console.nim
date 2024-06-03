@@ -1,6 +1,6 @@
 import io/dynstream
-import js/jserror
-import js/javascript
+import monoucha/jserror
+import monoucha/javascript
 
 type Console* = ref object
   err*: DynStream

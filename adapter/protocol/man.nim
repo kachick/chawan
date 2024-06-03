@@ -3,14 +3,10 @@ import std/posix
 import std/strutils
 from std/unicode import runeLenAt
 
-import bindings/libregexp
-import js/jsregex
+import monoucha/jsregex
+import monoucha/libregexp
 import types/opt
 import utils/twtstr
-
-proc lre_check_stack_overflow(opaque: pointer; alloca_size: csize_t): cint
-    {.exportc.} =
-  return 0
 
 proc parseSection(query: string): tuple[page, section: string] =
   var section = ""

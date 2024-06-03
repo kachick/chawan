@@ -2,7 +2,7 @@ import std/algorithm
 import std/strutils
 import std/unicode
 
-import bindings/libunicode
+import monoucha/libunicode
 import utils/charcategory
 
 proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
@@ -50,7 +50,8 @@ proc capitalizeLU*(s: string): string =
   result = newStringOfCap(s.len)
   var wordStart = true
   for r in s.runes:
-    if lre_is_space(uint32(r)) == 1:
+    if uint32(r) < 256 and char(r) in AsciiWhitespace or
+        lre_is_space_non_ascii(uint32(r)) == 1:
       wordStart = true
       result &= $r
     elif wordStart:

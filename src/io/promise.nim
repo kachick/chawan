@@ -1,11 +1,11 @@
 import std/tables
 
-import bindings/quickjs
-import js/jserror
-import js/javascript
-import js/jsutils
-import js/jsopaque
-import js/tojs
+import monoucha/quickjs
+import monoucha/jserror
+import monoucha/javascript
+import monoucha/jsutils
+import monoucha/jsopaque
+import monoucha/tojs
 import types/opt
 
 type

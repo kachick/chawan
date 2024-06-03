@@ -1,11 +1,12 @@
 import std/strutils
 
-import bindings/quickjs
-import js/jserror
-import js/fromjs
-import js/javascript
-import js/tojs
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/quickjs
+import monoucha/tojs
 import types/color
+import types/opt
 import utils/charcategory
 import utils/twtstr
 

@@ -22,19 +22,20 @@ import io/dynstream
 import io/promise
 import js/console
 import js/domexception
-import js/fromjs
-import js/javascript
-import js/jserror
-import js/jsopaque
-import js/jspropenumlist
-import js/jsutils
 import js/timeout
-import js/tojs
 import loader/loader
 import loader/request
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/jsopaque
+import monoucha/jspropenumlist
+import monoucha/jsutils
+import monoucha/tojs
 import types/blob
 import types/color
 import types/matrix
+import types/opt
 import types/referrer
 import types/url
 import types/vector
@@ -4189,11 +4190,14 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
   JS_FreeValue(ctx, res)
   return JS_UNDEFINED
 
-import html/chadombuilder
+# Forward declaration hack
+var domParseHTMLFragment*: proc(element: Element; s: string): seq[Node]
+  {.nimcall.}
+
 # https://w3c.github.io/DOM-Parsing/#dfn-fragment-parsing-algorithm
 proc fragmentParsingAlgorithm*(element: Element; s: string): DocumentFragment =
   #TODO xml
-  let newChildren = parseHTMLFragment(element, s)
+  let newChildren = domParseHTMLFragment(element, s)
   let fragment = element.document.newDocumentFragment()
   for child in newChildren:
     fragment.append(child)

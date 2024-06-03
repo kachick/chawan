@@ -10,8 +10,6 @@ import std/selectors
 import std/tables
 import std/unicode
 
-import bindings/libregexp
-import bindings/quickjs
 import config/config
 import css/cascade
 import css/cssparser
@@ -37,14 +35,16 @@ import io/promise
 import io/serversocket
 import io/socketstream
 import js/console
-import js/fromjs
-import js/javascript
-import js/jsregex
 import js/timeout
-import js/tojs
 import layout/renderdocument
 import loader/headers
 import loader/loader
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jsregex
+import monoucha/libregexp
+import monoucha/quickjs
+import monoucha/tojs
 import types/blob
 import types/cell
 import types/color

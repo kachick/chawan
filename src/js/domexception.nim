@@ -1,8 +1,9 @@
 import std/tables
 
-import bindings/quickjs
-import js/jserror
-import js/javascript
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/quickjs
+import types/opt
 
 const NamesTable = {
   "IndexSizeError": 1u16,

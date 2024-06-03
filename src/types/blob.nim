@@ -2,9 +2,9 @@ import std/options
 import std/posix
 import std/strutils
 
-import js/fromjs
-import js/javascript
-import js/jstypes
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jstypes
 import utils/mimeguess
 
 type

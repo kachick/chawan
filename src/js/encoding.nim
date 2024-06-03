@@ -1,13 +1,13 @@
-import bindings/quickjs
-import js/jserror
-import js/javascript
-import js/jstypes
-
 import chagashi/charset
 import chagashi/decoder
 import chagashi/decodercore
 import chagashi/validator
 import chagashi/validatorcore
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/jstypes
+import monoucha/quickjs
+import types/opt
 
 type
   JSTextEncoder = ref object

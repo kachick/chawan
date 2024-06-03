@@ -4,26 +4,27 @@ import std/streams
 import std/strutils
 import std/tables
 
-import bindings/quickjs
 import config/chapath
 import config/mailcap
 import config/mimetypes
 import config/toml
-import js/jserror
-import js/fromjs
-import js/javascript
 import js/jscolor
-import js/jstypes
-import js/jspropenumlist
-import js/jsregex
-import js/tojs
 import loader/headers
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/jspropenumlist
+import monoucha/jsregex
+import monoucha/jstypes
+import monoucha/quickjs
+import monoucha/tojs
 import types/cell
 import types/color
 import types/cookie
 import types/opt
 import types/urimethodmap
 import types/url
+import utils/regexutils
 import utils/twtstr
 
 import chagashi/charset

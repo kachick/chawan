@@ -1,7 +1,7 @@
-import bindings/quickjs
+import monoucha/quickjs
 import js/domexception
-import js/javascript
-import js/jstypes
+import monoucha/javascript
+import monoucha/jstypes
 import types/opt
 import utils/twtstr
 

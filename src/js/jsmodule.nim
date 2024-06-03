@@ -1,7 +1,7 @@
-import bindings/constcharp
-import bindings/quickjs
-import js/javascript
-import js/tojs
+import monoucha/constcharp
+import monoucha/javascript
+import monoucha/quickjs
+import monoucha/tojs
 
 proc setImportMeta(ctx: JSContext; funcVal: JSValue; isMain: bool) =
   let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))

@@ -1,9 +1,9 @@
 # Very minimal Intl module... TODO make it more complete
 
-import bindings/quickjs
-import js/javascript
-import js/jstypes
-import js/tojs
+import monoucha/quickjs
+import monoucha/javascript
+import monoucha/jstypes
+import monoucha/tojs
 
 type
   NumberFormat = ref object

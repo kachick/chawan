@@ -1,8 +1,8 @@
 import std/strutils
 import std/unicode
 
-import bindings/quickjs
-import js/javascript
+import monoucha/quickjs
+import monoucha/javascript
 import types/cell
 import types/opt
 import types/winattrs

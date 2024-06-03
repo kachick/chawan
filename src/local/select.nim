@@ -1,6 +1,6 @@
 import std/unicode
 
-import js/jsregex
+import monoucha/jsregex
 import server/buffer
 import types/cell
 import utils/luwrap

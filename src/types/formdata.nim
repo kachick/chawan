@@ -2,7 +2,7 @@ import std/strutils
 
 import io/dynstream
 import io/posixstream
-import js/javascript
+import monoucha/javascript
 import types/blob
 import utils/twtstr
 

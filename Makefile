@@ -44,8 +44,6 @@ else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
 endif
 
-QJSOBJ = $(OBJDIR)/quickjs
-
 .PHONY: all
 all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html \
@@ -56,8 +54,8 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc \
 	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
 
-$(OUTDIR_BIN)/cha: lib/libquickjs.a src/*.nim src/**/*.nim src/**/*.c res/* \
-		res/**/* res/map/idna_gen.nim nim.cfg
+$(OUTDIR_BIN)/cha: src/*.nim src/**/*.nim src/**/*.c res/* res/**/* \
+		lib/**/* res/map/idna_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
                 -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) $(FLAGS) \
@@ -117,12 +115,11 @@ $(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
 
-$(OUTDIR_CGI_BIN)/man: adapter/protocol/man.nim $(QJSOBJ)/libregexp.o \
-		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o src/js/jsregex.nim \
-		src/bindings/libregexp.nim src/types/opt.nim src/utils/twtstr.nim
+$(OUTDIR_CGI_BIN)/man: adapter/protocol/man.nim lib/monoucha/monoucha/jsregex.nim \
+		lib/monoucha/monoucha/libregexp.nim src/types/opt.nim \
+		src/utils/twtstr.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/man" \
-		--passL:"$(QJSOBJ)/libregexp.o $(QJSOBJ)/cutils.o $(QJSOBJ)/libunicode.o" \
 		-o:"$(OUTDIR_CGI_BIN)/man" adapter/protocol/man.nim
 
 $(OUTDIR_CGI_BIN)/spartan: adapter/protocol/spartan
@@ -179,30 +176,6 @@ $(OUTDIR_LIBEXEC)/urlenc: adapter/tools/urlenc.nim src/utils/twtstr.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/urlenc" \
 		-o:"$(OUTDIR_LIBEXEC)/urlenc" adapter/tools/urlenc.nim
-
-CFLAGS = -fwrapv -g -Wall -O2 -DCONFIG_VERSION=\"$(shell cat lib/quickjs/VERSION)\"
-
-# Dependencies
-$(QJSOBJ)/cutils.o: lib/quickjs/cutils.h
-$(QJSOBJ)/libbf.o: lib/quickjs/cutils.h lib/quickjs/libbf.h
-$(QJSOBJ)/libregexp.o: lib/quickjs/cutils.h lib/quickjs/libregexp.h \
-	lib/quickjs/libunicode.h lib/quickjs/libregexp-opcode.h
-$(QJSOBJ)/libunicode.o: lib/quickjs/cutils.h lib/quickjs/libunicode.h \
-	lib/quickjs/libunicode-table.h
-$(QJSOBJ)/quickjs.o: lib/quickjs/cutils.h lib/quickjs/list.h \
-	lib/quickjs/quickjs.h lib/quickjs/libregexp.h \
-	lib/quickjs/libunicode.h lib/quickjs/libbf.h \
-	lib/quickjs/quickjs-atom.h lib/quickjs/quickjs-opcode.h
-
-$(QJSOBJ)/%.o: lib/quickjs/%.c
-	@mkdir -p "$(QJSOBJ)"
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-lib/libquickjs.a: $(QJSOBJ)/quickjs.o $(QJSOBJ)/libregexp.o \
-		$(QJSOBJ)/libunicode.o $(QJSOBJ)/cutils.o \
-		$(QJSOBJ)/libbf.o
-	@mkdir -p "$(QJSOBJ)"
-	$(AR) rcs $@ $^
 
 $(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 	@mkdir -p "$(OBJDIR)/man"

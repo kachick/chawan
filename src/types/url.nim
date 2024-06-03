@@ -5,11 +5,12 @@ import std/strutils
 import std/tables
 import std/unicode
 
-import bindings/libunicode
-import js/jserror
-import js/javascript
 import lib/punycode
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/libunicode
 import types/blob
+import types/opt
 import utils/luwrap
 import utils/map
 import utils/twtstr

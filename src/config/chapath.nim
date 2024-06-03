@@ -2,10 +2,10 @@ import std/options
 import std/os
 import std/posix
 
-import js/fromjs
-import js/javascript
-import js/jserror
-import js/tojs
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/tojs
 import types/opt
 import utils/twtstr
 

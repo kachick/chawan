@@ -1,20 +1,19 @@
 import version
 
-# Note: we can't just import std/os or the compiler cries. (No idea why.)
-from std/os import getEnv, putEnv, commandLineParams, getCurrentDir
 import std/options
+import std/os
 import std/posix
 
-import server/forkserver
+import chagashi/charset
 import config/chapath
 import config/config
-import js/javascript
 import local/client
 import local/term
+import monoucha/javascript
+import server/forkserver
+import types/opt
 import utils/strwidth
 import utils/twtstr
-
-import chagashi/charset
 
 const ChaVersionStr = block:
   var s = "Chawan browser v0.1 "

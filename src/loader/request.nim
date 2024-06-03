@@ -2,15 +2,16 @@ import std/options
 import std/strutils
 import std/tables
 
-import bindings/quickjs
 import html/script
-import js/fromjs
-import js/javascript
-import js/jserror
-import js/jstypes
 import loader/headers
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/jstypes
+import monoucha/quickjs
 import types/blob
 import types/formdata
+import types/opt
 import types/referrer
 import types/url
 

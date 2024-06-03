@@ -9,8 +9,6 @@ import std/strutils
 import std/tables
 import std/unicode
 
-import bindings/constcharp
-import bindings/quickjs
 import config/config
 import html/catom
 import html/chadombuilder
@@ -30,16 +28,9 @@ import js/base64
 import js/console
 import js/domexception
 import js/encoding
-import js/fromjs
 import js/intl
-import js/javascript
-import js/jserror
 import js/jsmodule
-import js/jsopaque
-import js/jstypes
-import js/jsutils
 import js/timeout
-import js/tojs
 import loader/headers
 import loader/loader
 import loader/request
@@ -47,6 +38,15 @@ import local/container
 import local/lineedit
 import local/pager
 import local/term
+import monoucha/constcharp
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/jsopaque
+import monoucha/jstypes
+import monoucha/jsutils
+import monoucha/quickjs
+import monoucha/tojs
 import server/buffer
 import server/forkserver
 import types/blob
