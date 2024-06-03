@@ -121,6 +121,27 @@ proc bindRealloc(s: ptr JSMallocState; p: pointer; size: csize_t): pointer
     {.cdecl.} =
   return realloc(p, size)
 
+proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
+  let rtOpaque = rt.getOpaque()
+  GC_unref(rtOpaque)
+  assert rtOpaque.destroying == nil
+  var ps: seq[pointer] = @[]
+  for p in rtOpaque.plist.values:
+    ps.add(p)
+  rtOpaque.plist.clear()
+  var unrefs: seq[proc() {.closure.}] = @[]
+  for (_, unref) in rtOpaque.refmap.values:
+    unrefs.add(unref)
+  rtOpaque.refmap.clear()
+  for unref in unrefs:
+    unref()
+  for p in ps:
+    #TODO maybe finalize?
+    let val = JS_MKPTR(JS_TAG_OBJECT, p)
+    JS_SetOpaque(val, nil)
+    JS_FreeValueRT(rt, val)
+  JS_RunGC(rt)
+
 proc newJSRuntime*(): JSRuntime =
   var mf {.global.} = JSMallocFunctions(
     js_malloc: bindMalloc,
@@ -132,6 +153,7 @@ proc newJSRuntime*(): JSRuntime =
   let opaque = JSRuntimeOpaque()
   GC_ref(opaque)
   JS_SetRuntimeOpaque(rt, cast[pointer](opaque))
+  JS_SetRuntimeCleanUpFunc(rt, jsRuntimeCleanUp)
   # Must be added after opaque is set, or there is a chance of
   # nim_finalize_for_js dereferencing it (at the new call).
   runtimes.add(rt)
@@ -170,17 +192,6 @@ proc free*(ctx: JSContext) =
   JS_FreeContext(ctx)
 
 proc free*(rt: JSRuntime) =
-  let opaque = rt.getOpaque()
-  GC_unref(opaque)
-  var ps: seq[pointer] = @[]
-  for p in opaque.plist.values:
-    ps.add(p)
-  opaque.plist.clear()
-  for p in ps:
-    #TODO maybe finalize?
-    let val = JS_MKPTR(JS_TAG_OBJECT, p)
-    JS_SetOpaque(val, nil)
-    JS_FreeValueRT(rt, val)
   JS_FreeRuntime(rt)
   runtimes.del(runtimes.find(rt))
 
@@ -1503,8 +1514,8 @@ proc bindGetSet(stmts: NimNode; info: RegistryInfo) =
         JS_CGETSET_DEF_NOCONF(`k`, `get`, `set`))
 
 proc bindExtraGetSet(stmts: NimNode; info: var RegistryInfo;
-    extra_getset: openArray[TabGetSet]) =
-  for x in extra_getset:
+    extraGetSet: openArray[TabGetSet]) =
+  for x in extraGetSet:
     let k = x.name
     let g = x.get
     let s = x.set
@@ -1604,8 +1615,8 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; globalparent: static bool = false;
     nointerface = false; name: static string = "";
-    has_extra_getset: static bool = false;
-    extra_getset: static openArray[TabGetSet] = []; namespace = JS_NULL;
+    hasExtraGetSet: static bool = false;
+    extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL;
     errid = opt(JSErrorEnum); ishtmldda = false): JSClassID =
   var stmts = newStmtList()
   var info = newRegistryInfo(t, name)
@@ -1622,11 +1633,11 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   stmts.registerSetters(info, pragmas.jsset)
   stmts.bindFunctions(info)
   stmts.bindGetSet(info)
-  if has_extra_getset:
-    #HACK: for some reason, extra_getset gets weird contents when nothing is
+  if hasExtraGetSet:
+    #HACK: for some reason, extraGetSet gets weird contents when nothing is
     # passed to it. So we need an extra flag to signal if anything has
     # been passed to it at all.
-    stmts.bindExtraGetSet(info, extra_getset)
+    stmts.bindExtraGetSet(info, extraGetSet)
   let sctr = stmts.bindConstructor(info)
   if not asglobal:
     stmts.bindCheckDestroy(info)

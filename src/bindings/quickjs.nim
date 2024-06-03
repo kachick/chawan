@@ -132,6 +132,8 @@ type
   JSClassExoticMethodsConst* {.importc: "const JSClassExoticMethods *",
     header: qjsheader.} = ptr JSClassExoticMethods
 
+  JSRuntimeCleanUpFunc* {.importc.} = proc(rt: JSRuntime) {.cdecl.}
+
   JSClassDef* {.importc, header: qjsheader.} = object
     class_name*: cstring
     finalizer*: JSClassFinalizer
@@ -555,6 +557,8 @@ proc JS_ExecutePendingJob*(rt: JSRuntime; pctx: ptr JSContext): cint
 
 proc JS_GetRuntimeOpaque*(rt: JSRuntime): pointer
 proc JS_SetRuntimeOpaque*(rt: JSRuntime; p: pointer)
+proc JS_SetRuntimeCleanUpFunc*(rt: JSRuntime;
+  cleanup_func: JSRuntimeCleanUpFunc)
 
 proc JS_SetContextOpaque*(ctx: JSContext; opaque: pointer)
 proc JS_GetContextOpaque*(ctx: JSContext): pointer

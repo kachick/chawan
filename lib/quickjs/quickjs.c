@@ -306,6 +306,7 @@ struct JSRuntime {
     uint32_t operator_count;
 #endif
     void *user_opaque;
+    JSRuntimeCleanUpFunc *user_cleanup;
 };
 
 struct JSClass {
@@ -1703,6 +1704,11 @@ void JS_SetRuntimeOpaque(JSRuntime *rt, void *opaque)
     rt->user_opaque = opaque;
 }
 
+void JS_SetRuntimeCleanUpFunc(JSRuntime *rt, JSRuntimeCleanUpFunc cleanup_func)
+{
+    rt->user_cleanup = cleanup_func;
+}
+
 /* default memory allocation functions with memory limitation */
 static size_t js_def_malloc_usable_size(const void *ptr)
 {
@@ -1959,6 +1965,8 @@ void JS_FreeRuntime(JSRuntime *rt)
     init_list_head(&rt->job_list);
 
     JS_RunGC(rt);
+
+    rt->user_cleanup(rt);
 
 #ifdef DUMP_LEAKS
     /* leaking objects */
