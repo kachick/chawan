@@ -10,23 +10,19 @@ export LREFlags
 type
   Regex* = object
     bytecode: seq[uint8]
-    buf: string
+    when defined(debug):
+      buf: string
 
-  RegexCapture* = tuple # start, end, index
+  RegexCapture* = tuple # start, end
     s, e: int
-    i: int32
 
   RegexResult* = object
     success*: bool
-    captures*: seq[RegexCapture]
+    captures*: seq[seq[RegexCapture]]
 
-  RegexReplace* = object
-    regex: Regex
-    rule: string
-    global: bool
-
-func `$`*(regex: Regex): string =
-  regex.buf
+when defined(debug):
+  func `$`*(regex: Regex): string =
+    regex.buf
 
 # this is hardcoded into quickjs, so we must override it here.
 proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
@@ -43,10 +39,9 @@ proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
   var bcseq = newSeqUninitialized[uint8](plen)
   copyMem(addr bcseq[0], bytecode, plen)
   dealloc(bytecode)
-  let regex = Regex(
-    buf: buf,
-    bytecode: bcseq
-  )
+  var regex = Regex(bytecode: bcseq)
+  when defined(debug):
+    regex.buf = buf
   return ok(regex)
 
 func countBackslashes(buf: string; i: int): int =
@@ -133,13 +128,15 @@ proc exec*(regex: Regex; str: string; start = 0; length = -1; nocaps = false):
     result.success = true
     if captureCount == 0 or nocaps:
       break
+    var caps: seq[RegexCapture] = @[]
     let cstrAddress = cast[int](cstr)
     let ps = start
     start = capture[1] - cstrAddress
     for i in 0 ..< captureCount:
       let s = capture[i * 2] - cstrAddress
       let e = capture[i * 2 + 1] - cstrAddress
-      result.captures.add((s, e, i))
+      caps.add((s, e))
+    result.captures.add(caps)
     if LRE_FLAG_GLOBAL notin flags:
       break
     if start >= str.len:

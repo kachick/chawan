@@ -94,13 +94,11 @@ proc isCommand(paths: seq[string]; name, s: string): bool =
       return true
   false
 
-iterator myCaptures(captures: var seq[RegexCapture]; target: int;
-    offset: var int): RegexCapture =
-  for cap in captures.mitems:
-    if cap.i == target:
-      cap.s += offset
-      cap.e += offset
-      yield cap
+iterator myCaptures(res: var RegexResult; i, offset: int): RegexCapture =
+  for cap in res.captures.mitems:
+    cap[i].s += offset
+    cap[i].e += offset
+    yield cap[i]
 
 proc readErrorMsg(efile: File; line: var string): string =
   var msg = ""
@@ -176,70 +174,64 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
     var fileRes = fileRe.exec(line)
     var includeRes = includeRe.exec(line)
     var manRes = manRe.exec(line)
-    if linkRes.success:
-      for cap in linkRes.captures.myCaptures(0, offset):
-        let s = line[cap.s..<cap.e]
-        let link = "<a href='" & s & "'>" & s & "</a>"
-        line[cap.s..<cap.e] = link
-        offset += link.len - (cap.e - cap.s)
-    if mailRes.success:
-      for cap in mailRes.captures.myCaptures(2, offset):
-        let s = line[cap.s..<cap.e]
-        let link = "<a href='mailto:" & s & "'>" & s & "</a>"
-        line[cap.s..<cap.e] = link
-        offset += link.len - (cap.e - cap.s)
-    if fileRes.success:
-      for cap in fileRes.captures.myCaptures(0, offset):
-        let s = line[cap.s..<cap.e]
-        let target = s.expandTilde()
-        if not fileExists(target) and not symlinkExists(target) and
-            not dirExists(target):
-          continue
-        let name = target.afterLast('/')
-        let link = if paths.isCommand(name, target):
-          "<a href='man:" & name & "'>" & s & "</a>"
-        else:
-          "<a href='file:" & target & "'>" & s & "</a>"
-        line[cap.s..<cap.e] = link
-        offset += link.len - (cap.e - cap.s)
-    if includeRes.success:
-      for cap in includeRes.captures.myCaptures(2, offset):
-        let s = line[cap.s..<cap.e]
-        const includePaths = [
-          "/usr/include/",
-          "/usr/local/include/",
-          "/usr/X11R6/include/",
-          "/usr/X11/include/",
-          "/usr/X/include/",
-          "/usr/include/X11/"
-        ]
-        for path in includePaths:
-          let file = path & s
-          if fileExists(file):
-            let link = "<a href='file:" & file & "'>" & s & "</a>"
-            line[cap.s..<cap.e] = link
-            offset += link.len - (cap.e - cap.s)
-            break
-    if manRes.success:
-      for j, cap in manRes.captures.mpairs:
-        if cap.i == 0:
-          cap.s += offset
-          cap.e += offset
-          var manCap = manRes.captures[j + 2]
-          manCap.s += offset
-          manCap.e += offset
-          var secCap = manRes.captures[j + 4]
-          secCap.s += offset
-          secCap.e += offset
-          let man = line[manCap.s..<manCap.e]
-          # ignore footers like MYPAGE(1)
-          # (just to be safe, we also check if it's in paths too)
-          if man == ignoreMan and not paths.isCommand(man.afterLast('/'), man):
-            continue
-          let cat = man & line[secCap.s..<secCap.e]
-          let link = "<a href='man:" & cat & "'>" & man & "</a>"
-          line[manCap.s..<manCap.e] = link
-          offset += link.len - (manCap.e - manCap.s)
+    for cap in linkRes.myCaptures(0, offset):
+      let s = line[cap.s..<cap.e]
+      let link = "<a href='" & s & "'>" & s & "</a>"
+      line[cap.s..<cap.e] = link
+      offset += link.len - (cap.e - cap.s)
+    for cap in mailRes.myCaptures(2, offset):
+      let s = line[cap.s..<cap.e]
+      let link = "<a href='mailto:" & s & "'>" & s & "</a>"
+      line[cap.s..<cap.e] = link
+      offset += link.len - (cap.e - cap.s)
+    for cap in fileRes.myCaptures(0, offset):
+      let s = line[cap.s..<cap.e]
+      let target = s.expandTilde()
+      if not fileExists(target) and not symlinkExists(target) and
+          not dirExists(target):
+        continue
+      let name = target.afterLast('/')
+      let link = if paths.isCommand(name, target):
+        "<a href='man:" & name & "'>" & s & "</a>"
+      else:
+        "<a href='file:" & target & "'>" & s & "</a>"
+      line[cap.s..<cap.e] = link
+      offset += link.len - (cap.e - cap.s)
+    for cap in includeRes.myCaptures(2, offset):
+      let s = line[cap.s..<cap.e]
+      const includePaths = [
+        "/usr/include/",
+        "/usr/local/include/",
+        "/usr/X11R6/include/",
+        "/usr/X11/include/",
+        "/usr/X/include/",
+        "/usr/include/X11/"
+      ]
+      for path in includePaths:
+        let file = path & s
+        if fileExists(file):
+          let link = "<a href='file:" & file & "'>" & s & "</a>"
+          line[cap.s..<cap.e] = link
+          offset += link.len - (cap.e - cap.s)
+          break
+    for cap in manRes.captures.mitems:
+      cap[0].s += offset
+      cap[0].e += offset
+      var manCap = cap[2]
+      manCap.s += offset
+      manCap.e += offset
+      var secCap = cap[4]
+      secCap.s += offset
+      secCap.e += offset
+      let man = line[manCap.s..<manCap.e]
+      # ignore footers like MYPAGE(1)
+      # (just to be safe, we also check if it's in paths too)
+      if man == ignoreMan and not paths.isCommand(man.afterLast('/'), man):
+        continue
+      let cat = man & line[secCap.s..<secCap.e]
+      let link = "<a href='man:" & cat & "'>" & man & "</a>"
+      line[manCap.s..<manCap.e] = link
+      offset += link.len - (manCap.e - manCap.s)
     stdout.write(line & '\n')
   ofile.close()
   efile.close()

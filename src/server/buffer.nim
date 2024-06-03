@@ -594,8 +594,8 @@ proc findPrevMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
   let b = buffer.cursorBytes(y, cursorx)
   let res = regex.exec(buffer.lines[y].str, 0, b)
   var numfound = 0
-  if res.success and res.captures.len > 0:
-    let cap = res.captures[^1]
+  if res.captures.len > 0:
+    let cap = res.captures[^1][0]
     let x = buffer.lines[y].str.width(0, cap.s)
     let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
     inc numfound
@@ -609,8 +609,8 @@ proc findPrevMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
       else:
         break
     let res = regex.exec(buffer.lines[y].str)
-    if res.success and res.captures.len > 0:
-      let cap = res.captures[^1]
+    if res.captures.len > 0:
+      let cap = res.captures[^1][0]
       let x = buffer.lines[y].str.width(0, cap.s)
       let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
       inc numfound
@@ -628,7 +628,7 @@ proc findNextMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
   let res = regex.exec(buffer.lines[y].str, b, buffer.lines[y].str.len)
   var numfound = 0
   if res.success and res.captures.len > 0:
-    let cap = res.captures[0]
+    let cap = res.captures[0][0]
     let x = buffer.lines[y].str.width(0, cap.s)
     let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
     inc numfound
@@ -643,7 +643,7 @@ proc findNextMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
         break
     let res = regex.exec(buffer.lines[y].str)
     if res.success and res.captures.len > 0:
-      let cap = res.captures[0]
+      let cap = res.captures[0][0]
       let x = buffer.lines[y].str.width(0, cap.s)
       let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
       inc numfound
@@ -1779,10 +1779,8 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
           var data = ""
           var j = 0
           for cap in res.captures.mitems:
-            if cap.i != 0:
-              continue
-            let capLen = cap.e - cap.s
-            while j < cap.s:
+            let capLen = cap[0].e - cap[0].s
+            while j < cap[0].s:
               case (let c = text.data[j]; c)
               of '<':
                 data &= "&lt;"
@@ -1802,13 +1800,13 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
               else:
                 data &= c
               inc j
-            cap.s += offset
-            cap.e += offset
+            cap[0].s += offset
+            cap[0].e += offset
             let s = text.data[j ..< j + capLen]
             let news = "<a href=\"" & s & "\">" & s.htmlEscape() & "</a>"
             data &= news
-            j += cap.e - cap.s
-            offset += news.len - (cap.e - cap.s)
+            j += cap[0].e - cap[0].s
+            offset += news.len - (cap[0].e - cap[0].s)
           while j < text.data.len:
             case (let c = text.data[j]; c)
             of '<': data &= "&lt;"
