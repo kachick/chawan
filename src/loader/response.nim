@@ -59,7 +59,7 @@ proc newResponse*(res: int; request: Request; stream: SocketStream): Response =
     outputId: -1
   )
 
-func makeNetworkError*(): Response {.jsstfunc: "Response:error".} =
+func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
   #TODO use "create" function
   #TODO headers immutable
   return Response(

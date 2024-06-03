@@ -1226,7 +1226,7 @@ proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
   url.fragment = some("")
   discard basicParseURL(s, url = url, stateOverride = some(usFragment))
 
-proc jsParse(url: string; base = none(string)): URL {.jsstfunc: "URL:parse".} =
+proc jsParse(url: string; base = none(string)): URL {.jsstfunc: "URL.parse".} =
   return parseAPIURL(url, base).get(nil)
 
 proc canParse(url: string; base = none(string)): bool {.jsstfunc: "URL".} =

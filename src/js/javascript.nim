@@ -850,7 +850,7 @@ func getFuncName(fun: NimNode; jsname, staticName: string): string =
   if jsname != "":
     return jsname
   if staticName != "":
-    let i = staticName.find(':')
+    let i = staticName.find('.')
     if i != -1:
       return staticName.substr(i + 1)
   let x = $fun[0]
@@ -934,7 +934,7 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; thisname = some("this");
   if staticName == "":
     gen.addThisName(thisname)
   else:
-    gen.thisType = staticName.until(':')
+    gen.thisType = staticName.until('.')
     gen.newName = ident($gen.t & "_" & gen.funcName)
   return gen
 
