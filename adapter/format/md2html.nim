@@ -11,6 +11,8 @@ type BracketState = enum
   bsNone, bsInBracketRef, bsInBracket, bsAfterBracket, bsInParen, bsInImage,
   bsInTag
 
+const AsciiAlphaNumeric = {'0'..'9', 'A'..'Z', 'a'..'z'}
+
 proc getId(line: openArray[char]): string =
   result = ""
   var i = 0
@@ -30,8 +32,7 @@ proc getId(line: openArray[char]): string =
       inc i
       continue
     case c
-    of 'A'..'Z': result &= char(int(c) - int('A') + int('a'))
-    of 'a'..'z', '-', '_', '.': result &= c
+    of AsciiAlphaNumeric, '-', '_', '.': result &= c.toLowerAscii()
     of ' ': result &= '-'
     of '[':
       if bs != bsNone:
@@ -48,7 +49,6 @@ proc getId(line: openArray[char]): string =
 type InlineState = enum
   isItalic, isBold, isCode, isComment, isDel
 
-const AsciiAlphaNumeric = {'0'..'9', 'A'..'Z', 'a'..'z'}
 func startsWithScheme(s: string): bool =
   for i, c in s:
     if i > 0 and c == ':':
