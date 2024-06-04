@@ -170,6 +170,8 @@ type
     parentBps: BlockPositionState
     space: AvailableSpace
     box: BlockBox
+    # to propagate float overflow
+    parentBox: BlockBox
 
   BlockPositionState = ref object
     next: BlockPositionState
@@ -217,6 +219,7 @@ type
 
   InlineContext = object
     root: RootInlineFragment
+    computed: CSSComputedValues
     bctx: ptr BlockContext
     bfcOffset: Offset
     currentLine: LineBoxState
@@ -315,7 +318,30 @@ proc newWord(ictx: var InlineContext; state: var InlineState) =
   ictx.wrappos = -1
   ictx.hasshy = false
 
-proc horizontalAlignLines(ictx: var InlineContext; align: CSSTextAlign) =
+func overflow(atom: InlineAtom; dim: DimensionType): Span =
+  if atom.t == iatInlineBlock:
+    let u = atom.offset[dim]
+    return Span(
+      start: u + atom.innerbox.state.overflow[dim].start,
+      send: u + atom.innerbox.state.overflow[dim].send
+    )
+  return Span(
+    start: atom.offset[dim],
+    send: atom.offset[dim] + atom.size[dim]
+  )
+
+proc expand(a: var Span; b: Span) =
+  a.start = min(a.start, b.start)
+  a.send = max(a.send, b.send)
+
+#TODO start & justify would be nice to have
+const TextAlignNone = {
+  TextAlignStart, TextAlignLeft, TextAlignChaLeft, TextAlignJustify
+}
+
+proc horizontalAlignLines(ictx: var InlineContext) =
+  #TODO this is not quite correct, fit-content should use overflow width
+  # (without the min()).
   let width = case ictx.space.w.t
   of scMinContent, scMaxContent:
     ictx.size.w
@@ -323,9 +349,9 @@ proc horizontalAlignLines(ictx: var InlineContext; align: CSSTextAlign) =
     min(ictx.size.w, ictx.space.w.u)
   of scStretch:
     max(ictx.size.w, ictx.space.w.u)
-  # we don't support directions for now so left = start and right = end
-  case align
-  of TextAlignStart, TextAlignLeft, TextAlignChaLeft, TextAlignJustify:
+  let root = ictx.root
+  case ictx.computed{"text-align"}
+  of TextAlignNone:
     discard
   of TextAlignEnd, TextAlignRight, TextAlignChaRight:
     # move everything
@@ -334,6 +360,7 @@ proc horizontalAlignLines(ictx: var InlineContext; align: CSSTextAlign) =
       for atom in line.atoms:
         atom.offset.x += x
         ictx.size.w = max(atom.offset.x + atom.size.w, ictx.size.w)
+        root.state.overflow[dtHorizontal].expand(atom.overflow(dtHorizontal))
   of TextAlignCenter, TextAlignChaCenter:
     # NOTE if we need line x offsets, use:
     #let width = width - line.offset.x
@@ -342,6 +369,7 @@ proc horizontalAlignLines(ictx: var InlineContext; align: CSSTextAlign) =
       for atom in line.atoms:
         atom.offset.x += x
         ictx.size.w = max(atom.offset.x + atom.size.w, ictx.size.w)
+        root.state.overflow[dtHorizontal].expand(atom.overflow(dtHorizontal))
 
 # Resize the line's height based on atoms' height and baseline.
 # The line height should be at least as high as the highest baseline used by
@@ -401,14 +429,21 @@ proc positionAtoms(currentLine: LineBoxState; lctx: LayoutContext): LayoutUnit =
     marginTop = max(iastate.marginTop - atom.offset.y, marginTop)
   return marginTop
 
-proc shiftAtoms(currentLine: var LineBoxState; marginTop: LayoutUnit;
+proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit;
     cellHeight: int) =
-  let offsety = currentLine.offsety
-  let shiftTop = marginTop + currentLine.paddingTop
-  for atom in currentLine.atoms:
+  let offsety = ictx.currentLine.offsety
+  let shiftTop = marginTop + ictx.currentLine.paddingTop
+  let root = ictx.root
+  let noAlign = ictx.computed{"text-align"} in TextAlignNone
+  for atom in ictx.currentLine.atoms:
     atom.offset.y = (atom.offset.y + shiftTop + offsety).round(cellHeight)
     let minHeight = atom.offset.y - offsety + atom.size.h
-    currentLine.minHeight = max(currentLine.minHeight, minHeight)
+    ictx.currentLine.minHeight = max(ictx.currentLine.minHeight, minHeight)
+    # Y is always final, so it is safe to calculate Y overflow
+    root.state.overflow[dtVertical].expand(atom.overflow(dtVertical))
+    if noAlign:
+      # X is final, calculate X overflow
+      root.state.overflow[dtHorizontal].expand(atom.overflow(dtHorizontal))
 
 # Align atoms (inline boxes, text, etc.) vertically (i.e. along the block/y
 # axis) inside the line.
@@ -426,7 +461,7 @@ proc verticalAlignLine(ictx: var InlineContext) =
   let marginTop = ictx.currentLine.positionAtoms(ictx.lctx)
   # Finally, offset all atoms' y position by the largest top margin and the
   # line box's top padding.
-  ictx.currentLine.shiftAtoms(marginTop, ch)
+  ictx.shiftAtoms(marginTop, ch)
   #TODO this does not really work with rounding :/
   ictx.currentLine.baseline += ictx.currentLine.paddingTop
   # Ensure that the line is exactly as high as its highest atom demands,
@@ -780,7 +815,8 @@ proc processWhitespace(ictx: var InlineContext; state: var InlineState;
   state.lastrw = state.prevrw
 
 func initInlineContext(bctx: var BlockContext; space: AvailableSpace;
-    bfcOffset: Offset; root: RootInlineFragment): InlineContext =
+    bfcOffset: Offset; root: RootInlineFragment;
+    computed: CSSComputedValues): InlineContext =
   var ictx = InlineContext(
     currentLine: LineBoxState(
       line: LineBox()
@@ -789,7 +825,8 @@ func initInlineContext(bctx: var BlockContext; space: AvailableSpace;
     lctx: bctx.lctx,
     bfcOffset: bfcOffset,
     space: space,
-    root: root
+    root: root,
+    computed: computed
   )
   ictx.initLine()
   return ictx
@@ -1160,6 +1197,11 @@ func bfcOffset(bctx: BlockContext): Offset =
     return bctx.parentBps.offset
   return offset(x = 0, y = 0)
 
+# expand to (0, size[dim].u)
+func finalize(overflow: var Overflow; size: Size) =
+  overflow[dtHorizontal].expand(Span(start: 0, send: size[dtHorizontal]))
+  overflow[dtVertical].expand(Span(start: 0, send: size[dtVertical]))
+
 proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   var bfcOffset = bctx.bfcOffset
   let offset = offset(x = sizes.padding.left, y = sizes.padding.top)
@@ -1174,6 +1216,11 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.applyPadding(sizes.padding)
   box.state.baseline = offset.y + box.inline.state.baseline
   box.state.firstBaseline = offset.y + box.inline.state.firstBaseline
+  box.state.overflow = box.inline.state.overflow
+  # shift overflow
+  for dim in DimensionType:
+    box.state.overflow[dim] += offset[dim]
+  box.state.overflow.finalize(box.state.size)
 
 const DisplayBlockLike = {DisplayBlock, DisplayListItem, DisplayInlineBlock}
 
@@ -1225,6 +1272,7 @@ type
     offset: Offset
     maxChildWidth: LayoutUnit
     totalFloatWidth: LayoutUnit # used for re-layouts
+    maxChildOverflowWidth: LayoutUnit
     space: AvailableSpace
     xminwidth: LayoutUnit
     prevParentBps: BlockPositionState
@@ -1304,9 +1352,17 @@ proc positionFloat(bctx: var BlockContext; child: BlockBox;
   bctx.exclusions.add(ex)
   bctx.maxFloatHeight = max(bctx.maxFloatHeight, ex.offset.y + ex.size.h)
 
+proc applyOverflowDimensions(box, child: BlockBox) =
+  var childOverflow = child.state.overflow
+  for dim in DimensionType:
+    childOverflow[dim] += child.state.offset[dim]
+    box.state.overflow[dim].expand(childOverflow[dim])
+
 proc positionFloats(bctx: var BlockContext) =
   for f in bctx.unpositionedFloats:
     bctx.positionFloat(f.box, f.space, f.parentBps.offset)
+    # Propagate overflow dimensions to the float's parent box.
+    f.parentBox.applyOverflowDimensions(f.box)
   bctx.unpositionedFloats.setLen(0)
 
 proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
@@ -1465,7 +1521,7 @@ proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
     space: AvailableSpace; computed: CSSComputedValues;
     offset, bfcOffset: Offset) =
   root.state = RootInlineFragmentState(offset: offset)
-  var ictx = bctx.initInlineContext(space, bfcOffset, root)
+  var ictx = bctx.initInlineContext(space, bfcOffset, root, computed)
   ictx.layoutInline(root.fragment)
   if ictx.lastTextFragment != nil:
     let fragment = ictx.lastTextFragment
@@ -1474,8 +1530,9 @@ proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
       lineHeight: fragment.computed.calcLineHeight(ictx.lctx)
     )
     ictx.finishLine(state, wrap = false)
-  ictx.horizontalAlignLines(computed{"text-align"})
+  ictx.horizontalAlignLines()
   ictx.addBackgroundAreas(root.fragment)
+  ictx.root.state.overflow.finalize(ictx.root.state.size)
 
 proc positionAbsolute(lctx: LayoutContext; box: BlockBox;
     margin: RelativeRect) =
@@ -1779,6 +1836,8 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     alignTableCell(cellw.box, cellw.height, cellw.baseline)
   for cell in row.nested:
     alignTableCell(cell, row.state.size.h, baseline)
+    # cell position is final here; apply overflow dimensions
+    row.applyOverflowDimensions(cell)
   row.state.size.w = x
 
 proc preLayoutTableRows(tctx: var TableContext; rows: seq[BlockBox];
@@ -1912,6 +1971,8 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
     row.state.offset.y += y
     row.state.offset.x += sizes.padding.left
     row.state.size.w += sizes.padding[dtHorizontal].sum()
+    # row size does not change from here on.
+    row.state.overflow.finalize(row.state.size)
     y += tctx.blockSpacing
     y += row.state.size.h
     table.state.size.w = max(row.state.size.w, table.state.size.w)
@@ -2020,13 +2081,18 @@ type
     weights: array[FlexWeightType, float64]
     sizes: ResolvedSizes
 
-  FlexMainContext = object
+  FlexContext = object
+    mains: seq[FlexMainContext]
     offset: Offset
+    lctx: LayoutContext
+    totalMaxSize: Size
+    box: BlockBox
+
+  FlexMainContext = object
     totalSize: Size
     maxSize: Size
     maxMargin: RelativeRect
     totalWeight: array[FlexWeightType, float64]
-    lctx: LayoutContext
     pending: seq[FlexPendingItem]
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
@@ -2040,8 +2106,7 @@ proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox) =
       child.state.margin[dim].send)
 
 proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
-    dim: DimensionType) =
-  let lctx = mctx.lctx
+    dim: DimensionType; lctx: LayoutContext) =
   let odim = dim.opposite
   if sizes.space[dim].isDefinite:
     var diff = sizes.space[dim].u - mctx.totalSize[dim]
@@ -2086,13 +2151,13 @@ proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
         lctx.layoutFlexChild(it.child, it.sizes)
         mctx.updateMaxSizes(it.child)
 
-proc flushMain(mctx: var FlexMainContext; box: BlockBox; sizes: ResolvedSizes;
-    totalMaxSize: var Size; dim: DimensionType) =
+proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
+    sizes: ResolvedSizes; dim: DimensionType) =
   let odim = dim.opposite
-  let lctx = mctx.lctx
-  mctx.redistributeMainSize(sizes, dim)
+  let lctx = fctx.lctx
+  mctx.redistributeMainSize(sizes, dim, lctx)
   let h = mctx.maxSize[odim] + mctx.maxMargin[odim].sum()
-  var offset = mctx.offset
+  var offset = fctx.offset
   for it in mctx.pending.mitems:
     if it.child.state.size[odim] < h and not it.sizes.space[odim].isDefinite:
       # if the max height is greater than our height, then take max height
@@ -2104,21 +2169,20 @@ proc flushMain(mctx: var FlexMainContext; box: BlockBox; sizes: ResolvedSizes;
     # margins are added here, since they belong to the flex item.
     it.child.state.offset[odim] += offset[odim] +
       it.child.state.margin[odim].start
+    fctx.box.applyOverflowDimensions(it.child)
     offset[dim] += it.child.state.size[dim]
-  totalMaxSize[dim] = max(totalMaxSize[dim], offset[dim])
-  mctx = FlexMainContext(
-    lctx: mctx.lctx,
-    offset: mctx.offset
-  )
-  mctx.offset[odim] = mctx.offset[odim] + h
+  fctx.totalMaxSize[dim] = max(fctx.totalMaxSize[dim], offset[dim])
+  fctx.mains.add(mctx)
+  mctx = FlexMainContext()
+  fctx.offset[odim] += h
 
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   assert box.inline == nil
   let lctx = bctx.lctx
   var i = 0
-  var mctx = FlexMainContext(lctx: lctx)
+  var fctx = FlexContext(lctx: lctx, box: box)
+  var mctx = FlexMainContext()
   let flexDir = box.computed{"flex-direction"}
-  var totalMaxSize = size(w = 0, h = 0)
   let canWrap = box.computed{"flex-wrap"} != FlexWrapNowrap
   let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
   while i < box.nested.len:
@@ -2145,7 +2209,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     if canWrap and (sizes.space[dim].t == scMinContent or
         sizes.space[dim].isDefinite and
         mctx.totalSize[dim] + child.state.size[dim] > sizes.space[dim].u):
-      mctx.flushMain(box, sizes, totalMaxSize, dim)
+      fctx.flushMain(mctx, sizes, dim)
     mctx.totalSize[dim] += child.outerSize(dim)
     mctx.updateMaxSizes(child)
     let grow = child.computed{"flex-grow"}
@@ -2159,9 +2223,10 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     ))
     inc i # need to increment index here for needsGrow
   if mctx.pending.len > 0:
-    mctx.flushMain(box, sizes, totalMaxSize, dim)
-  box.applySize(sizes, totalMaxSize[dim], sizes.space, dim)
-  box.applySize(sizes, mctx.offset[dim.opposite], sizes.space, dim.opposite)
+    fctx.flushMain(mctx, sizes, dim)
+  box.applySize(sizes, fctx.totalMaxSize[dim], sizes.space, dim)
+  box.applySize(sizes, fctx.offset[dim.opposite], sizes.space, dim.opposite)
+  box.state.overflow.finalize(box.state.size)
 
 # Build an outer block box inside an existing block formatting context.
 proc layoutBlockChild(bctx: var BlockContext; box: BlockBox;
@@ -2354,7 +2419,8 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
         bctx.unpositionedFloats.add(UnpositionedFloat(
           space: state.space,
           parentBps: bctx.parentBps,
-          box: child
+          box: child,
+          parentBox: parent
         ))
 
 # Unlucky path, where we have floating blocks and a fit-content width.
@@ -2385,13 +2451,15 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
       # previous pass.
       offset: state.initialTargetOffset
     )
-    # Set ancestorsHead to a dummy object. Rationale: see below.
     # Also set ancestorsHead as the dummy object, so next elements are
     # chained to that.
     bctx.ancestorsHead = bctx.marginTarget
   bctx.exclusions.setLen(state.oldExclusionsLen)
   state.offset = offset(x = sizes.padding.left, y = sizes.padding.top)
   box.applyWidth(sizes, state.maxChildWidth + state.totalFloatWidth)
+  # Positioning of the children will differ now; reset the overflow offsets.
+  for dim in DimensionType:
+    box.state.overflow[dim] = Span()
   state.space.w = stretch(box.state.size.w)
 
 # Re-position the children.
@@ -2407,6 +2475,8 @@ proc repositionChildren(state: BlockState; box: BlockBox; lctx: LayoutContext) =
     of PositionAbsolute:
       lctx.positionAbsolute(child, child.state.margin)
     else: discard #TODO
+    # Set overflow here, after the child has been positioned.
+    box.applyOverflowDimensions(child)
 
 proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let lctx = bctx.lctx
@@ -2429,7 +2499,7 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   if box.nested.len > 0:
     let lastNested = box.nested[^1]
     box.state.baseline = lastNested.state.offset.y + lastNested.state.baseline
-  # Apply width then move the inline offset of children that still need
+  # Apply width, then move the inline offset of children that still need
   # further relative positioning.
   box.applyWidth(sizes, state.maxChildWidth, state.space)
   state.repositionChildren(box, lctx)
@@ -2443,11 +2513,12 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.state.xminwidth = state.xminwidth
   if state.isParentResolved(bctx):
     # Our offset has already been resolved, ergo any margins in marginTodo will
-    # be passed onto the next box. Set marginTarget to nil, so that if we
-    # (or one of our ancestors) was still set as a marginTarget, it no
-    # longer is.
+    # be passed onto the next box. Set marginTarget to nil, so that if we (or
+    # one of our ancestors) were still set as a marginTarget, we no longer are.
     bctx.positionFloats()
     bctx.marginTarget = nil
+  # All children are positioned now; finalize our overflow dimensions.
+  box.state.overflow.finalize(box.state.size)
   # Reset parentBps to the previous node.
   bctx.parentBps = state.prevParentBps
   if positioned:

@@ -11,6 +11,8 @@ type
 
   Size* = array[DimensionType, LayoutUnit]
 
+  Overflow* = array[DimensionType, Span]
+
   InlineAtomType* = enum
     iatSpacing, iatWord, iatInlineBlock, iatImage
 
@@ -30,13 +32,16 @@ type
   RootInlineFragmentState* = object
     # offset relative to parent
     offset*: Offset
+    # padding size
+    size*: Size
+    # overflow relative to offset
+    overflow*: Overflow
+    # minimum content width
+    xminwidth*: LayoutUnit
     # baseline of the first line box
     firstBaseline*: LayoutUnit
     # baseline of the last line box
     baseline*: LayoutUnit
-    # minimum content width
-    xminwidth*: LayoutUnit
-    size*: Size
 
   RootInlineFragment* = ref object
     fragment*: InlineFragment # root fragment
@@ -81,13 +86,15 @@ type
   RelativeRect* = array[DimensionType, Span]
 
   BlockBoxLayoutState* = object
+    # offset relative to parent
     offset*: Offset
-    size*: Size # padding size
+    # padding size
+    size*: Size
     margin*: RelativeRect #TODO get rid of this?
     positioned*: RelativeRect #TODO ditto
-    # very bad name. basically the minimum content width after the contents
-    # have been positioned (usually the width of the shortest word.) used
-    # in table cells.
+    # overflow relative to offset
+    overflow*: Overflow
+    # minimum content width (usually shortest word)
     xminwidth*: LayoutUnit
     # baseline of the first line box of all descendants
     firstBaseline*: LayoutUnit
@@ -164,3 +171,7 @@ func top*(s: RelativeRect): LayoutUnit =
 
 func bottom*(s: RelativeRect): LayoutUnit =
   return s[dtVertical].send
+
+proc `+=`*(span: var Span; u: LayoutUnit) =
+  span.start += u
+  span.send += u
