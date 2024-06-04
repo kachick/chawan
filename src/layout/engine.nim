@@ -1272,7 +1272,6 @@ type
     offset: Offset
     maxChildWidth: LayoutUnit
     totalFloatWidth: LayoutUnit # used for re-layouts
-    maxChildOverflowWidth: LayoutUnit
     space: AvailableSpace
     xminwidth: LayoutUnit
     prevParentBps: BlockPositionState
@@ -1429,8 +1428,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   let marginBottom = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
-  if bctx.maxFloatHeight > box.state.size.h + marginBottom:
-    box.state.size.h = bctx.maxFloatHeight - marginBottom
+  box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight - marginBottom)
   box.state.offset.y = 0
   # Apply the block box's properties to the atom itself.
   let iblock = InlineAtom(
@@ -2069,8 +2067,7 @@ proc layoutFlexChild(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
   assert bctx.unpositionedFloats.len == 0
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
-  if bctx.maxFloatHeight > box.state.offset.y + box.state.size.h:
-    box.state.size.h = bctx.maxFloatHeight - box.state.offset.y
+  box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight)
 
 type
   FlexWeightType = enum
@@ -2254,8 +2251,8 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox;
   marginBottomOut = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
-  if bctx.maxFloatHeight > box.state.size.h + marginBottomOut:
-    box.state.size.h = bctx.maxFloatHeight - marginBottomOut
+  box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight -
+    marginBottomOut)
 
 proc initBlockPositionStates(state: var BlockState; bctx: var BlockContext;
     box: BlockBox) =
