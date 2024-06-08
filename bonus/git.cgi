@@ -1,12 +1,16 @@
 #!/usr/bin/env -S qjs --std
-/* adds clickable links to commit hashes + a clickable UI to git switch
+/* adds clickable links to git log, git branch and git stash list
  * usage:
  * 0. install QuickJS (https://bellard.org/quickjs)
  * 1. put this script in your CGI directory
  * 2. chmod +x /your/cgi-bin/directory/git.cgi
  * 3. ln -s /your/cgi-bin/directory/git.cgi /usr/local/bin/gitcha
- * 4. run `gitcha log' or `gitcha switch'
- * other params work too, but for those it's more convenient to use git.
+ * 4. run `gitcha log', `gitcha switch' or `gitcha stash list'
+ * other params work too, but without any special processing. it's still useful
+ * for ones that open the pager, like git show; this way you can reload the view
+ * with `U'.
+ * it's less convenient for e.g. git checkout and friends, so it may be best to
+ * just alias the pager-opening commands.
  * (if you have ansi2html, it also works with w3m. just set GITCHA_CHA=w3m) */
 
 const gitcha = std.getenv("GITCHA_GITCHA") ?? "gitcha";
@@ -49,30 +53,36 @@ function startGitCmd(config, params) {
 	return std.fdopen(read_fd2, "r");
 }
 
+function runGitCmd(config, params, regex, subfun) {
+	const f = startGitCmd(config, params);
+	while ((l = f.getline()) !== null) {
+		console.log(l.replace(regex, subfun));
+	}
+	f.close();
+}
+
 os.chdir(query.path);
 
 const config = ["-c", "color.ui=always", "-c", "log.decorate=short"];
 const params = query.params ? decodeURIComponent(query.params).split(' ')
 	.map(x => decodeURIComponent(x)) : [];
 
+const cgi0 = `${query.prefix}git.cgi?prefix=${query.prefix}&path=${query.path}`;
+const cgi1 = `${cgi0}&params=show`;
+const cgi2 = `${cgi0}&params=log`;
+const cgi3 = `${cgi0}&params=switch`;
+const cgi4 = `${cgi0}&params=stash%20apply`;
 if (params[0] == "log") {
-	const f = startGitCmd(config, params);
-	const cgi = `${query.prefix}git.cgi?prefix=${query.prefix}&path=${query.path}&params=show`;
-	while ((l = f.getline()) !== null) {
-		console.log(l.replace(/[a-f0-9]{40}/g,
-			x => `<a href='${cgi}%20${x}'>${x}</a>`));
-	}
-	f.close();
-} else if (params[0] == "switch" && params.length == 1) {
-	const f = startGitCmd(config, ["branch"]);
-	const cgi = `${query.prefix}git.cgi?prefix=${query.prefix}&path=${query.path}&params=switch`;
-	const cgi2 = `${query.prefix}git.cgi?prefix=${query.prefix}&path=${query.path}&params=log`;
-	while ((l = f.getline()) !== null) {
-		console.log(l.replace(/^(\s+)([\w.-]+)$/g,
-			(_, ws, name) => `${ws}<a href='${cgi}%20${name}'>${name}</a> ` +
-				`(<a href='${cgi2}%20${name}'>view</a>)`));
-	}
-	f.close();
+	runGitCmd(config, params, /[a-f0-9]{40}/g,
+		x => `<a href='${cgi1}%20${x}'>${x}</a>`)
+} else if (params[0] == "branch" && params.length == 1) {
+	runGitCmd(config, params, /^(\s+)([\w.-]+)$/g,
+		(_, ws, name) => `${ws}<a href='${cgi2}%20${name}'>${name}</a>\
+ (<a href='${cgi3}%20${name}'>switch</a>)`);
+} else if (params[0] == "stash" && params[1] == "list") {
+	runGitCmd(config, params, /^stash@\{([0-9]+)\}/g,
+		(s, n) => `stash@{<a href='${cgi1}%20${s}'>${n}</a>}\
+ (<a href='${cgi4}%20${s}'>apply</a>)`);
 } else {
 	const title = encodeURIComponent('git ' + params.join(' '));
 	std.out.puts(`Content-Type: text/x-ansi;title=${title}\n\n`);
