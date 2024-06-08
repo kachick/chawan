@@ -1,5 +1,4 @@
 import std/deques
-import std/net
 import std/options
 import std/os
 import std/posix
@@ -208,8 +207,8 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   let ssock = initServerSocket(loader.sockDir, loader.sockDirFd,
     loader.clientPid)
   SocketStream(container.iface.stream.source)
-    .sendFileHandle(FileHandle(ssock.sock.getFd()))
-  ssock.sock.close()
+    .sendFileHandle(FileHandle(ssock.getFd()))
+  ssock.close(unlink = false)
   return p.then(proc(pid: int): Container =
     if pid == -1:
       return nil
@@ -1371,6 +1370,23 @@ proc setLoadInfo(container: Container; msg: string) =
   container.loadinfo = msg
   container.triggerEvent(cetSetLoadInfo)
 
+proc onReadLine(container: Container; rl: ReadLineResult) =
+  case rl.t
+  of rltText:
+    container.triggerEvent(ContainerEvent(
+      t: cetReadLine,
+      prompt: rl.prompt,
+      value: rl.value,
+      password: rl.hide
+    ))
+  of rltArea:
+    container.triggerEvent(ContainerEvent(
+      t: cetReadArea,
+      tvalue: rl.value
+    ))
+  of rltFile:
+    container.triggerEvent(ContainerEvent(t: cetReadFile))
+
 #TODO this should be called with a timeout.
 proc onload(container: Container; res: int) =
   if container.loadState == lsCanceled:
@@ -1380,13 +1396,15 @@ proc onload(container: Container; res: int) =
     container.setLoadInfo("")
     container.triggerEvent(cetStatus)
     container.triggerEvent(cetLoaded)
-    if cfHasStart notin container.flags and container.url.anchor != "":
+    if cfHasStart notin container.flags and (container.url.anchor != "" or
+        container.config.autofocus):
       container.requestLines().then(proc(): Promise[GotoAnchorResult] =
         return container.iface.gotoAnchor()
       ).then(proc(res: GotoAnchorResult) =
-        if res.isSome:
-          let res = res.get
+        if res.found:
           container.setCursorXYCenter(res.x, res.y)
+          if res.focus != nil:
+            container.onReadLine(res.focus)
       )
     else:
       container.needslines = true
@@ -1522,22 +1540,7 @@ proc onclick(container: Container; res: ClickResult; save: bool) =
   if res.select.isSome and not save:
     container.displaySelect(res.select.get)
   if res.readline.isSome:
-    let rl = res.readline.get
-    case rl.t
-    of rltText:
-      container.triggerEvent(ContainerEvent(
-        t: cetReadLine,
-        prompt: rl.prompt,
-        value: rl.value,
-        password: rl.hide
-      ))
-    of rltArea:
-      container.triggerEvent(ContainerEvent(
-        t: cetReadArea,
-        tvalue: rl.value
-      ))
-    of rltFile:
-      container.triggerEvent(ContainerEvent(t: cetReadFile))
+    container.onReadLine(res.readline.get)
 
 proc click*(container: Container) {.jsfunc.} =
   if container.select.open:

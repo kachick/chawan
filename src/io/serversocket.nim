@@ -14,6 +14,9 @@ const SocketPathPrefix = "cha_sock_"
 proc getSocketName*(pid: int): string =
   SocketPathPrefix & $pid
 
+func getFd*(ssock: ServerSocket): SocketHandle =
+  return ssock.sock.getFd()
+
 proc getSocketPath*(socketDir: string; pid: int): string =
   socketDir / getSocketName(pid)
 

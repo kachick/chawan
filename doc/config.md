@@ -694,6 +694,13 @@ attacks. Please do not use this unless you are absolutely sure you know what you
 are doing.</td>
 </tr>
 
+<tr>
+<td>autofocus</td>
+<td>boolean</td>
+<td>Defaults to false. When set to true, elements with an `autofocus' attribute
+are focused on automatically after the buffer is loaded.</td>
+</tr>
+
 </table>
 
 ## Stylesheets

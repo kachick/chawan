@@ -145,6 +145,7 @@ type
     charsets*: seq[Charset]
     charsetOverride*: Charset
     protocol*: Table[string, ProtocolConfig]
+    autofocus*: bool
 
 proc getFromOpaque[T](opaque: pointer; res: var T) =
   let opaque = cast[InterfaceOpaque](opaque)
@@ -156,7 +157,7 @@ proc getFromOpaque[T](opaque: pointer; res: var T) =
 proc newBufferInterface*(stream: SocketStream; registerFun: proc(fd: int)):
     BufferInterface =
   let opaque = InterfaceOpaque(stream: stream)
-  result = BufferInterface(
+  return BufferInterface(
     map: newPromiseMap(cast[pointer](opaque)),
     packetid: 1, # ids below 1 are invalid
     opaque: opaque,
@@ -653,21 +654,61 @@ proc findNextMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
       break
     inc y
 
-type GotoAnchorResult* = Opt[tuple[x, y: int]]
+type
+  ReadLineType* = enum
+    rltText, rltArea, rltFile
+
+  ReadLineResult* = ref object
+    t*: ReadLineType
+    prompt*: string
+    value*: string
+    hide*: bool
+
+  SelectResult* = object
+    multiple*: bool
+    options*: seq[string]
+    selected*: seq[int]
+
+  ClickResult* = object
+    open*: Request
+    readline*: Option[ReadLineResult]
+    repaint*: bool
+    select*: Option[SelectResult]
+
+proc click(buffer: Buffer; clickable: Element): ClickResult
+
+type GotoAnchorResult* = object
+  found*: bool
+  x*: int
+  y*: int
+  focus*: ReadLineResult
 
 proc gotoAnchor*(buffer: Buffer): GotoAnchorResult {.proxy.} =
   if buffer.document == nil:
-    return err()
-  let anchor = buffer.document.findAnchor(buffer.url.anchor)
+    return GotoAnchorResult(found: false)
+  var anchor = buffer.document.findAnchor(buffer.url.anchor)
+  var focus: ReadLineResult = nil
+  if buffer.config.autofocus:
+    let autofocus = buffer.document.findAutoFocus()
+    if autofocus != nil:
+      if anchor == nil:
+        anchor = autofocus # jump to autofocus instead
+      let res = buffer.click(autofocus)
+      focus = res.readline.get(nil)
   if anchor == nil:
-    return err()
+    return GotoAnchorResult(found: false)
   for y in 0 ..< buffer.lines.len:
     let line = buffer.lines[y]
     for i in 0 ..< line.formats.len:
       let format = line.formats[i]
       if format.node != nil and format.node.node in anchor:
-        return ok((format.pos, y))
-  return err()
+        return GotoAnchorResult(
+          found: true,
+          x: format.pos,
+          y: y,
+          focus: focus
+        )
+  return GotoAnchorResult(found: false)
 
 proc do_reshape(buffer: Buffer) =
   if buffer.document == nil:
@@ -1268,6 +1309,7 @@ proc serializeMultipartFormData(entries: seq[FormDataEntry]): FormData =
   return formData
 
 proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
+  result = ""
   for it in kvs:
     let (name, value) = it
     result &= name
@@ -1422,6 +1464,7 @@ proc implicitSubmit(buffer: Buffer; input: HTMLInputElement): Request =
 proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
     {.proxy.} =
   var fd: FileHandle = -1
+  var res = ReadSuccessResult()
   if hasFd:
     fd = buffer.pstream.recvFileHandle()
   if buffer.document.focus != nil:
@@ -1433,48 +1476,25 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
         input.file = newWebFile(s, fd)
         input.invalid = true
         buffer.do_reshape()
-        result.repaint = true
-        result.open = buffer.implicitSubmit(input)
+        res.repaint = true
+        res.open = buffer.implicitSubmit(input)
       else:
         input.value = s
         input.invalid = true
         buffer.do_reshape()
-        result.repaint = true
-        result.open = buffer.implicitSubmit(input)
+        res.repaint = true
+        res.open = buffer.implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(buffer.document.focus)
       textarea.value = s
       textarea.invalid = true
       buffer.do_reshape()
-      result.repaint = true
+      res.repaint = true
     else: discard
     let r = buffer.restoreFocus()
-    if not result.repaint:
-      result.repaint = r
-
-type
-  ReadLineType* = enum
-    rltText, rltArea, rltFile
-
-  ReadLineResult* = object
-    t*: ReadLineType
-    prompt*: string
-    value*: string
-    hide*: bool
-
-type
-  SelectResult* = object
-    multiple*: bool
-    options*: seq[string]
-    selected*: seq[int]
-
-  ClickResult* = object
-    open*: Request
-    readline*: Option[ReadLineResult]
-    repaint*: bool
-    select*: Option[SelectResult]
-
-proc click(buffer: Buffer; clickable: Element): ClickResult
+    if not res.repaint:
+      res.repaint = r
+  return res
 
 proc click(buffer: Buffer; label: HTMLLabelElement): ClickResult =
   let control = label.control

@@ -952,16 +952,28 @@ proc windowChange*(pager: Pager) =
 proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
     loaderConfig: var LoaderClientConfig): BufferConfig =
   let host = url.host
-  var referer_from = false
-  var cookieJar: CookieJar = nil
-  var headers = newHeaders(pager.config.network.default_headers)
-  var scripting = false
-  var images = false
-  var charsets = pager.config.encoding.document_charset
-  var userstyle = pager.config.css.stylesheet
-  var proxy = pager.config.network.proxy
   let ctx = pager.jsctx
-  var insecureSSLNoVerify = false
+  var res = BufferConfig(
+    userstyle: pager.config.css.stylesheet,
+    referer_from: false,
+    scripting: false,
+    charsets: pager.config.encoding.document_charset,
+    images: false,
+    isdump: pager.config.start.headless,
+    charsetOverride: charsetOverride,
+    protocol: pager.config.protocol
+  )
+  loaderConfig = LoaderClientConfig(
+    defaultHeaders: newHeaders(pager.config.network.default_headers),
+    cookiejar: nil,
+    proxy: pager.config.network.proxy,
+    filter: newURLFilter(
+      scheme = some(url.scheme),
+      allowschemes = @["data", "cache"],
+      default = true
+    ),
+    insecureSSLNoVerify: false
+  )
   for sc in pager.config.siteconf:
     if sc.url.isSome and not sc.url.get.match($url):
       continue
@@ -987,47 +999,29 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
         if jarid notin pager.cookiejars:
           pager.cookiejars[jarid] = newCookieJar(url,
             sc.third_party_cookie)
-        cookieJar = pager.cookiejars[jarid]
+        loaderConfig.cookieJar = pager.cookiejars[jarid]
       else:
-        cookieJar = nil # override
+        loaderConfig.cookieJar = nil # override
     if sc.scripting.isSome:
-      scripting = sc.scripting.get
+      res.scripting = sc.scripting.get
     if sc.referer_from.isSome:
-      referer_from = sc.referer_from.get
+      res.referer_from = sc.referer_from.get
     if sc.document_charset.len > 0:
-      charsets = sc.document_charset
+      res.charsets = sc.document_charset
     if sc.images.isSome:
-      images = sc.images.get
+      res.images = sc.images.get
     if sc.stylesheet.isSome:
-      userstyle &= "\n"
-      userstyle &= sc.stylesheet.get
+      res.userstyle &= "\n"
+      res.userstyle &= sc.stylesheet.get
     if sc.proxy.isSome:
-      proxy = sc.proxy.get
+      loaderConfig.proxy = sc.proxy.get
     if sc.default_headers != nil:
-      headers = newHeaders(sc.default_headers[])
+      loaderConfig.defaultHeaders = newHeaders(sc.default_headers[])
     if sc.insecure_ssl_no_verify.isSome:
-      insecureSSLNoVerify = sc.insecure_ssl_no_verify.get
-  loaderConfig = LoaderClientConfig(
-    defaultHeaders: headers,
-    cookiejar: cookieJar,
-    proxy: proxy,
-    filter: newURLFilter(
-      scheme = some(url.scheme),
-      allowschemes = @["data", "cache"],
-      default = true
-    ),
-    insecureSSLNoVerify: insecureSSLNoVerify
-  )
-  return BufferConfig(
-    userstyle: userstyle,
-    referer_from: referer_from,
-    scripting: scripting,
-    charsets: charsets,
-    images: images,
-    isdump: pager.config.start.headless,
-    charsetOverride: charsetOverride,
-    protocol: pager.config.protocol
-  )
+      loaderConfig.insecureSSLNoVerify = sc.insecure_ssl_no_verify.get
+    if sc.autofocus.isSome:
+      res.autofocus = sc.autofocus.get
+  return res
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);

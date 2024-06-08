@@ -64,6 +64,7 @@ type
     proxy*: Option[URL]
     default_headers*: TableRef[string, string]
     insecure_ssl_no_verify*: Option[bool]
+    autofocus*: Option[bool]
 
   OmniRule* = ref object
     match*: Regex

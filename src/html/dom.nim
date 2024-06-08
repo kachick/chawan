@@ -2336,6 +2336,12 @@ func findAnchor*(document: Document; id: string): Element =
       return child
   return nil
 
+func findAutoFocus*(document: Document): Element =
+  for child in document.elements:
+    if child.attrb(satAutofocus):
+      return child
+  return nil
+
 # Forward declaration hack
 isDefaultPassive = func (eventTarget: EventTarget): bool =
   if eventTarget of Window:
