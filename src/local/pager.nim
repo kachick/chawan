@@ -1302,8 +1302,13 @@ proc load(pager: Pager; s = "") {.jsfunc.} =
     pager.setLineEdit(lmLocation, s)
 
 # Go to specific URL (for JS)
-proc jsGotoURL(pager: Pager; s: string): JSResult[void] {.jsfunc: "gotoURL".} =
-  pager.gotoURL(newRequest(?newURL(s)))
+proc jsGotoURL(pager: Pager; v: JSValue): JSResult[void] {.jsfunc: "gotoURL".} =
+  let req = fromJS[JSRequest](pager.jsctx, v)
+  if req.isSome:
+    pager.gotoURL(req.get.request)
+  else:
+    let s = ?fromJS[string](pager.jsctx, v)
+    pager.gotoURL(newRequest(?newURL(s)))
   ok()
 
 # Reload the page in a new buffer, then kill the previous buffer.

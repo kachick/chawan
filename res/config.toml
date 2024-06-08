@@ -124,7 +124,14 @@ scrollUp = 'n => pager.scrollUp(n)'
 scrollLeft = 'n => pager.scrollLeft(n)'
 scrollRight = 'n => pager.scrollRight(n)'
 click = '() => pager.click()'
-viewImage = '() => pager.gotoURL(pager.hoverImage)'
+viewImage = '''
+() => {
+	if (pager.hoverImage) {
+		const headers = new Headers({Accept: "*/*"});
+		pager.gotoURL(new Request(pager.hoverImage, {headers: headers}));
+	}
+}
+'''
 toggleImages = '() => pager.toggleImages()'
 markURL = '() => pager.markURL()'
 redraw = '() => pager.redraw()'
