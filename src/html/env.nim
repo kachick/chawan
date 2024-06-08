@@ -100,16 +100,14 @@ proc addNavigatorModule*(ctx: JSContext) =
 
 proc fetch[T: JSRequest|string](window: Window; input: T;
     init = none(RequestInit)): JSResult[FetchPromise] {.jsfunc.} =
-  if window.loader.isSome:
-    let input = ?newRequest(window.jsctx, input, init)
-    #TODO cors requests?
-    if not window.settings.origin.isSameOrigin(input.request.url.origin):
-      let promise = FetchPromise()
-      let err = newTypeError("NetworkError when attempting to fetch resource")
-      promise.resolve(JSResult[Response].err(err))
-      return ok(promise)
-    return ok(window.loader.get.fetch(input.request))
-  return ok(nil)
+  let input = ?newRequest(window.jsctx, input, init)
+  #TODO cors requests?
+  if not window.settings.origin.isSameOrigin(input.request.url.origin):
+    let promise = FetchPromise()
+    let err = newTypeError("NetworkError when attempting to fetch resource")
+    promise.resolve(JSResult[Response].err(err))
+    return ok(promise)
+  return ok(window.loader.fetch(input.request))
 
 proc setTimeout[T: JSValue|string](window: Window; handler: T;
     timeout = 0i32): int32 {.jsfunc.} =
@@ -244,7 +242,7 @@ proc newWindow*(scripting, images: bool; selector: Selector[int];
     attrs: attrs,
     internalConsole: newConsole(err),
     navigator: Navigator(),
-    internalLoader: some(loader),
+    loader: loader,
     images: images,
     settings: EnvironmentSettings(
       scripting: scripting,

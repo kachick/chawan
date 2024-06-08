@@ -80,9 +80,6 @@ func console(client: Client): Console {.jsfget.} =
 template selector(client: Client): Selector[int] =
   client.pager.selector
 
-template loader(client: Client): FileLoader =
-  client.pager.loader
-
 template forkserver(client: Client): ForkServer =
   client.pager.forkserver
 
@@ -846,7 +843,7 @@ proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext;
     exitCode: -1,
     alive: true,
     factory: newCAtomFactory(),
-    internalLoader: some(loader)
+    loader: loader
   )
   jsrt.setInterruptHandler(interruptHandler, cast[pointer](client))
   let global = JS_GetGlobalObject(jsctx)

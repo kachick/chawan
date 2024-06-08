@@ -79,7 +79,7 @@ type
     navigator* {.jsget.}: Navigator
     screen* {.jsget.}: Screen
     settings*: EnvironmentSettings
-    internalLoader*: Option[FileLoader]
+    loader*: FileLoader
     location* {.jsget.}: Location
     jsrt*: JSRuntime
     jsctx*: JSContext
@@ -2824,9 +2824,6 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
 var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
   {.nimcall, noSideEffect.}
 
-func loader*(window: Window): Option[FileLoader] {.inline.} =
-  return window.internalLoader
-
 func console(window: Window): Console =
   return window.internalConsole
 
@@ -2842,8 +2839,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
   if href == "":
     return
   let url = parseURL(href, window.document.url.some)
-  if url.isSome and window.loader.isSome:
-    let loader = window.loader.get
+  if url.isSome:
     let url = url.get
     let media = link.media
     if media != "":
@@ -2851,7 +2847,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
       let media = parseMediaQueryList(cvals)
       if not media.appliesFwdDecl(window):
         return
-    let p = loader.fetch(
+    let p = window.loader.fetch(
       newRequest(url)
     ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
       if res.isSome:
@@ -2875,10 +2871,9 @@ proc loadResource(window: Window; image: HTMLImageElement) =
   if src == "":
     return
   let url = parseURL(src, window.document.url.some)
-  if url.isSome and window.loader.isSome:
+  if url.isSome:
     let url = url.get
-    let loader = window.loader.get
-    let p = loader.fetch(newRequest(url))
+    let p = window.loader.fetch(newRequest(url))
       .then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
         if res.isNone:
           return
@@ -3583,14 +3578,13 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
     options: ScriptOptions; cors: CORSAttribute; cs: Charset;
     onComplete: OnCompleteProc) =
   let window = element.document.window
-  if not element.scriptingEnabled or window.loader.isNone:
+  if not element.scriptingEnabled:
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
-  let loader = window.loader.get
   let request = createPotentialCORSRequest(url, rdScript, cors)
   request.client = some(window.settings)
   #TODO make this non-blocking somehow
-  let response = loader.doRequest(request.request)
+  let response = window.loader.doRequest(request.request)
   if response.res != 0:
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
@@ -3613,7 +3607,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
 proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
     options: ScriptOptions; onComplete: OnCompleteProc) =
   let window = element.document.window
-  if not element.scriptingEnabled or window.loader.isNone:
+  if not element.scriptingEnabled:
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
   window.importMapsAllowed = false
