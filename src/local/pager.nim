@@ -98,7 +98,6 @@ type
 
   LineDataAuth = ref object of LineData
     url: URL
-    username: string
 
   NavDirection = enum
     ndPrev = "prev"
@@ -124,6 +123,7 @@ type
     devRandom: PosixStream
     display: FixedGrid
     forkserver*: ForkServer
+    formRequestMap*: Table[string, FormRequestType]
     hasload*: bool # has a page been successfully loaded since startup?
     inputBuffer*: string # currently uninterpreted characters
     iregex: Result[Regex, string]
@@ -1026,6 +1026,7 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
     images: images,
     isdump: pager.config.start.headless,
     charsetOverride: charsetOverride,
+    protocol: pager.config.protocol
   )
 
 # Load request in a new buffer.
@@ -1231,18 +1232,13 @@ proc updateReadLine*(pager: Pager) =
       case pager.linemode
       of lmLocation: pager.loadURL(lineedit.news)
       of lmUsername:
-        LineDataAuth(pager.lineData).username = lineedit.news
+        LineDataAuth(pager.lineData).url.username = lineedit.news
         pager.setLineEdit(lmPassword, hide = true)
       of lmPassword:
-        let data = LineDataAuth(pager.lineData)
-        let url = newURL(data.url)
-        url.username = data.username
+        let url = LineDataAuth(pager.lineData).url
         url.password = lineedit.news
-        pager.gotoURL(
-          newRequest(url), some(pager.container.url),
-          replace = pager.container,
-          referrer = pager.container
-        )
+        pager.gotoURL(newRequest(url), some(pager.container.url),
+          replace = pager.container, referrer = pager.container)
         pager.lineData = nil
       of lmCommand:
         pager.scommand = lineedit.news
@@ -1676,6 +1672,9 @@ proc redirect(pager: Pager; container: Container; response: Response;
         container.url.scheme == "http" and request.url.scheme == "https" or
         container.url.scheme == "https" and request.url.scheme == "http":
       pager.redirectTo(container, request)
+    #TODO perhaps make following behavior configurable?
+    elif request.url.scheme == "cgi-bin":
+      pager.alert("Blocked redirection attempt to " & $request.url)
     else:
       let url = request.url
       pager.ask("Warning: switch protocols? " & $url).then(proc(x: bool) =
@@ -1708,7 +1707,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
   container.applyResponse(response, pager.config.external.mime_types)
   if response.status == 401: # unauthorized
     pager.setLineEdit(lmUsername)
-    pager.lineData = LineDataAuth(url: container.url)
+    pager.lineData = LineDataAuth(url: newURL(container.url))
     istream.sclose()
     return
   # This forces client to ask for confirmation before quitting.
@@ -1863,8 +1862,15 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
       pager.setLineEdit(lmBufferFile, "")
   of cetOpen:
     let url = event.request.url
-    if not event.save and (pager.container != container or
-        not container.isHoverURL(url)):
+    let sameScheme = container.url.scheme == url.scheme
+    if event.request.httpMethod != hmGet and (not sameScheme or
+        container.url.scheme in ["http", "https"] and
+        url.scheme in ["http", "https"]):
+      pager.alert("Blocked cross-scheme POST: " & $url)
+      return
+    #TODO this is horrible UX, async actions shouldn't block input
+    if pager.container != container or
+        not event.save and not container.isHoverURL(url):
       pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
         if x:
           pager.gotoURL(event.request, some(container.url),

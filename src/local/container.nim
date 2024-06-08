@@ -1489,8 +1489,8 @@ proc readSuccess*(container: Container; s: string; fd = -1) =
   p.then(proc(res: ReadSuccessResult) =
     if res.repaint:
       container.needslines = true
-    if res.open.isSome:
-      container.triggerEvent(ContainerEvent(t: cetOpen, request: res.open.get))
+    if res.open != nil:
+      container.triggerEvent(ContainerEvent(t: cetOpen, request: res.open))
   )
 
 proc reshape(container: Container): EmptyPromise {.jsfunc.} =
@@ -1513,10 +1513,10 @@ proc displaySelect(container: Container; selectResult: SelectResult) =
 proc onclick(container: Container; res: ClickResult; save: bool) =
   if res.repaint:
     container.needslines = true
-  if res.open.isSome:
+  if res.open != nil:
     container.triggerEvent(ContainerEvent(
       t: cetOpen,
-      request: res.open.get,
+      request: res.open,
       save: save
     ))
   if res.select.isSome and not save:

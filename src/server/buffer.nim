@@ -14,7 +14,6 @@ import config/config
 import css/cascade
 import css/cssparser
 import css/cssvalues
-import css/mediaquery
 import css/sheet
 import css/stylednode
 import html/catom
@@ -48,7 +47,6 @@ import monoucha/tojs
 import types/blob
 import types/cell
 import types/color
-import types/cookie
 import types/formdata
 import types/opt
 import types/url
@@ -146,6 +144,7 @@ type
     isdump*: bool
     charsets*: seq[Charset]
     charsetOverride*: Charset
+    protocol*: Table[string, ProtocolConfig]
 
 proc getFromOpaque[T](opaque: pointer; res: var T) =
   let opaque = cast[InterfaceOpaque](opaque)
@@ -300,7 +299,7 @@ macro task(fun: typed) =
   pfun.istask = true
   fun
 
-func getTitleAttr(node: StyledNode): string =
+func getTitleAttr(buffer: Buffer; node: StyledNode): string =
   if node == nil:
     return ""
   if node.t == stElement and node.node != nil:
@@ -336,7 +335,8 @@ func getClickable(styledNode: StyledNode): Element =
       return Element(styledNode.node)
     styledNode = styledNode.parent
 
-proc submitForm(form: HTMLFormElement; submitter: Element): Option[Request]
+proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element):
+  Request
 
 func canSubmitOnClick(fae: FormAssociatedElement): bool =
   if fae.form == nil:
@@ -350,7 +350,7 @@ func canSubmitOnClick(fae: FormAssociatedElement): bool =
     return true
   return false
 
-proc getClickHover(styledNode: StyledNode): string =
+proc getClickHover(buffer: Buffer; styledNode: StyledNode): string =
   let clickable = styledNode.getClickable()
   if clickable != nil:
     if clickable of HTMLAnchorElement:
@@ -359,15 +359,15 @@ proc getClickHover(styledNode: StyledNode): string =
       #TODO this is inefficient and also quite stupid
       let fae = FormAssociatedElement(clickable)
       if fae.canSubmitOnClick():
-        let req = fae.form.submitForm(fae)
-        if req.isSome:
-          return $req.get.url
+        let req = buffer.submitForm(fae.form, fae)
+        if req != nil:
+          return $req.url
       return "<" & $clickable.tagType & ">"
     elif clickable of HTMLOptionElement:
       return "<option>"
   ""
 
-proc getImageHover(styledNode: StyledNode): string =
+proc getImageHover(buffer: Buffer; styledNode: StyledNode): string =
   var styledNode = styledNode
   while styledNode != nil:
     if styledNode.t == stElement:
@@ -838,7 +838,7 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
           elem.hover = true
           repaint = true
     for ht in HoverType:
-      let s = HoverFun[ht](thisnode)
+      let s = HoverFun[ht](buffer, thisnode)
       if buffer.hoverText[ht] != s:
         hover.add((ht, s))
         buffer.hoverText[ht] = s
@@ -1290,124 +1290,104 @@ func pickCharset(form: HTMLFormElement): Charset =
     return CHARSET_UTF_8
   return form.document.charset.getOutputEncoding()
 
-# https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
-proc submitForm(form: HTMLFormElement; submitter: Element): Option[Request] =
-  if form.constructingEntryList:
-    return none(Request)
-  #TODO submit()
-  let charset = form.pickCharset()
-  discard charset #TODO pass to constructEntryList
-  let entrylist = form.constructEntryList(submitter)
+proc getFormRequestType(buffer: Buffer; scheme: string): FormRequestType =
+  buffer.config.protocol.withValue(scheme, p):
+    return p[].form_request
+  return frtHttp
 
-  let subAction = submitter.action()
-  let action = if subAction != "":
-    subAction
-  else:
-    $form.document.url
-
-  #TODO encoding-parse
-  let url = submitter.document.parseURL(action)
-  if url.isNone:
-    return none(Request)
-
-  var parsedaction = url.get
-  let scheme = parsedaction.scheme
-  let enctype = submitter.enctype()
-  let formmethod = submitter.formmethod()
-  if formmethod == fmDialog:
-    #TODO
-    return none(Request)
-  let httpmethod = if formmethod == fmGet:
-    hmGet
-  else:
-    assert formmethod == fmPost
-    hmPost
-
-  #let target = if submitter.isSubmitButton() and submitter.attrb("formtarget"):
-  #  submitter.attr("formtarget")
-  #else:
-  #  submitter.target()
-  #let noopener = true #TODO
-
-  template mutateActionUrl() =
-    let kvlist = entrylist.toNameValuePairs()
-    #TODO with charset
-    let query = serializeApplicationXWWWFormUrlEncoded(kvlist)
-    parsedaction.query = some(query)
-    return some(newRequest(parsedaction, httpmethod))
-
-  template submitAsEntityBody() =
-    var mimetype: string
-    var body: Option[string]
-    var multipart: Option[FormData]
-    case enctype
-    of fetUrlencoded:
+proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
+    entryList: seq[FormDataEntry]; enctype: FormEncodingType): Request =
+  assert httpMethod in {hmGet, hmPost}
+  case buffer.getFormRequestType(parsedAction.scheme)
+  of frtFtp:
+    return newRequest(parsedAction) # get action URL
+  of frtData:
+    if httpMethod == hmGet:
+      # mutate action URL
+      let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      let kvlist = entrylist.toNameValuePairs()
-      body = some(serializeApplicationXWWWFormUrlEncoded(kvlist))
-      mimeType = $enctype
-    of fetMultipart:
+      parsedAction.query = some(serializeApplicationXWWWFormUrlEncoded(kvlist))
+      return newRequest(parsedAction, httpMethod)
+    return newRequest(parsedAction) # get action URL
+  of frtMailto:
+    if httpMethod == hmGet:
+      # mailWithHeaders
+      let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      multipart = some(serializeMultipartFormData(entrylist))
-      mimetype = $enctype
-    of fetTextPlain:
-      #TODO with charset
-      let kvlist = entrylist.toNameValuePairs()
-      body = some(serializePlainTextFormData(kvlist))
-      mimetype = $enctype
-    let req = newRequest(parsedaction, httpmethod, @{"Content-Type": mimetype},
-      body, multipart)
-    return some(req) #TODO multipart
-
-  template getActionUrl() =
-    return some(newRequest(parsedaction))
-
-  template mailWithHeaders() =
-    let kvlist = entrylist.toNameValuePairs()
-    #TODO with charset
-    let headers = serializeApplicationXWWWFormUrlEncoded(kvlist,
-      spaceAsPlus = false)
-    parsedaction.query = some(headers)
-    return some(newRequest(parsedaction, httpmethod))
-
-  template mailAsBody() =
-    let kvlist = entrylist.toNameValuePairs()
+      let headers = serializeApplicationXWWWFormUrlEncoded(kvlist,
+        spaceAsPlus = false)
+      parsedAction.query = some(headers)
+      return newRequest(parsedAction, httpMethod)
+    # mail as body
+    let kvlist = entryList.toNameValuePairs()
     let body = if enctype == fetTextPlain:
       let text = serializePlainTextFormData(kvlist)
       percentEncode(text, PathPercentEncodeSet)
     else:
       #TODO with charset
       serializeApplicationXWWWFormUrlEncoded(kvlist)
-    if parsedaction.query.isNone:
-      parsedaction.query = some("")
-    if parsedaction.query.get != "":
-      parsedaction.query.get &= '&'
-    parsedaction.query.get &= "body=" & body
-    return some(newRequest(parsedaction, httpmethod))
+    if parsedAction.query.isNone:
+      parsedAction.query = some("")
+    if parsedAction.query.get != "":
+      parsedAction.query.get &= '&'
+    parsedAction.query.get &= "body=" & body
+    return newRequest(parsedAction, httpMethod)
+  of frtHttp:
+    if httpMethod == hmGet:
+      # mutate action URL
+      let kvlist = entryList.toNameValuePairs()
+      #TODO with charset
+      let query = serializeApplicationXWWWFormUrlEncoded(kvlist)
+      parsedAction.query = some(query)
+      return newRequest(parsedAction, httpMethod)
+    # submit as entity body
+    var body: Option[string]
+    var multipart: Option[FormData]
+    case enctype
+    of fetUrlencoded:
+      #TODO with charset
+      let kvlist = entryList.toNameValuePairs()
+      body = some(serializeApplicationXWWWFormUrlEncoded(kvlist))
+    of fetMultipart:
+      #TODO with charset
+      multipart = some(serializeMultipartFormData(entryList))
+    of fetTextPlain:
+      #TODO with charset
+      let kvlist = entryList.toNameValuePairs()
+      body = some(serializePlainTextFormData(kvlist))
+    let headers = newHeaders({"Content-Type": $enctype})
+    return newRequest(parsedAction, httpMethod, headers, body, multipart)
 
-  case scheme
-  of "ftp", "javascript":
-    getActionUrl
-  of "data":
-    if formmethod == fmGet:
-      mutateActionUrl
-    else:
-      assert formmethod == fmPost
-      getActionUrl
-  of "mailto":
-    if formmethod == fmGet:
-      mailWithHeaders
-    else:
-      assert formmethod == fmPost
-      mailAsBody
+# https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element): Request =
+  if form.constructingEntryList:
+    return nil
+  #TODO submit()
+  let charset = form.pickCharset()
+  discard charset #TODO pass to constructEntryList
+  let entryList = form.constructEntryList(submitter)
+  let subAction = submitter.action()
+  let action = if subAction != "":
+    subAction
   else:
-    # Note: only http & https are defined by the standard.
-    # Assume an HTTP-like protocol.
-    if formmethod == fmGet:
-      mutateActionUrl
-    else:
-      assert formmethod == fmPost
-      submitAsEntityBody
+    $form.document.url
+  #TODO encoding-parse
+  let url = submitter.document.parseURL(action)
+  if url.isNone:
+    return nil
+  let parsedAction = url.get
+  let enctype = submitter.enctype()
+  let formMethod = submitter.formmethod()
+  let httpMethod = case formMethod
+  of fmDialog: return nil #TODO
+  of fmGet: hmGet
+  of fmPost: hmPost
+  #let target = if submitter.isSubmitButton() and submitter.attrb("formtarget"):
+  #  submitter.attr("formtarget")
+  #else:
+  #  submitter.target()
+  #let noopener = true #TODO
+  return buffer.makeFormRequest(parsedAction, httpMethod, entryList, enctype)
 
 proc setFocus(buffer: Buffer; e: Element): bool =
   if buffer.document.focus != e:
@@ -1422,10 +1402,10 @@ proc restoreFocus(buffer: Buffer): bool =
     return true
 
 type ReadSuccessResult* = object
-  open*: Option[Request]
+  open*: Request
   repaint*: bool
 
-proc implicitSubmit(input: HTMLInputElement): Option[Request] =
+proc implicitSubmit(buffer: Buffer; input: HTMLInputElement): Request =
   let form = input.form
   if form != nil and form.canSubmitImplicitly():
     var defaultButton: Element
@@ -1434,9 +1414,10 @@ proc implicitSubmit(input: HTMLInputElement): Option[Request] =
         defaultButton = element
         break
     if defaultButton != nil:
-      return submitForm(form, defaultButton)
+      return buffer.submitForm(form, defaultButton)
     else:
-      return submitForm(form, form)
+      return buffer.submitForm(form, form)
+  return nil
 
 proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
     {.proxy.} =
@@ -1453,13 +1434,13 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
         input.invalid = true
         buffer.do_reshape()
         result.repaint = true
-        result.open = implicitSubmit(input)
+        result.open = buffer.implicitSubmit(input)
       else:
         input.value = s
         input.invalid = true
         buffer.do_reshape()
         result.repaint = true
-        result.open = implicitSubmit(input)
+        result.open = buffer.implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(buffer.document.focus)
       textarea.value = s
@@ -1488,7 +1469,7 @@ type
     selected*: seq[int]
 
   ClickResult* = object
-    open*: Option[Request]
+    open*: Request
     readline*: Option[ReadLineResult]
     repaint*: bool
     select*: Option[SelectResult]
@@ -1542,26 +1523,20 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
   var repaint = buffer.restoreFocus()
   let url = parseURL(anchor.href, some(buffer.baseURL))
   if url.isSome:
-    let url = url.get
+    var url = url.get
     if url.scheme == "javascript":
-      if buffer.config.scripting:
-        let s = buffer.evalJSURL(url)
-        buffer.do_reshape()
-        repaint = true
-        if s.isSome:
-          let url = newURL("data:text/html," & s.get).get
-          let req = newRequest(url, hmGet)
-          return ClickResult(
-            repaint: repaint,
-            open: some(req)
-          )
-      return ClickResult(
-        repaint: repaint
-      )
-    return ClickResult(
-      repaint: repaint,
-      open: some(newRequest(url, hmGet))
-    )
+      if not buffer.config.scripting:
+        return ClickResult(repaint: repaint)
+      let s = buffer.evalJSURL(url)
+      buffer.do_reshape()
+      repaint = true
+      if s.isNone:
+        return ClickResult(repaint: repaint)
+      let urls = newURL("data:text/html," & s.get)
+      if urls.isNone:
+        return ClickResult(repaint: repaint)
+      url = urls.get
+    return ClickResult(repaint: repaint, open: newRequest(url, hmGet))
   return ClickResult(repaint: repaint)
 
 proc click(buffer: Buffer; option: HTMLOptionElement): ClickResult =
@@ -1572,10 +1547,10 @@ proc click(buffer: Buffer; option: HTMLOptionElement): ClickResult =
 
 proc click(buffer: Buffer; button: HTMLButtonElement): ClickResult =
   if button.form != nil:
-    var open = none(Request)
+    var open: Request = nil
     case button.ctype
     of btSubmit:
-      open = submitForm(button.form, button)
+      open = buffer.submitForm(button.form, button)
     of btReset:
       button.form.reset()
       buffer.do_reshape()
@@ -1651,7 +1626,10 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
     return ClickResult(repaint: false)
   of itSubmit, itButton:
     if input.form != nil:
-      return ClickResult(open: submitForm(input.form, input), repaint: repaint)
+      return ClickResult(
+        open: buffer.submitForm(input.form, input),
+        repaint: repaint
+      )
     return ClickResult(repaint: false)
   else:
     # default is text.

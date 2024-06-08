@@ -43,7 +43,13 @@ type
   ActionMap = object
     t: Table[string, string]
 
-  SiteConfig* = object
+  FormRequestType* = enum
+    frtHttp = "http"
+    frtFtp = "ftp"
+    frtData = "data"
+    frtMailto = "mailto"
+
+  SiteConfig* = ref object
     url*: Option[Regex]
     host*: Option[Regex]
     rewrite_url*: Option[JSValueFunction]
@@ -59,7 +65,7 @@ type
     default_headers*: TableRef[string, string]
     insecure_ssl_no_verify*: Option[bool]
 
-  OmniRule* = object
+  OmniRule* = ref object
     match*: Regex
     substitute_url*: Option[JSValueFunction]
 
@@ -131,6 +137,9 @@ type
     force_pixels_per_column* {.jsgetset.}: bool
     force_pixels_per_line* {.jsgetset.}: bool
 
+  ProtocolConfig* = ref object
+    form_request*: FormRequestType
+
   Config* = ref object
     jsctx: JSContext
     jsvfns*: seq[JSValueFunction]
@@ -145,6 +154,7 @@ type
     input* {.jsget.}: InputConfig
     display* {.jsget.}: DisplayConfig
     #TODO getset
+    protocol*: Table[string, ProtocolConfig]
     siteconf*: seq[SiteConfig]
     omnirule*: seq[OmniRule]
     cmd*: CommandConfig
@@ -289,6 +299,8 @@ type ConfigParser = object
 
 proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
   k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var ref object; v: TomlValue;
+  k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var string; v: TomlValue;
@@ -364,6 +376,11 @@ proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
         else:
           fk
         ctx.parseConfigValue(fv, v[kebabk], kkk)
+
+proc parseConfigValue(ctx: var ConfigParser; x: var ref object; v: TomlValue;
+    k: string) =
+  new(x)
+  ctx.parseConfigValue(x[], v, k)
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var Table[U, V];
     v: TomlValue; k: string) =

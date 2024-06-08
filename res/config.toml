@@ -215,6 +215,15 @@ escape = '() => line.escape()'
 prevHist = '() => line.prevHist()'
 nextHist = '() => line.nextHist()'
 
+[protocol.ftp]
+form-request = "ftp"
+
+[protocol.mailto]
+form-request = "mailto"
+
+[protocol.data]
+form-request = "data"
+
 [search]
 wrap = true
 ignore-case = true

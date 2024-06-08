@@ -34,6 +34,7 @@ examples.
 * [External](#external)
 * [Network](#network)
 * [Display](#display)
+* [Protocol](#protocol)
 * [Omnirule](#omnirule)
 * [Siteconf](#siteconf)
 * [Stylesheets](#stylesheets)
@@ -472,6 +473,30 @@ force-pixels-per-line</td>
 <td>boolean</td>
 <td>Force-set columns, lines, pixels per column, or pixels per line to the
 fallback values provided above.</td>
+</tr>
+
+</table>
+
+## Protocol
+
+Protocol-related rules are to be placed in objects keyed as
+`[protocol.{protocol-name}]`. e.g. FTP related rules are placed in in
+`[protocol.ftp]`.
+
+<table>
+
+<tr>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
+</tr>
+
+<tr>
+<td>form-request</td>
+<td>http, ftp, data, mailto</td>
+<td>Specify which protocol to imitate when submitting forms to this
+protocol.<br>
+Defaults to HTTP.</td>
 </tr>
 
 </table>

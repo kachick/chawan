@@ -115,22 +115,6 @@ func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders();
     suspended: suspended
   )
 
-func newRequest*(url: URL; httpMethod = hmGet;
-    headers: seq[(string, string)] = @[]; body = none(string);
-    multipart = none(FormData); proxy: URL = nil): Request =
-  let hl = newHeaders()
-  for pair in headers:
-    let (k, v) = pair
-    hl.table[k] = @[v]
-  return newRequest(
-    url,
-    httpMethod,
-    hl,
-    body,
-    multipart,
-    proxy = proxy
-  )
-
 func createPotentialCORSRequest*(url: URL; destination: RequestDestination;
     cors: CORSAttribute; fallbackFlag = false): JSRequest =
   var mode = if cors == caNoCors:
