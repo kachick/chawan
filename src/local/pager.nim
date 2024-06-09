@@ -1862,9 +1862,9 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
   of cetOpen:
     let url = event.request.url
     let sameScheme = container.url.scheme == url.scheme
-    if event.request.httpMethod != hmGet and (not sameScheme or
-        container.url.scheme in ["http", "https"] and
-        url.scheme in ["http", "https"]):
+    if event.request.httpMethod != hmGet and not sameScheme and
+        container.url.scheme notin ["http", "https"] and
+        url.scheme notin ["http", "https"]:
       pager.alert("Blocked cross-scheme POST: " & $url)
       return
     #TODO this is horrible UX, async actions shouldn't block input
