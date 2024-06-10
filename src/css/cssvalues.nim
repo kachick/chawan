@@ -1593,7 +1593,9 @@ func splitTable*(computed: CSSComputedValues):
     # wrapper & actual table layouts share the same sizing from the wrapper,
     # so we must add them here.
     cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom,
-    cptWidth, cptHeight, cptBoxSizing
+    cptWidth, cptHeight, cptBoxSizing,
+    # no clue why this isn't included in the standard
+    cptClear
   }
   for prop in CSSPropertyType:
     if prop in props:
