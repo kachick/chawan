@@ -54,10 +54,9 @@ import types/winattrs
 import utils/strwidth
 import utils/twtstr
 
-from chagashi/decoder import newTextDecoder
 import chagashi/charset
+import chagashi/decoder
 import chagashi/decodercore
-import chagashi/validatorcore
 
 import chame/tags
 
@@ -116,9 +115,7 @@ type
     htmlParser: HTML5ParserWrapper
     bgcolor: CellColor
     needsBOMSniff: bool
-    decoder: TextDecoder
-    validator: ref TextValidatorUTF8
-    validateBuf: seq[char]
+    ctx: TextDecoderContext
     charsetStack: seq[Charset]
     charset: Charset
     cacheId: int
@@ -751,13 +748,10 @@ func canSwitch(buffer: Buffer): bool {.inline.} =
   return buffer.htmlParser.builder.confidence == ccTentative and
     buffer.charsetStack.len > 0
 
+const BufferSize = 16384
+
 proc initDecoder(buffer: Buffer) =
-  if buffer.charset != CHARSET_UTF_8:
-    buffer.validator = nil
-    buffer.decoder = newTextDecoder(buffer.charset)
-  else:
-    buffer.decoder = nil
-    buffer.validator = (ref TextValidatorUTF8)()
+  buffer.ctx = initTextDecoderContext(buffer.charset, demFatal, BufferSize)
 
 proc switchCharset(buffer: Buffer) =
   buffer.charset = buffer.charsetStack.pop()
@@ -766,57 +760,14 @@ proc switchCharset(buffer: Buffer) =
   buffer.document = buffer.htmlParser.builder.document
   buffer.prevStyled = nil
 
-const BufferSize = 16384
-
 proc decodeData(buffer: Buffer; iq: openArray[uint8]): bool =
-  var oq {.noinit.}: array[BufferSize, char]
-  var n = 0
-  while true:
-    case buffer.decoder.decode(iq, oq.toOpenArrayByte(0, oq.high), n)
-    of tdrDone:
-      if not buffer.processData0(oq.toOpenArray(0, n - 1)):
-        buffer.switchCharset()
-        return false
-      break
-    of tdrReqOutput:
-      # flush output buffer
-      if not buffer.processData0(oq.toOpenArray(0, n - 1)):
-        buffer.switchCharset()
-        return false
-      n = 0
-    of tdrError:
-      if buffer.canSwitch:
-        buffer.switchCharset()
-        return false
-      doAssert buffer.processData0("\uFFFD")
-  true
-
-proc validateData(buffer: Buffer; iq: openArray[char]): bool =
-  var pi = 0
-  var n = 0
-  while true:
-    case buffer.validator[].validate(iq.toOpenArrayByte(0, iq.high), n)
-    of tvrDone:
-      if n == -1:
-        return true
-      if buffer.validateBuf.len > 0:
-        doAssert buffer.processData0(buffer.validateBuf)
-        buffer.validateBuf.setLen(0)
-      if not buffer.processData0(iq.toOpenArray(pi, n)):
-        buffer.switchCharset()
-        return false
-      buffer.validateBuf.add(iq.toOpenArray(n + 1, iq.high))
-      break
-    of tvrError:
-      buffer.validateBuf.setLen(0)
-      if buffer.canSwitch:
-        buffer.switchCharset()
-        return false
-      if n >= pi:
-        doAssert buffer.processData0(iq.toOpenArray(pi, n))
-      doAssert buffer.processData0("\uFFFD")
-      pi = buffer.validator.i
-  true
+  if not buffer.canSwitch():
+    buffer.ctx.errorMode = demReplacement
+  for chunk in buffer.ctx.decode(iq, finish = false):
+    if not buffer.processData0(chunk.toOpenArray()):
+      buffer.switchCharset()
+      return false
+  return not buffer.ctx.failed
 
 proc bomSniff(buffer: Buffer; iq: openArray[char]): int =
   if iq[0] == '\xFE' and iq[1] == '\xFF':
@@ -839,9 +790,7 @@ proc processData(buffer: Buffer; iq: openArray[char]): bool =
     if iq.len >= 3: # ehm... TODO
       start += buffer.bomSniff(iq)
     buffer.needsBOMSniff = false
-  if buffer.decoder != nil:
-    return buffer.decodeData(iq.toOpenArrayByte(start, iq.high))
-  return buffer.validateData(iq.toOpenArray(start, iq.high))
+  return buffer.decodeData(iq.toOpenArrayByte(start, iq.high))
 
 proc windowChange*(buffer: Buffer; attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
@@ -1162,8 +1111,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     p.resolve()
     return p
   buffer.state = bsLoadingResources
-  if buffer.decoder != nil and buffer.decoder.finish() == tdfrError or
-      buffer.validator != nil and buffer.validator[].finish() == tvrError:
+  if buffer.ctx.td != nil and buffer.ctx.td.finish() == tdfrError:
     doAssert buffer.processData0("\uFFFD")
   buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive

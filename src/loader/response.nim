@@ -3,7 +3,6 @@ import std/tables
 
 import chagashi/charset
 import chagashi/decoder
-import chagashi/validator
 import io/promise
 import io/socketstream
 import loader/headers
@@ -120,10 +119,7 @@ proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
     let charset = response.getCharset(CHARSET_UTF_8)
     #TODO this is inefficient
     # maybe add a JS type that turns a seq[char] into JS strings
-    if charset == CHARSET_UTF_8:
-      ok(s.toValidUTF8())
-    else:
-      ok(newTextDecoder(charset).decodeAll(s))
+    ok(s.decodeAll(charset))
   )
 
 proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =

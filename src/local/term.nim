@@ -19,8 +19,8 @@ import utils/strwidth
 import utils/twtstr
 
 import chagashi/charset
+import chagashi/decoder
 import chagashi/encoder
-import chagashi/validator
 
 #TODO switch away from termcap...
 

@@ -1,8 +1,6 @@
 import chagashi/charset
 import chagashi/decoder
 import chagashi/decodercore
-import chagashi/validator
-import chagashi/validatorcore
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/jstypes
@@ -19,8 +17,6 @@ type
     doNotFlush: bool
     bomSeen: bool
     td: TextDecoder
-    tv: ref TextValidatorUTF8
-    validateBuf: seq[uint8]
 
 jsDestructor(JSTextDecoder)
 jsDestructor(JSTextEncoder)
@@ -37,8 +33,7 @@ func newJSTextDecoder(label = "utf-8", options = TextDecoderOptions()):
   return ok(JSTextDecoder(
     ignoreBOM: options.ignoreBOM,
     fatal: options.fatal,
-    td: if encoding != CHARSET_UTF_8: newTextDecoder(encoding) else: nil,
-    tv: if encoding == CHARSET_UTF_8: (ref TextValidatorUTF8)() else: nil,
+    td: newTextDecoder(encoding),
     encoding: encoding
   ))
 
@@ -82,63 +77,30 @@ proc decode0(this: JSTextDecoder; ctx: JSContext; input: JSArrayBufferView;
     len: 0,
     cap: BufferSize
   )
+  let td = this.td
   var i = 0
   let H = int(input.abuf.len) - 1
   template handle_error =
     if this.fatal:
       return errTypeError("Failed to decode string")
     oq.write("\uFFFD")
-    i = this.td.i
+    i = td.i
   while true:
-    case this.td.decode(input.abuf.p.toOpenArray(i, H),
+    case td.decode(input.abuf.p.toOpenArray(i, H),
       oq.p.toOpenArray(0, oq.cap - 1), oq.len)
     of tdrDone:
       if not stream:
-        case this.td.finish()
+        case td.finish()
         of tdfrDone: discard
         of tdfrError: handle_error
       break
+    of tdrReadInput:
+      oq.write(input.abuf.p.toOpenArray(i + td.pi, i + td.ri))
     of tdrError:
       handle_error
     of tdrReqOutput:
       oq.grow()
   return ok(JS_NewStringLen(ctx, cast[cstring](oq.p), csize_t(oq.len)))
-
-proc validate0(this: JSTextDecoder; ctx: JSContext; input: JSArrayBufferView;
-    stream: bool): JSResult[JSValue] =
-  # assume input is valid; do not allocate yet
-  var oq = Growbuf(p: nil, len: 0, cap: 0)
-  var i = 0
-  let H = int(input.abuf.len) - 1
-  var n = 0
-  template handle_error =
-    if this.fatal:
-      return errTypeError("Failed to decode string")
-    # write from previous error (or beginning) to the last valid char
-    oq.write(input.abuf.p.toOpenArray(i, n))
-    oq.write("\uFFFD")
-    this.validateBuf.setLen(0)
-    i = this.tv.i
-  while true:
-    case this.tv[].validate(input.abuf.p.toOpenArray(i, H), n)
-    of tvrDone:
-      break
-    of tvrError:
-      handle_error
-  if not stream:
-    case this.tv[].finish()
-    of tvrDone: discard
-    of tvrError: handle_error
-  if this.validateBuf.len > 0 and n > -1:
-    oq.write(this.validateBuf)
-    oq.write(input.abuf.p.toOpenArray(i, n))
-    this.validateBuf.setLen(0)
-  this.validateBuf.add(input.abuf.p.toOpenArray(n + 1, input.abuf.high))
-  if oq.len > 0:
-    assert oq.p != nil
-    return ok(JS_NewStringLen(ctx, cast[cstring](oq.p), csize_t(oq.len)))
-  assert oq.p == nil
-  return ok(JS_NewStringLen(ctx, cast[cstring](input.abuf.p), csize_t(n + 1)))
 
 type TextDecodeOptions = object of JSDict
   stream: bool
@@ -148,21 +110,12 @@ proc decode(ctx: JSContext; this: JSTextDecoder;
     input = none(JSArrayBufferView); options = TextDecodeOptions()):
     JSResult[JSValue] {.jsfunc.} =
   if not this.doNotFlush:
-    if this.td != nil:
-      this.td = newTextDecoder(this.encoding)
-    else:
-      assert this.tv != nil
-      this.tv = (ref TextValidatorUTF8)()
+    this.td = newTextDecoder(this.encoding)
     this.bomSeen = false
   if this.doNotFlush != options.stream:
     this.doNotFlush = options.stream
   if input.isSome:
-    if this.td != nil:
-      return this.decode0(ctx, input.get, options.stream)
-    else:
-      assert this.encoding == CHARSET_UTF_8
-      # just validate
-      return this.validate0(ctx, input.get, options.stream)
+    return this.decode0(ctx, input.get, options.stream)
   return ok(JS_NewString(ctx, ""))
 
 func jencoding(this: JSTextDecoder): string {.jsfget: "encoding".} =

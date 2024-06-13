@@ -46,7 +46,6 @@ import utils/twtstr
 
 import chagashi/charset
 import chagashi/decoder
-import chagashi/validator
 
 import chame/tags
 
@@ -3589,10 +3588,8 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
     element.onComplete(ScriptResult(t: RESULT_NULL))
     return
   let s = response.body.recvAll()
-  let source = if cs in {CHARSET_UNKNOWN, CHARSET_UTF_8}:
-    s.toValidUTF8()
-  else:
-    newTextDecoder(cs).decodeAll(s)
+  let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
+  let source = s.decodeAll(cs)
   let script = window.jsctx.createClassicScript(source, url, options, false)
   element.onComplete(ScriptResult(t: RESULT_SCRIPT, script: script))
 

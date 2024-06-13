@@ -12,7 +12,6 @@ import utils/twtstr
 import utils/wordbreak
 
 import chagashi/charset
-import chagashi/validator
 import chagashi/decoder
 
 type
@@ -153,7 +152,7 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
     edit.cursori -= len
     edit.cursorx -= r.width()
     edit.invalid = true
-
+ 
 proc write*(edit: LineEdit; s: string; cs: Charset): bool =
   if cs == CHARSET_UTF_8:
     if s.validateUTF8Surr() != -1:
@@ -169,7 +168,10 @@ proc write*(edit: LineEdit; s: string; cs: Charset): bool =
   return true
 
 proc write(edit: LineEdit; s: string): bool {.jsfunc.} =
-  edit.write(s, CHARSET_UTF_8)
+  if s.validateUTF8Surr() != -1:
+    return false
+  edit.insertCharseq(s)
+  return true
 
 proc delete(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
@@ -311,22 +313,23 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
 proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.maxwidth = attrs.width - edit.promptw - 1
 
-proc readLine*(prompt, current: string; termwidth: int;
-    disallowed: set[char]; hide: bool; hist: LineHistory): LineEdit =
-  result = LineEdit(
+proc readLine*(prompt, current: string; termwidth: int; disallowed: set[char];
+    hide: bool; hist: LineHistory): LineEdit =
+  let promptw = prompt.width()
+  return LineEdit(
     prompt: prompt,
-    promptw: prompt.width(),
+    promptw: promptw,
     news: current,
     disallowed: disallowed,
     hide: hide,
-    invalid: true
+    invalid: true,
+    cursori: current.len,
+    cursorx: current.notwidth(),
+    # - 1, so that the cursor always has place
+    maxwidth: termwidth - promptw - 1,
+    hist: hist,
+    histindex: hist.lines.len
   )
-  result.cursori = result.news.len
-  result.cursorx = result.news.notwidth()
-  # - 1, so that the cursor always has place
-  result.maxwidth = termwidth - result.promptw - 1
-  result.hist = hist
-  result.histindex = result.hist.lines.len
 
 proc addLineEditModule*(ctx: JSContext) =
   ctx.registerType(LineEdit)
