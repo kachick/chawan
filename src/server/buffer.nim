@@ -760,37 +760,37 @@ proc switchCharset(buffer: Buffer) =
   buffer.document = buffer.htmlParser.builder.document
   buffer.prevStyled = nil
 
-proc decodeData(buffer: Buffer; iq: openArray[uint8]): bool =
-  if not buffer.canSwitch():
-    buffer.ctx.errorMode = demReplacement
-  for chunk in buffer.ctx.decode(iq, finish = false):
-    if not buffer.processData0(chunk.toOpenArray()):
-      buffer.switchCharset()
-      return false
-  return not buffer.ctx.failed
-
-proc bomSniff(buffer: Buffer; iq: openArray[char]): int =
-  if iq[0] == '\xFE' and iq[1] == '\xFF':
+proc bomSniff(buffer: Buffer; iq: openArray[uint8]): int =
+  if iq[0] == 0xFE and iq[1] == 0xFF:
     buffer.charsetStack = @[CHARSET_UTF_16_BE]
     buffer.switchCharset()
     return 2
-  if iq[0] == '\xFF' and iq[1] == '\xFE':
+  if iq[0] == 0xFF and iq[1] == 0xFE:
     buffer.charsetStack = @[CHARSET_UTF_16_LE]
     buffer.switchCharset()
     return 2
-  if iq[0] == '\xEF' and iq[1] == '\xBB' and iq[2] == '\xBF':
+  if iq[0] == 0xEF and iq[1] == 0xBB and iq[2] == 0xBF:
     buffer.charsetStack = @[CHARSET_UTF_8]
     buffer.switchCharset()
     return 3
   return 0
 
-proc processData(buffer: Buffer; iq: openArray[char]): bool =
-  var start = 0
+proc processData(buffer: Buffer; iq: openArray[uint8]): bool =
+  var si = 0
   if buffer.needsBOMSniff:
     if iq.len >= 3: # ehm... TODO
-      start += buffer.bomSniff(iq)
+      si += buffer.bomSniff(iq)
     buffer.needsBOMSniff = false
-  return buffer.decodeData(iq.toOpenArrayByte(start, iq.high))
+  if not buffer.canSwitch():
+    buffer.ctx.errorMode = demReplacement
+  for chunk in buffer.ctx.decode(iq.toOpenArray(si, iq.high), finish = false):
+    if not buffer.processData0(chunk.toOpenArray()):
+      buffer.switchCharset()
+      return false
+  if buffer.ctx.failed:
+    buffer.switchCharset()
+    return false
+  true
 
 proc windowChange*(buffer: Buffer; attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
@@ -1162,36 +1162,36 @@ proc onload(buffer: Buffer) =
   of bsLoadingPage:
     discard
   var reprocess = false
-  var iq {.noinit.}: array[BufferSize, char]
+  var iq {.noinit.}: array[BufferSize, uint8]
   var n = 0
   while true:
-    try:
-      if not reprocess:
+    if not reprocess:
+      try:
         n = buffer.istream.recvData(iq)
-        buffer.bytesRead += n
-      if n != 0:
-        if not buffer.processData(iq.toOpenArray(0, n - 1)):
-          if not buffer.firstBufferRead:
-            reprocess = true
-            continue
-          if buffer.rewind(0):
-            continue
-        buffer.firstBufferRead = true
-        reprocess = false
-      else: # EOF
-        buffer.finishLoad().then(proc() =
-          buffer.do_reshape()
-          buffer.state = bsLoaded
-          buffer.document.readyState = rsComplete
-          buffer.dispatchLoadEvent()
-          if buffer.hasTask(bcGetTitle):
-            buffer.resolveTask(bcGetTitle, buffer.document.title)
-          if buffer.hasTask(bcLoad):
-            buffer.resolveTask(bcLoad, -1)
-        )
-        return # skip incr render
-    except ErrorAgain:
-      break
+      except ErrorAgain:
+        break
+      buffer.bytesRead += n
+    if n != 0:
+      if not buffer.processData(iq.toOpenArray(0, n - 1)):
+        if not buffer.firstBufferRead:
+          reprocess = true
+          continue
+        if buffer.rewind(0):
+          continue
+      buffer.firstBufferRead = true
+      reprocess = false
+    else: # EOF
+      buffer.finishLoad().then(proc() =
+        buffer.do_reshape()
+        buffer.state = bsLoaded
+        buffer.document.readyState = rsComplete
+        buffer.dispatchLoadEvent()
+        if buffer.hasTask(bcGetTitle):
+          buffer.resolveTask(bcGetTitle, buffer.document.title)
+        if buffer.hasTask(bcLoad):
+          buffer.resolveTask(bcLoad, -1)
+      )
+      return # skip incr render
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
   if not buffer.config.isdump and buffer.tasks[bcLoad] != 0:
