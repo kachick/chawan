@@ -722,9 +722,9 @@ proc do_reshape(buffer: Buffer) =
     buffer.images)
   buffer.prevStyled = styledRoot
 
-proc processData0(buffer: Buffer; data: openArray[char]): bool =
+proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
   if buffer.ishtml:
-    if buffer.htmlParser.parseBuffer(data) == PRES_STOP:
+    if buffer.htmlParser.parseBuffer(data.toOpenArray()) == PRES_STOP:
       buffer.charsetStack = @[buffer.htmlParser.builder.charset]
       return false
   else:
@@ -735,12 +735,10 @@ proc processData0(buffer: Buffer; data: openArray[char]): bool =
       plaintext = buffer.document.findFirst(TAG_PLAINTEXT)
     if data.len > 0:
       let lastChild = plaintext.lastChild
-      var text = newString(data.len)
-      copyMem(addr text[0], unsafeAddr data[0], data.len)
       if lastChild != nil and lastChild of Text:
-        Text(lastChild).data &= text
+        Text(lastChild).data &= data
       else:
-        plaintext.insert(buffer.document.createTextNode(text), nil)
+        plaintext.insert(buffer.document.createTextNode($data), nil)
       plaintext.invalid = true
   true
 
@@ -784,7 +782,7 @@ proc processData(buffer: Buffer; iq: openArray[uint8]): bool =
   if not buffer.canSwitch():
     buffer.ctx.errorMode = demReplacement
   for chunk in buffer.ctx.decode(iq.toOpenArray(si, iq.high), finish = false):
-    if not buffer.processData0(chunk.toOpenArray()):
+    if not buffer.processData0(chunk):
       buffer.switchCharset()
       return false
   if buffer.ctx.failed:
@@ -1112,7 +1110,11 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     return p
   buffer.state = bsLoadingResources
   if buffer.ctx.td != nil and buffer.ctx.td.finish() == tdfrError:
-    doAssert buffer.processData0("\uFFFD")
+    var s = "\uFFFD"
+    doAssert buffer.processData0(UnsafeSlice(
+      p: cast[ptr UncheckedArray[char]](addr s[0]),
+      len: s.len
+    ))
   buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
   buffer.dispatchDOMContentLoadedEvent()
