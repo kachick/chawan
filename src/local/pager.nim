@@ -1705,7 +1705,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
   let istream = response.body
   container.applyResponse(response, pager.config.external.mime_types)
   if response.status == 401: # unauthorized
-    pager.setLineEdit(lmUsername)
+    pager.setLineEdit(lmUsername, container.url.username)
     pager.lineData = LineDataAuth(url: newURL(container.url))
     istream.sclose()
     return
