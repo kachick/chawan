@@ -216,16 +216,21 @@ proc getOutputId(ctx: LoaderContext): int =
 
 proc redirectToStream(ctx: LoaderContext; output: OutputHandle;
     ps: PosixStream): bool =
-  if output.currentBuffer != nil:
-    let n = ps.sendData(output.currentBuffer, output.currentBufferIdx)
-    if unlikely(n < output.currentBuffer.len - output.currentBufferIdx):
-      ps.sclose()
-      return false
-  for buffer in output.buffers:
-    let n = ps.sendData(buffer)
-    if unlikely(n < buffer.len):
-      ps.sclose()
-      return false
+  try:
+    if output.currentBuffer != nil:
+      let n = ps.sendData(output.currentBuffer, output.currentBufferIdx)
+      if unlikely(n < output.currentBuffer.len - output.currentBufferIdx):
+        ps.sclose()
+        return false
+    for buffer in output.buffers:
+      let n = ps.sendData(buffer)
+      if unlikely(n < buffer.len):
+        ps.sclose()
+        return false
+  except ErrorBrokenPipe:
+    # ps or output is dead; give up.
+    ps.sclose()
+    return false
   if output.istreamAtEnd:
     ps.sclose()
   elif output.parent != nil:
@@ -329,8 +334,7 @@ proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: LoaderHandle) =
     handle.outputs.del(i)
   for output in handle.outputs:
     if r == hrrBrokenPipe:
-      output.ostream.sclose()
-      output.ostream = nil
+      output.oclose()
     elif cachedHandle != nil:
       output.parent = cachedHandle
       cachedHandle.outputs.add(output)
@@ -341,8 +345,7 @@ proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: LoaderHandle) =
       ctx.outputMap[output.ostream.fd] = output
     else:
       assert output.ostream.fd notin ctx.outputMap
-      output.ostream.sclose()
-      output.ostream = nil
+      output.oclose()
   handle.outputs.setLen(0)
   handle.iclose()
 
@@ -418,13 +421,16 @@ proc loadResource(ctx: LoaderContext; client: ClientData; config: LoaderClientCo
       handle.loadCGI(request, ctx.config.cgiDir, prevurl,
         config.insecureSSLNoVerify, ostream)
       if handle.istream != nil:
-        ctx.addFd(handle)
         if ostream != nil:
           let output = ctx.findOutput(request.body.outputId, client)
           if output != nil:
-            doAssert ctx.redirectToStream(output, ostream)
+            if not ctx.redirectToStream(output, ostream):
+              # give up.
+              handle.rejectHandle(ERROR_FAILED_TO_REDIRECT)
+              return
           else:
             ostream.sclose()
+        ctx.addFd(handle)
       else:
         handle.close()
     elif request.url.scheme == "stream":
@@ -704,6 +710,7 @@ proc acceptConnection(ctx: LoaderContext) =
         ctx.resume(stream, client, r)
   except ErrorBrokenPipe:
     # receiving end died while reading the file; give up.
+    assert stream.fd notin ctx.outputMap
     stream.sclose()
 
 proc exitLoader(ctx: LoaderContext) =
@@ -820,8 +827,7 @@ proc finishCycle(ctx: LoaderContext; unregRead: var seq[LoaderHandle];
       if output.registered:
         ctx.selector.unregister(output.ostream.fd)
       ctx.outputMap.del(output.ostream.fd)
-      output.ostream.sclose()
-      output.ostream = nil
+      output.oclose()
       let handle = output.parent
       if handle != nil: # may be nil if from loadStream S_ISREG
         let i = handle.outputs.find(output)

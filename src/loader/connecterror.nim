@@ -1,4 +1,5 @@
 type ConnectErrorCode* = enum
+  ERROR_FAILED_TO_REDIRECT = (-17, "failed to redirect request body")
   ERROR_URL_NOT_IN_CACHE = (-16, "URL was not found in the cache")
   ERROR_FILE_NOT_IN_CACHE = (-15, "file was not found in the cache")
   ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT = (-14, "failed to execute CGI script")

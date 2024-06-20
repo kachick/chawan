@@ -185,10 +185,13 @@ proc iclose*(handle: LoaderHandle) =
     handle.istream.sclose()
     handle.istream = nil
 
+proc oclose*(output: OutputHandle) =
+  output.ostream.sclose()
+  output.ostream = nil
+
 proc close*(handle: LoaderHandle) =
   handle.iclose()
   for output in handle.outputs:
     #TODO assert not output.registered
     if output.ostream != nil:
-      output.ostream.sclose()
-      output.ostream = nil
+      output.oclose()

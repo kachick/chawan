@@ -2936,7 +2936,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
         response.unregisterFun()
         response.body.sclose()
         if "X-Image-Dimensions" notin response.headers.table:
-          window.console.error("X-Image-Dimensions missing")
+          window.console.error("X-Image-Dimensions missing in", $response.url)
           return
         let dims = response.headers.table["X-Image-Dimensions"][0]
         let width = parseUInt64(dims.until('x'), allowSign = false)
