@@ -691,28 +691,26 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
 
 proc outputKittyImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     bmp: Bitmap) =
-  const MaxPixels = ((4096 div 4) * 3) div 3 # max 4096 bytes, base64 encoded
-  var outs = term.cursorGoto(x, y)
-  outs &= APC & "Gf=24,m=1,a=T,C=1,s=" & $bmp.width & ",v=" & $bmp.height &
-    ",x=" & $offx & ",y=" & $offy & ",w=" & $dispw & ",h=" & $disph & ';'
-  var buf = newStringOfCap(MaxPixels * 4)
-  var i = 0
+  const MaxBytes = 4096 * 3 div 4
+  var i = MaxBytes
   # transcode to RGB
-  while i < bmp.px.len:
-    if i > 0 and i mod MaxPixels == 0:
-      outs &= btoa(buf)
-      outs &= ST
-      term.write(outs)
-      buf.setLen(0)
-      outs = APC & "Gm=1;"
-    buf &= char(bmp.px[i].r)
-    buf &= char(bmp.px[i].g)
-    buf &= char(bmp.px[i].b)
-    inc i
-  outs = APC & "Gm=0;"
-  outs &= btoa(buf)
+  let p = cast[ptr UncheckedArray[uint8]](addr bmp.px[0])
+  let L = bmp.px.len * 4
+  let m = if i < L: '1' else: '0'
+  var outs = term.cursorGoto(x, y) &
+    APC & "Gf=32,m=" & m & ",a=T,C=1,s=" & $bmp.width & ",v=" & $bmp.height &
+    ",x=" & $offx & ",y=" & $offy & ",w=" & $dispw & ",h=" & $disph & ';'
+  outs.btoa(p.toOpenArray(0, min(L, i) - 1))
   outs &= ST
   term.write(outs)
+  while i < L:
+    let j = i
+    i += MaxBytes
+    let m = if i < L: '1' else: '0'
+    var outs = APC & "Gm=" & m & ';'
+    outs.btoa(p.toOpenArray(j, min(L, i) - 1))
+    outs &= ST
+    term.write(outs)
 
 # x, y, maxw, maxh in cells
 # x, y can be negative, then image starts outside the screen

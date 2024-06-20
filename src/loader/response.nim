@@ -101,13 +101,14 @@ func getCharset*(this: Response; fallback: Charset): Charset =
     return fallback
   return cs
 
-func getContentType*(this: Response): string =
+func getContentType*(this: Response; fallback = "application/octet-stream"):
+    string =
   if "Content-Type" in this.headers.table:
     let header = this.headers.table["Content-Type"][0].toLowerAscii()
     return header.until(';').strip()
   # also use DefaultGuess for container, so that local mime.types cannot
   # override buffer mime.types
-  return DefaultGuess.guessContentType(this.url.pathname)
+  return DefaultGuess.guessContentType(this.url.pathname, fallback)
 
 type TextOpaque = ref object of RootObj
   buf: string

@@ -2918,7 +2918,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
         if res.isNone:
           return
         let response = res.get
-        let contentType = response.getContentType()
+        let contentType = response.getContentType("image/x-unknown")
         if contentType.until('/') != "image":
           return
         let request = newRequest(

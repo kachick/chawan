@@ -1,7 +1,7 @@
-import monoucha/quickjs
 import js/domexception
 import monoucha/javascript
 import monoucha/jstypes
+import monoucha/quickjs
 import types/opt
 import utils/twtstr
 
@@ -9,6 +9,7 @@ import utils/twtstr
 # anything above latin-1.)
 
 proc atob*(data: string): DOMResult[NarrowString] =
+  # Note: the actual atob implementation (atob0) is in twtstr.
   let r = atob0(data)
   if r.isNone:
     return err(newDOMException(r.error, "InvalidCharacterError"))
@@ -16,13 +17,7 @@ proc atob*(data: string): DOMResult[NarrowString] =
 
 const AMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
-func btoa*(data: openArray[uint8]): string =
-  if data.len == 0:
-    return ""
-  var L = data.len div 3 * 4
-  if (let rem = data.len mod 3; rem) > 0:
-    L += 3 - rem
-  var s = newStringOfCap(L)
+func btoa*(s: var string; data: openArray[uint8]) =
   var i = 0
   let endw = data.len - 2
   while i < endw:
@@ -47,6 +42,15 @@ func btoa*(data: openArray[uint8]): string =
       s &= AMap[b1 shl 4 and 0x3F] # 2 bits of b1
       s &= '='
     s &= '='
+
+func btoa*(data: openArray[uint8]): string =
+  if data.len == 0:
+    return ""
+  var L = data.len div 3 * 4
+  if (let rem = data.len mod 3; rem) > 0:
+    L += 3 - rem
+  var s = newStringOfCap(L)
+  s.btoa(data)
   return s
 
 func btoa*(data: string): string =
