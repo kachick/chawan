@@ -151,7 +151,7 @@ proc getCharBmp(u: uint32): Bitmap =
   let gx = uint64(32 + 16 * (u mod 0x100))
   let gy = uint64(64 + 16 * (u div 0x100))
   var fullwidth = false
-  const white = rgba(255, 255, 255, 255)
+  const white = rgba_be(255, 255, 255, 255)
   block loop:
     # hack to recognize full width characters
     for y in 0 ..< 16u64:

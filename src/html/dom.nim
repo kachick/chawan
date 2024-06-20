@@ -624,12 +624,12 @@ proc loadUnifont(window: Window) =
   )
   let response = window.loader.doRequest(request)
   assert response.res == 0
-  let dims = response.headers.table["X-Image-Dimensions"][0]
+  let dims = response.headers.table["Cha-Image-Dimensions"][0]
   let width = parseUInt64(dims.until('x'), allowSign = false).get
   let height = parseUInt64(dims.after('x'), allowSign = false).get
   let len = int(width) * int(height)
   let bitmap = ImageBitmap(
-    px: cast[seq[ARGBColor]](newSeqUninitialized[uint32](len)),
+    px: cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](len)),
     width: width,
     height: height
   )
@@ -2909,6 +2909,10 @@ proc loadResource(window: Window; image: HTMLImageElement) =
   let url = parseURL(src, window.document.url.some)
   if url.isSome:
     let url = url.get
+    if window.document.url.scheme == "https" and url.scheme == "http":
+      # mixed content :/
+      #TODO maybe do this in loader?
+      url.scheme = "https"
     let p = window.loader.fetch(newRequest(url))
       .then(proc(res: JSResult[Response]): Promise[JSResult[Response]] =
         if res.isNone:
@@ -2935,14 +2939,14 @@ proc loadResource(window: Window; image: HTMLImageElement) =
         # the `resume' command in pager.
         response.unregisterFun()
         response.body.sclose()
-        if "X-Image-Dimensions" notin response.headers.table:
-          window.console.error("X-Image-Dimensions missing in", $response.url)
+        if "Cha-Image-Dimensions" notin response.headers.table:
+          window.console.error("Cha-Image-Dimensions missing in", $response.url)
           return
-        let dims = response.headers.table["X-Image-Dimensions"][0]
+        let dims = response.headers.table["Cha-Image-Dimensions"][0]
         let width = parseUInt64(dims.until('x'), allowSign = false)
         let height = parseUInt64(dims.after('x'), allowSign = false)
         if width.isNone or height.isNone:
-          window.console.error("wrong X-Image-Dimensions")
+          window.console.error("wrong Cha-Image-Dimensions in", $response.url)
           return
         image.bitmap = NetworkBitmap(
           width: width.get,
@@ -4251,7 +4255,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
     newURL("img-codec+" & contentType.after('/') & ":encode").get,
     httpMethod = hmPost,
     headers = newHeaders({
-      "X-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
+      "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
     }),
     body = RequestBody(t: rbtString, s: s)
   )
@@ -4271,15 +4275,15 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
       JS_FreeValue(ctx, callback)
       return
     let response = res.get
-    if "X-Image-Dimensions" notin response.headers.table:
-      window.console.error("X-Image-Dimensions missing")
+    if "Cha-Image-Dimensions" notin response.headers.table:
+      window.console.error("Cha-Image-Dimensions missing")
       JS_FreeValue(ctx, callback)
       return
-    let dims = response.headers.table["X-Image-Dimensions"][0]
+    let dims = response.headers.table["Cha-Image-Dimensions"][0]
     let width = parseUInt64(dims.until('x'), allowSign = false)
     let height = parseUInt64(dims.after('x'), allowSign = false)
     if width.isNone or height.isNone:
-      window.console.error("wrong X-Image-Dimensions")
+      window.console.error("wrong Cha-Image-Dimensions")
       JS_FreeValue(ctx, callback)
       return
     response.blob().then(proc(blob: JSResult[Blob]) =

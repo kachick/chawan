@@ -51,7 +51,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
-	$(OUTDIR_CGI_BIN)/png \
+	$(OUTDIR_CGI_BIN)/stbi \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc \
 	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
 
@@ -174,6 +174,13 @@ $(OUTDIR_CGI_BIN)/png: adapter/img/png.nim src/utils/sandbox.nim
                 -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) \
                 -o:"$(OUTDIR_CGI_BIN)/png" adapter/img/png.nim
 
+$(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
+		adapter/img/stb_image.h src/utils/sandbox.nim
+	@mkdir -p "$(OUTDIR_CGI_BIN)"
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/stbi" \
+                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) \
+                -o:"$(OUTDIR_CGI_BIN)/stbi" adapter/img/stbi.nim
+
 $(OUTDIR_LIBEXEC)/urldec: adapter/tools/urldec.nim src/utils/twtstr.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/urldec" \
@@ -194,7 +201,6 @@ doc/cha-%.5: $(OBJDIR)/man/cha-%.md
 .PHONY: clean
 clean:
 	rm -rf "$(OBJDIR)/$(TARGET)"
-	rm -rf "$(QJSOBJ)"
 	rm -f lib/libquickjs.a
 
 MANPAGES1 = doc/cha.1 doc/mancha.1
@@ -228,7 +234,8 @@ install:
 	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/man" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/png" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	#install -m755 "$(OUTDIR_CGI_BIN)/png" $(LIBEXECDIR_CHAWAN)/cgi-bin
+	install -m755 "$(OUTDIR_CGI_BIN)/stbi" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/urldec" $(LIBEXECDIR_CHAWAN)/urldec
 	install -m755 "$(OUTDIR_LIBEXEC)/urlenc" $(LIBEXECDIR_CHAWAN)/urlenc
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"

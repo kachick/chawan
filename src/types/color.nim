@@ -6,8 +6,16 @@ import utils/twtstr
 type
   RGBColor* = distinct uint32
 
-  # RGBA color, stored in ARGB format
+  # ARGB color. machine-dependent format, so that bit shifts and arithmetic
+  # works. (Alpha is MSB, then come R, G, B.)
   ARGBColor* = distinct uint32
+
+  # RGBA format; machine-independent, always big-endian.
+  RGBAColorBE* {.packed.} = object
+    r*: uint8
+    g*: uint8
+    b*: uint8
+    a*: uint8
 
   ANSIColor* = distinct uint8
 
@@ -23,11 +31,16 @@ type
     t*: ColorTag
     n: uint32
 
+func rgba*(r, g, b, a: uint8): ARGBColor
+
 func toRGBColor*(i: ARGBColor): RGBColor =
   return RGBColor(uint32(i) and 0xFFFFFFu32)
 
 converter toARGBColor*(i: RGBColor): ARGBColor =
   return ARGBColor(uint32(i) or 0xFF000000u32)
+
+converter toARGBColor*(c: RGBAColorBE): ARGBColor =
+  return rgba(c.r, c.g, c.b, c.a)
 
 func `==`*(a, b: ARGBColor): bool {.borrow.}
 
@@ -301,8 +314,6 @@ func fastmul1(c, ca: uint32): uint32 =
 func fastmul1(c: ARGBColor; ca: uint32): ARGBColor =
   return ARGBColor(fastmul1(uint32(c), ca))
 
-func rgba*(r, g, b, a: uint8): ARGBColor
-
 func premul(c: ARGBColor): ARGBColor =
   return ARGBColor(fastmul(uint32(c), uint32(c.a)))
 
@@ -375,11 +386,20 @@ func rgba*(r, g, b, a: uint8): ARGBColor =
   return ARGBColor((uint32(a) shl 24) or (uint32(r) shl 16) or
     (uint32(g) shl 8) or uint32(b))
 
+func rgba_be*(r, g, b, a: uint8): RGBAColorBE =
+  return RGBAColorBE(r: r, g: g, b: b, a: a)
+
+func rgb_be*(r, g, b: uint8): RGBAColorBE =
+  return RGBAColorBE(r: r, g: g, b: b, a: 0xFF)
+
 func rgba*(r, g, b, a: int): ARGBColor =
   return rgba(uint8(r), uint8(g), uint8(b), uint8(a))
 
 func gray*(n: uint8): RGBColor =
-  return rgb(n, n, n) #TODO use yuv instead?
+  return rgb(n, n, n)
+
+func gray_be*(n: uint8): RGBAColorBE =
+  return rgb_be(n, n, n)
 
 # NOTE: this assumes n notin 0..15 (which would be ANSI 4-bit)
 func toRGB*(param0: EightBitColor): RGBColor =

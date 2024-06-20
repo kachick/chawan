@@ -5,11 +5,11 @@
 Chawan itself is dedicated to the public domain. However, it contains and
 depends on projects with different licensing terms.
 
-This document attempts to list licensing terms of projects included in
-the Chawan repository. Note that Chawan is dynamically linked against
-your copy of zlib, libcurl, (on Linux) libseccomp, your C library, and if
-exists, your termcap library. For licensing terms of these, please consult the
-appropriate library's documentation.
+This document attempts to list licensing terms of projects included in the
+Chawan repository. Note that Chawan is dynamically linked against your copy
+of libcurl, (on Linux) libseccomp, your C library, and if exists, your termcap
+library. For licensing terms of these, please consult the appropriate library's
+documentation.
 
 Also, Chawan is statically linked to the Nim standard library. At the time
 of writing, (i.e. as of Nim 2.0.4) this is the MIT license (same terms as
@@ -20,6 +20,7 @@ Table of contents:
 * [Chawan](#chawan)
 * [QuickJS](#quickjs)
 * [Punycode library](#punycode-library)
+* [STB image](#stb-image)
 
 ## Chawan
 
@@ -111,3 +112,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## STB image
+
+The stb_image library is used for image transcoding. This library is dedicated
+to the public domain, and is distributed under the same terms as Chawan.

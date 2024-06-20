@@ -215,7 +215,7 @@ proc saveToBitmap*(response: Response; bmp: Bitmap): EmptyPromise =
   assert not response.bodyUsed
   let opaque = BitmapOpaque(bmp: bmp, idx: 0)
   let size = bmp.width * bmp.height
-  bmp.px = cast[seq[ARGBColor]](newSeqUninitialized[uint32](size))
+  bmp.px = cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](size))
   response.opaque = opaque
   response.onRead = onReadBitmap
   response.bodyUsed = true

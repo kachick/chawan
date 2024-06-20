@@ -8,6 +8,9 @@ application/xhtml+xml	xhtml	xhtm	xht
 text/plain		txt
 text/css		css
 image/png		png
+image/jpeg		jpg
+image/bmp		bmp
+image/gif		gif
 text/markdown		md
 text/gemini		gmi
 text/x-ansi		ans	asc

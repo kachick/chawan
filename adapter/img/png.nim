@@ -3,11 +3,15 @@ import std/os
 import std/strutils
 
 import bindings/zlib
-import img/bitmap
 import types/color
 import utils/endians
 import utils/sandbox
 import utils/twtstr
+
+type Bitmap = ref object
+  width: uint32
+  height: uint32
+  px: seq[RGBAColorBE]
 
 type PNGWriter = object
   buf: pointer
@@ -112,7 +116,7 @@ type PNGReader = object
   i: int
   bitDepth: uint8
   colorType: PNGColorType
-  background: ARGBColor
+  background: RGBColor
   isend: bool
   idatBuf: seq[uint8]
   uprow: seq[uint8]
@@ -122,8 +126,8 @@ type PNGReader = object
   strmend: bool
   atline: int
   plteseen: bool
-  palette: seq[ARGBColor]
-  trns: ARGBColor
+  palette: seq[RGBAColorBE]
+  trns: RGBColor
 
 func width(reader: PNGReader): int {.inline.} = int(reader.bmp.width)
 
@@ -221,7 +225,11 @@ proc readIHDR(reader: var PNGReader) =
     reader.err "unknown interlace method"
   let crc = crc32(0, addr reader.iq[reader.i - 17], 17)
   if uint32(crc) != reader.readU32(): reader.err "wrong crc"
-  reader.bmp = newBitmap(width, height)
+  reader.bmp = Bitmap(
+    width: width,
+    height: height,
+    px: cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](width * height))
+  )
 
 proc readbKGD(reader: var PNGReader) =
   case reader.colorType
@@ -241,7 +249,8 @@ proc readbKGD(reader: var PNGReader) =
     let i = int(reader.readU8())
     if i >= reader.palette.len:
       reader.err "invalid palette index"
-    reader.background = reader.palette[i]
+    let c = reader.palette[i]
+    reader.background = rgb(c.r, c.g, c.b)
 
 proc readtRNS(reader: var PNGReader) =
   case reader.colorType
@@ -315,7 +324,7 @@ proc unfilter(reader: var PNGReader; irow: openArray[uint8]; bpp: int) =
   else:
     reader.err "got invalid filter"
 
-proc writepxs(reader: var PNGReader; crow: var openArray[ARGBColor]) =
+proc writepxs(reader: var PNGReader; crow: var openArray[RGBAColorBE]) =
   case reader.colorType
   of pcGrayscale:
     var i = 0
@@ -332,7 +341,7 @@ proc writepxs(reader: var PNGReader; crow: var openArray[ARGBColor]) =
       j += int(reader.bitDepth)
       i += j div 8
       j = j mod 8
-      crow[x] = rgba(n, n, n, 255u8)
+      crow[x] = rgba_be(n, n, n, 255u8)
   of pcTrueColor:
     let step = int(reader.bitDepth) div 8
     var i = 0
@@ -343,7 +352,7 @@ proc writepxs(reader: var PNGReader; crow: var openArray[ARGBColor]) =
       i += step
       let b = reader.uprow[i]
       i += step
-      crow[x] = rgba(r, g, b, 255u8)
+      crow[x] = rgba_be(r, g, b, 255u8)
   of pcIndexedColor:
     var i = 0
     var j = 0
@@ -369,7 +378,7 @@ proc writepxs(reader: var PNGReader; crow: var openArray[ARGBColor]) =
       i += step
       let a = reader.uprow[i]
       i += step
-      crow[x] = rgba(n, n, n, a)
+      crow[x] = rgba_be(n, n, n, a)
   of pcTrueColorWithAlpha:
     let step = int(reader.bitDepth) div 8
     var i = 0
@@ -382,7 +391,7 @@ proc writepxs(reader: var PNGReader; crow: var openArray[ARGBColor]) =
       i += step
       let a = reader.uprow[i]
       i += step
-      crow[x] = rgba(r, g, b, a)
+      crow[x] = rgba_be(r, g, b, a)
 
 proc readPLTE(reader: var PNGReader) =
   # For non-indexed-color, palette is just a suggestion for quantization.
@@ -395,12 +404,12 @@ proc readPLTE(reader: var PNGReader) =
   let len = reader.limit - reader.i
   if len mod 3 != 0:
     reader.err "palette length not divisible by 3"
-  reader.palette = newSeq[ARGBColor](len div 3)
+  reader.palette = newSeq[RGBAColorBE](len div 3)
   for c in reader.palette.mitems:
     let r = reader.readU8()
     let g = reader.readU8()
     let b = reader.readU8()
-    c = rgba(r, g, b, 255)
+    c = rgba_be(r, g, b, 255)
   reader.plteseen = true
 
 proc readIDAT(reader: var PNGReader) =
@@ -518,23 +527,23 @@ proc main() =
     let s = stdin.readAll()
     let bmp = fromPNG(s.toOpenArrayByte(0, s.high))
     if bmp != nil:
-      stdout.write("X-Image-Dimensions: " & $bmp.width & "x" & $bmp.height &
+      stdout.write("Cha-Image-Dimensions: " & $bmp.width & "x" & $bmp.height &
         "\n\n")
       discard stdout.writeBuffer(addr bmp.px[0], bmp.px.len * sizeof(bmp.px[0]))
   of "encode":
     let headers = getEnv("REQUEST_HEADERS")
     let bmp = Bitmap()
     for hdr in headers.split('\n'):
-      if hdr.until(':') == "X-Image-Dimensions":
+      if hdr.until(':') == "Cha-Image-Dimensions":
         let s = hdr.after(':').strip().split('x')
         #TODO error handling
-        bmp.width = parseUInt64(s[0], allowSign = false).get
-        bmp.height = parseUInt64(s[1], allowSign = false).get
+        bmp.width = parseUInt32(s[0], allowSign = false).get
+        bmp.height = parseUInt32(s[1], allowSign = false).get
     let L = bmp.width * bmp.height
-    bmp.px = cast[seq[ARGBColor]](newSeqUninitialized[uint32](L))
+    bmp.px = cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](L))
     doAssert stdin.readBuffer(addr bmp.px[0], L * 4) == int(L * 4)
     var outlen: int
-    stdout.write("X-Image-Dimensions: " & $bmp.width & "x" & $bmp.height &
+    stdout.write("Cha-Image-Dimensions: " & $bmp.width & "x" & $bmp.height &
       "\n\n")
     let p = bmp.toPNG(outlen)
     discard stdout.writeBuffer(p, outlen)

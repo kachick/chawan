@@ -91,6 +91,7 @@ elif defined(linux) and not disableSandbox:
       "gettimeofday", # used by QuickJS in Date.now()
       "mmap", # memory allocation
       "mmap2", # memory allocation
+      "mremap", # memory allocation
       "munmap", # memory allocation
       "pipe", # for pipes to child process
       "pipe2", # for when pipe is implemented as pipe2
@@ -125,13 +126,13 @@ elif defined(linux) and not disableSandbox:
     onSignal SIGSYS:
       discard sig
       raise newException(Defect, "Sandbox violation in network process")
-    let ctx = seccomp_init(SCMP_ACT_TRAP)
+    let ctx = seccomp_init(SCMP_ACT_KILL_PROCESS)
     doAssert pointer(ctx) != nil
     const allowList = [
       cstring"close", "exit_group", # duh
       "read", "write", "recv", "send", "recvfrom", "sendto", # socket i/o
       "fcntl", "fcntl64", # so we can set nonblock etc.
-      "mmap", "mmap2", "munmap", "brk", # memory allocation
+      "mmap", "mmap2", "mremap", "munmap", "brk", # memory allocation
       "poll", # curl needs poll
       "getpid", # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
       "fstat", # glibc fread seems to call it

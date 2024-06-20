@@ -23,7 +23,6 @@ Note: a POSIX-compliant operating system is required.
 	  `nim -v`.)
 3. Install the following dependencies:
 	* libcurl: <https://curl.se/libcurl/>
-	* zlib: <https://zlib.net/>
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config" in your
 	  `$PATH`)
 	* (Linux only) libseccomp: <https://github.com/seccomp/libseccomp>
@@ -31,7 +30,7 @@ Note: a POSIX-compliant operating system is required.
 	  `gmake` in the following steps.
 	* Recommended: a termcap library. e.g. ncurses comes with one.
 	* TL;DR for Debian:
-	  `apt install libcurl4-openssl-dev zlib1g-dev pkg-config make ncurses-base libseccomp-dev`
+	  `apt install libcurl4-openssl-dev pkg-config make ncurses-base libseccomp-dev`
 4. Download parts of Chawan found in other repositories: `make submodule`
 5. Run `make` (without arguments).
 6. Install using `make install` (e.g. `sudo make install`).
