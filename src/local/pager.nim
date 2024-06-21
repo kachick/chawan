@@ -126,6 +126,7 @@ type
     forkserver*: ForkServer
     formRequestMap*: Table[string, FormRequestType]
     hasload*: bool # has a page been successfully loaded since startup?
+    imageId: int # hack to allocate a new ID for canvas each frame, TODO remove
     inputBuffer*: string # currently uninterpreted characters
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
@@ -366,6 +367,7 @@ proc writeStatusMessage(pager: Pager; str: string; format = Format();
   let e = min(start + maxwidth, pager.statusgrid.width)
   if i >= e:
     return i
+  pager.redraw = true
   for r in str.runes:
     let w = r.width()
     if i + w >= e:
@@ -456,9 +458,66 @@ proc redraw(pager: Pager) {.jsfunc.} =
   pager.redraw = true
   pager.term.clearCanvas()
 
+proc loadCachedImage(pager: Pager; container: Container; bmp: NetworkBitmap) =
+  #TODO this is kinda dumb, because we cannot unload cached images.
+  # ideally the filesystem cache should serve as the only cache, but right
+  # now it's just sort of a temporary place before the image is dumped to
+  # memory.
+  # maybe allow the buffer to add a cache file? or receive a separate "image
+  # load start" event in container, and then add one in the pager?
+  # the first option seems better; it's simpler, and buffers can add arbitrary
+  # cache files if they just tell the pager it's an image anyway.
+  let cacheId = pager.loader.addCacheFile(bmp.outputId,
+    pager.loader.clientPid, container.process)
+  let request = newRequest(newURL("cache:" & $cacheId).get)
+  let cachedImage = CachedImage(bmp: bmp)
+  pager.loader.fetch(request).then(proc(res: JSResult[Response]): EmptyPromise =
+    if res.isNone:
+      let i = container.cachedImages.find(cachedImage)
+      container.cachedImages.del(i)
+      return nil
+    return res.get.saveToBitmap(bmp)
+  ).then(proc() =
+    pager.redraw = true
+    cachedImage.loaded = true
+    pager.loader.removeCachedItem(cacheId)
+  )
+  pager.loader.resume(bmp.outputId) # get rid of dangling output
+  container.cachedImages.add(cachedImage)
+
+proc initImages(pager: Pager; container: Container) =
+  var newImages: seq[CanvasImage] = @[]
+  for image in container.images:
+    var imageId = -1
+    if image.bmp of NetworkBitmap:
+      # add cache file to pager, but source it from the container.
+      let bmp = NetworkBitmap(image.bmp)
+      let cached = container.findCachedImage(bmp.imageId)
+      imageId = bmp.imageId
+      if cached == nil:
+        pager.loadCachedImage(container, bmp)
+        continue
+      image.bmp = cached.bmp
+      if not cached.loaded:
+        continue # loading
+    else:
+      imageId = pager.imageId
+      inc pager.imageId
+    let canvasImage = pager.term.loadImage(image.bmp, container.process, imageId,
+      image.x - container.fromx, image.y - container.fromy, pager.attrs.width,
+      pager.attrs.height - 1)
+    if canvasImage != nil:
+      newImages.add(canvasImage)
+      canvasImage.marked = true
+  if pager.term.imageMode == imKitty:
+    for image in pager.term.canvasImages:
+      if not image.marked:
+        pager.term.imagesToClear.add(image)
+      image.marked = false
+  pager.term.canvasImages = newImages
+
 proc draw*(pager: Pager) =
   let container = pager.container
-  pager.term.hideCursor()
   if container != nil:
     if pager.redraw:
       pager.refreshDisplay()
@@ -472,39 +531,17 @@ proc draw*(pager: Pager) =
     if pager.lineedit.get.invalid:
       let x = pager.lineedit.get.generateOutput()
       pager.term.writeGrid(x, 0, pager.attrs.height - 1)
+      pager.lineedit.get.invalid = false
+      pager.redraw = true
   else:
     pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
-  pager.term.outputGrid()
-  if container != nil and pager.redraw and pager.term.imageMode != imNone:
-    pager.term.clearImages()
-    for image in container.images:
-      if image.bmp of NetworkBitmap:
-        # add cache file to pager, but source it from the container.
-        let bmp = NetworkBitmap(image.bmp)
-        let cached = container.findCachedImage(bmp.imageId)
-        if cached == nil:
-          let cacheId = pager.loader.addCacheFile(bmp.outputId,
-            pager.loader.clientPid, container.process)
-          let request = newRequest(newURL("cache:" & $cacheId).get)
-          # capture bmp for the closure
-          (proc(bmp: Bitmap) =
-            pager.loader.fetch(request).then(proc(res: JSResult[Response]):
-                EmptyPromise =
-              if res.isNone:
-                return nil
-              return res.get.saveToBitmap(bmp)
-            ).then(proc() =
-              pager.redraw = true
-            )
-          )(bmp)
-          pager.loader.resume(bmp.outputId) # get rid of dangling output
-          container.cachedImages.add(bmp)
-          continue
-        image.bmp = cached
-      if uint64(image.bmp.px.len) < image.bmp.width * image.bmp.height:
-        continue # loading
-      pager.term.outputImage(image.bmp, image.x - container.fromx,
-        image.y - container.fromy, pager.attrs.width, pager.attrs.height - 1)
+  if pager.redraw:
+    if container != nil and pager.term.imageMode != imNone:
+      pager.initImages(container)
+    pager.term.hideCursor()
+    pager.term.outputGrid()
+    if pager.term.imageMode != imNone:
+      pager.term.outputImages()
   if pager.askpromise != nil:
     pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
   elif pager.lineedit.isSome:
@@ -516,7 +553,8 @@ proc draw*(pager: Pager) =
         container.select.getCursorY())
     else:
       pager.term.setCursor(pager.container.acursorx, pager.container.acursory)
-  pager.term.showCursor()
+  if pager.redraw:
+    pager.term.showCursor()
   pager.term.flush()
   pager.redraw = false
 

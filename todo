@@ -73,7 +73,6 @@ layout engine:
 - iframe
 - writing-mode, grid, ruby, ... (i.e. cool new stuff)
 images:
-- more efficient kitty display (use IDs)
 - more efficient sixel display (store encoded images)
 - more efficient display in general (why are we repainting twice per keypress?)
 - document it (when performance is acceptable)

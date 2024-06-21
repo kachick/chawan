@@ -101,6 +101,10 @@ type
   ContainerFlag* = enum
     cfCloned, cfUserRequested, cfHasStart, cfCanReinterpret, cfSave, cfIsHTML
 
+  CachedImage* = ref object
+    loaded*: bool
+    bmp*: NetworkBitmap
+
   Container* = ref object
     # note: this is not the same as source.request.url (but should be synced
     # with buffer.url)
@@ -157,7 +161,7 @@ type
     mainConfig*: Config
     flags*: set[ContainerFlag]
     images*: seq[PosBitmap]
-    cachedImages*: seq[NetworkBitmap]
+    cachedImages*: seq[CachedImage]
     luctx: LUContext
 
 jsDestructor(Highlight)
@@ -1741,10 +1745,10 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
       hlformat.bgcolor = hlcolor
       display[y * display.width + x].format = hlformat
 
-func findCachedImage*(container: Container; id: int): NetworkBitmap =
-  for bmp in container.cachedImages:
-    if bmp.imageId == id:
-      return bmp
+func findCachedImage*(container: Container; id: int): CachedImage =
+  for image in container.cachedImages:
+    if image.bmp.imageId == id:
+      return image
   return nil
 
 proc handleEvent*(container: Container) =

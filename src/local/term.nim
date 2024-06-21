@@ -54,6 +54,20 @@ type
     caps: array[TermcapCap, cstring]
     numCaps: array[TermcapCapNumeric, cint]
 
+  CanvasImage* = ref object
+    pid: int
+    imageId: int
+    x: int
+    y: int
+    offx: int
+    offy: int
+    dispw: int
+    disph: int
+    damaged: bool
+    marked*: bool
+    kittyId: int
+    bmp: Bitmap
+
   Terminal* = ref TerminalObj
   TerminalObj = object
     cs*: Charset
@@ -62,6 +76,8 @@ type
     outfile: File
     cleared: bool
     canvas: seq[FixedCell]
+    canvasImages*: seq[CanvasImage]
+    imagesToClear*: seq[CanvasImage]
     lineDamage: seq[int]
     attrs*: WindowAttributes
     colorMode: ColorMode
@@ -77,8 +93,8 @@ type
     defaultBackground: RGBColor
     defaultForeground: RGBColor
     ibuf*: string # buffer for chars when we can't process them
-    hasSixel: bool
     sixelRegisterNum: int
+    kittyId: int # counter for kitty image (*not* placement) ids.
 
 # control sequence introducer
 template CSI(s: varargs[string, `$`]): string =
@@ -461,10 +477,9 @@ proc processOutputString*(term: Terminal; str: string; w: var int): string =
   if term.cs == CHARSET_UTF_8:
     # The output encoding matches the internal representation.
     return str
-  else:
-    # Output is not utf-8, so we must encode it first.
-    var success = false
-    return newTextEncoder(term.cs).encodeAll(str, success)
+  # Output is not utf-8, so we must encode it first.
+  var success = false
+  return newTextEncoder(term.cs).encodeAll(str, success)
 
 proc generateFullOutput(term: Terminal): string =
   var format = Format()
@@ -591,21 +606,59 @@ proc outputGrid*(term: Terminal) =
   if term.config.display.force_clear or not term.cleared:
     term.outfile.write(term.generateFullOutput())
     term.cleared = true
-    term.hasSixel = false
   else:
     term.outfile.write(term.generateSwapOutput())
 
-proc clearImages*(term: Terminal) =
-  #TODO this entire function is a hack:
-  # * for kitty, we shouldn't destroy & re-write every image every frame
-  # * for sixel, we shouldn't practically set force-clear when images are on
-  #   the screen
-  case term.imageMode
-  of imNone: discard
-  of imKitty: term.write(APC & "Ga=d" & ST)
-  of imSixel:
-    if term.hasSixel:
-      term.cleared = false
+func findImage(term: Terminal; pid, imageId: int): CanvasImage =
+  for it in term.canvasImages:
+    if it.pid == pid and it.imageId == imageId:
+      return it
+  return nil
+
+# x, y, maxw, maxh in cells
+# x, y can be negative, then image starts outside the screen
+proc positionImage(term: Terminal; image: CanvasImage; x, y, maxw, maxh: int):
+    bool =
+  image.x = x
+  image.y = y
+  let xpx = x * term.attrs.ppc
+  let ypx = y * term.attrs.ppl
+  # calculate offset inside image to start from
+  image.offx = -min(xpx, 0)
+  image.offy = -min(ypx, 0)
+  # calculate maximum image size that fits on the screen relative to the image
+  # origin (*not* offx/offy)
+  let maxwpx = maxw * term.attrs.ppc
+  let maxhpx = maxh * term.attrs.ppl
+  image.dispw = min(int(image.bmp.width) + xpx, maxwpx) - xpx
+  image.disph = min(int(image.bmp.height) + ypx, maxhpx) - ypx
+  image.damaged = true
+  return image.dispw > 0 and image.disph > 0
+
+proc loadImage*(term: Terminal; bmp: Bitmap; pid, imageId, x, y, maxw,
+    maxh: int): CanvasImage =
+  if (let image = term.findImage(pid, imageId); image != nil):
+    # reuse image on screen
+    if image.x != x or image.y != y:
+      # with sixel, we must clear the image currently on the screen the same way
+      # as we clear text.
+      if term.imageMode == imSixel:
+        var y = max(image.y, 0)
+        let ey = min(image.y + int(image.bmp.height), maxh)
+        let x = image.x
+        while y < ey:
+          term.lineDamage[y] = min(x, term.lineDamage[y])
+          inc y
+      if not term.positionImage(image, x, y, maxw, maxh):
+        # no longer on screen
+        return nil
+    return image
+  # new image
+  let image = CanvasImage(bmp: bmp, pid: pid, imageId: imageId)
+  if term.positionImage(image, x, y, maxw, maxh):
+    return image
+  # no longer on screen
+  return nil
 
 # data is binary 0..63; the output is the final ASCII form.
 proc compressSixel(data: openArray[uint8]): string =
@@ -638,8 +691,12 @@ func find(bands: seq[SixelBand]; c: uint8): int =
       return i
   -1
 
-proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
-    bmp: Bitmap) =
+proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
+  let offx = image.offx
+  let offy = image.offy
+  let dispw = image.dispw
+  let disph = image.disph
+  let bmp = image.bmp
   var outs = term.cursorGoto(x, y)
   outs &= DCSSTART & 'q'
   # set raster attributes
@@ -666,10 +723,13 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
       let my = m div term.attrs.ppl
       for bx in 0 ..< realw:
         let cx = (cx0 + bx) div term.attrs.ppc
-        let bgcolor0 = term.canvas[my + cx].format.bgcolor
-        let bgcolor = bgcolor0.getRGB(term.defaultBackground)
-        let c0 = bmp.px[n + bx + offx]
-        let c = uint8(RGBColor(bgcolor.blend(c0)).toEightBit())
+        var c0 = bmp.px[n + bx + offx]
+        if c0.a != 255:
+          let bgcolor0 = term.canvas[my + cx].format.bgcolor
+          let bgcolor = bgcolor0.getRGB(term.defaultBackground)
+          let c1 = bgcolor.blend(c0)
+          c0 = RGBAColorBE(r: c1.r, g: c1.g, b: c1.b, a: c1.a)
+        let c = uint8(c0.toEightBit())
         if (let j = bands.find(c); j != -1):
           bands[j].data[bx] = bands[j].data[bx] or mask
         else:
@@ -687,19 +747,29 @@ proc outputSixelImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     outs.setLen(outs.len - 1)
   outs &= ST
   term.write(outs)
-  term.hasSixel = true
 
-proc outputKittyImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
-    bmp: Bitmap) =
+proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
+  var outs = term.cursorGoto(x, y) &
+    APC & "GC=1,s=" & $image.bmp.width & ",v=" & $image.bmp.height &
+    ",x=" & $image.offx & ",y=" & $image.offy &
+    ",w=" & $image.dispw & ",h=" & $image.disph &
+    # for now, we always use placement id 1
+    ",p=1,q=2"
+  if image.kittyId != 0:
+    outs &= ",i=" & $image.kittyId & ",a=p;" & ST
+    term.write(outs)
+    term.flush()
+    return
+  inc term.kittyId # skip i=0
+  image.kittyId = term.kittyId
+  outs &= ",i=" & $image.kittyId
   const MaxBytes = 4096 * 3 div 4
   var i = MaxBytes
   # transcode to RGB
-  let p = cast[ptr UncheckedArray[uint8]](addr bmp.px[0])
-  let L = bmp.px.len * 4
+  let p = cast[ptr UncheckedArray[uint8]](addr image.bmp.px[0])
+  let L = image.bmp.px.len * 4
   let m = if i < L: '1' else: '0'
-  var outs = term.cursorGoto(x, y) &
-    APC & "Gf=32,m=" & m & ",a=T,C=1,s=" & $bmp.width & ",v=" & $bmp.height &
-    ",x=" & $offx & ",y=" & $offy & ",w=" & $dispw & ",h=" & $disph & ';'
+  outs &= ",a=T,f=32,m=" & m & ';'
   outs.btoa(p.toOpenArray(0, min(L, i) - 1))
   outs &= ST
   term.write(outs)
@@ -712,33 +782,39 @@ proc outputKittyImage(term: Terminal; x, y, offx, offy, dispw, disph: int;
     outs &= ST
     term.write(outs)
 
-# x, y, maxw, maxh in cells
-# x, y can be negative, then image starts outside the screen
-proc outputImage*(term: Terminal; bmp: Bitmap; x, y, maxw, maxh: int) =
-  var xpx = x * term.attrs.ppc
-  var ypx = y * term.attrs.ppl
-  # calculate offset inside image to start from
-  let offx = -min(xpx, 0)
-  let offy = -min(ypx, 0)
-  # calculate maximum image size that fits on the screen relative to the image
-  # origin (*not* offx/offy)
-  let maxwpx = maxw * term.attrs.ppc
-  let maxhpx = maxh * term.attrs.ppl
-  xpx = max(xpx, 0)
-  ypx = max(ypx, 0)
-  let dispw = min(int(bmp.width) - offx + xpx, maxwpx) + offx - xpx
-  let disph = min(int(bmp.height) - offy + ypx, maxhpx) + offy - ypx
-  if dispw <= offx or disph <= offy:
-    return
-  let x = max(x, 0)
-  let y = max(y, 0)
-  case term.imageMode
-  of imNone: assert false
-  of imSixel: term.outputSixelImage(x, y, offx, offy, dispw, disph, bmp)
-  of imKitty: term.outputKittyImage(x, y, offx, offy, dispw, disph, bmp)
+proc outputImages*(term: Terminal) =
+  if term.imageMode == imKitty:
+    # clean up unused kitty images
+    var s = ""
+    for image in term.imagesToClear:
+      if image.kittyId == 0:
+        continue # maybe it was never displayed...
+      s &= APC & "Ga=d,d=I,i=" & $image.kittyId & ",p=1,q=2;" & ST
+    term.write(s)
+    term.imagesToClear.setLen(0)
+  for image in term.canvasImages:
+    if image.damaged:
+      assert image.dispw > 0 and image.disph > 0
+      let x = max(image.x, 0)
+      let y = max(image.y, 0)
+      case term.imageMode
+      of imNone: assert false
+      of imSixel: term.outputSixelImage(x, y, image)
+      of imKitty: term.outputKittyImage(x, y, image)
+      image.damaged = false
 
 proc clearCanvas*(term: Terminal) =
   term.cleared = false
+  let maxw = term.attrs.width
+  let maxh = term.attrs.height - 1
+  var toRemove: seq[int] = @[]
+  for i, image in term.canvasImages:
+    if not term.positionImage(image, image.x, image.y, maxw, maxh):
+      toRemove.add(i)
+      if term.imageMode == imKitty:
+        term.imagesToClear.add(image)
+  for i in countdown(toRemove.high, 0):
+    term.canvasImages.delete(toRemove[i])
 
 # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 proc disableRawMode(term: Terminal) =
@@ -776,7 +852,7 @@ proc quit*(term: Terminal) =
     if term.set_title:
       term.write(XTPOPTITLE)
     term.showCursor()
-    term.cleared = false
+    term.clearCanvas()
     if term.stdinUnblocked:
       term.restoreStdin()
       term.stdinWasUnblocked = true
@@ -1130,7 +1206,7 @@ proc windowChange*(term: Terminal) =
   term.applyConfigDimensions()
   term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
   term.lineDamage = newSeq[int](term.attrs.height)
-  term.cleared = false
+  term.clearCanvas()
 
 proc initScreen(term: Terminal) =
   # note: deinit happens in quit()

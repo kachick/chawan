@@ -1698,8 +1698,7 @@ proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
   result.bgcolor = buffer.bgcolor
   if buffer.config.images:
     for image in buffer.images:
-      if image.y <= w.b and
-          image.y + int(image.bmp.height) >= w.a * buffer.attrs.ppl:
+      if image.y <= w.b and image.y + int(image.bmp.height) >= w.a:
         result.images.add(image)
 
 proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
