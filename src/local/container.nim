@@ -154,7 +154,6 @@ type
     filter*: BufferFilter
     bgcolor*: CellColor
     tailOnLoad*: bool
-    cacheFile* {.jsget.}: string
     mainConfig*: Config
     flags*: set[ContainerFlag]
     images*: seq[PosBitmap]
@@ -168,7 +167,7 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
     title: string; redirectDepth: int; flags: set[ContainerFlag];
     contentType: Option[string]; charsetStack: seq[Charset]; cacheId: int;
-    cacheFile: string; mainConfig: Config): Container =
+    mainConfig: Config): Container =
   return Container(
     url: url,
     request: request,
@@ -184,7 +183,6 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     ),
     loadinfo: "Connecting to " & request.url.host & "...",
     cacheId: cacheId,
-    cacheFile: cacheFile,
     process: -1,
     mainConfig: mainConfig,
     flags: flags,

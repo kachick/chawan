@@ -80,6 +80,7 @@ type
   LoaderCommand = enum
     lcAddCacheFile
     lcAddClient
+    lcGetCacheFile
     lcLoad
     lcLoadConfig
     lcPassFd
@@ -93,12 +94,10 @@ type
 
   ClientKey* = array[32, uint8]
 
-  CachedItemObj = object
+  CachedItem = ref object
     id: int
     path: string
     refc: int
-
-  CachedItem = ref CachedItemObj
 
   ClientData = ref object
     pid: int
@@ -249,21 +248,19 @@ proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
     return false
   return ctx.redirectToStream(output, ps)
 
-type AddCacheFileResult = tuple[outputId: int; cacheFile: string]
-
 proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
-    AddCacheFileResult =
+    int =
   if output.parent != nil and output.parent.cacheId != -1:
     # may happen e.g. if client tries to cache a `cache:' URL
-    return (output.parent.cacheId, "") #TODO can we get the file name somehow?
+    return output.parent.cacheId
   let tmpf = getTempFile(ctx.config.tmpdir)
   if ctx.redirectToFile(output, tmpf):
     let cacheId = output.outputId
     if output.parent != nil:
       output.parent.cacheId = cacheId
     client.cacheMap.add(CachedItem(id: cacheId, path: tmpf, refc: 1))
-    return (cacheId, tmpf)
-  return (-1, "")
+    return cacheId
+  return -1
 
 proc addFd(ctx: LoaderContext; handle: LoaderHandle) =
   let output = handle.output
@@ -498,6 +495,17 @@ proc loadConfig(ctx: LoaderContext; stream: SocketStream; client: ClientData;
   r.sread(config)
   ctx.load(stream, request, client, config)
 
+proc getCacheFile(ctx: LoaderContext; stream: SocketStream; client: ClientData;
+    r: var BufferedReader) =
+  var cacheId: int
+  r.sread(cacheId)
+  stream.withPacketWriter w:
+    let n = client.cacheMap.find(cacheId)
+    if n != -1:
+      w.swrite(client.cacheMap[n].path)
+    else:
+      w.swrite("")
+
 proc addClient(ctx: LoaderContext; stream: SocketStream;
     r: var BufferedReader) =
   var key: ClientKey
@@ -542,10 +550,9 @@ proc addCacheFile(ctx: LoaderContext; stream: SocketStream;
   let output = ctx.findOutput(outputId, sourceClient)
   assert output != nil
   let targetClient = ctx.clientData[targetPid]
-  let (id, file) = ctx.addCacheFile(targetClient, output)
+  let id = ctx.addCacheFile(targetClient, output)
   stream.withPacketWriter w:
     w.swrite(id)
-    w.swrite(file)
   stream.sclose()
 
 proc redirectToFile(ctx: LoaderContext; stream: SocketStream;
@@ -698,6 +705,9 @@ proc acceptConnection(ctx: LoaderContext) =
       of lcLoadConfig:
         privileged_command
         ctx.loadConfig(stream, client, r)
+      of lcGetCacheFile:
+        privileged_command
+        ctx.getCacheFile(stream, client, r)
       of lcRemoveCachedItem:
         ctx.removeCachedItem(stream, client, r)
       of lcLoad:
@@ -967,10 +977,10 @@ proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
 # so that we can be sure that a container only loads images on the page that
 # it owns.
 proc addCacheFile*(loader: FileLoader; outputId, targetPid: int;
-    sourcePid = -1): AddCacheFileResult =
+    sourcePid = -1): int =
   let stream = loader.connect()
   if stream == nil:
-    return (-1, "")
+    return -1
   let sourcePid = if sourcePid == -1: loader.clientPid else: sourcePid
   stream.withLoaderPacketWriter loader, w:
     w.swrite(lcAddCacheFile)
@@ -979,10 +989,20 @@ proc addCacheFile*(loader: FileLoader; outputId, targetPid: int;
     w.swrite(sourcePid)
   var r = stream.initPacketReader()
   var outputId: int
-  var cacheFile: string
   r.sread(outputId)
-  r.sread(cacheFile)
-  return (outputId, cacheFile)
+  return outputId
+
+proc getCacheFile*(loader: FileLoader; cacheId: int): string =
+  let stream = loader.connect()
+  if stream == nil:
+    return ""
+  stream.withLoaderPacketWriter loader, w:
+    w.swrite(lcGetCacheFile)
+    w.swrite(cacheId)
+  var r = stream.initPacketReader()
+  var s: string
+  r.sread(s)
+  return s
 
 proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
     bool =

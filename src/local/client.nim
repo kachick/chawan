@@ -426,21 +426,25 @@ proc acceptBuffers(client: Client) =
       pager.alert("Error: failed to set up buffer")
       continue
     let key = pager.addLoaderClient(container.process, container.loaderConfig)
+    let loader = pager.loader
     stream.withPacketWriter w:
       w.swrite(key)
-      let loader = pager.loader
       if item.fdin != -1:
         let outputId = item.istreamOutputId
         if container.cacheId == -1:
-          (container.cacheId, container.cacheFile) =
-            loader.addCacheFile(outputId, loader.clientPid)
+          container.cacheId = loader.addCacheFile(outputId, loader.clientPid)
+        if container.request.url.scheme == "cache":
+          # loading from cache; now both the buffer and us hold a new reference
+          # to the cached item, but it's only shared with the buffer. add a
+          # pager ref too.
+          loader.shareCachedItem(container.cacheId, loader.clientPid)
         var outCacheId = container.cacheId
         let pid = container.process
         if item.fdout == item.fdin:
           loader.shareCachedItem(container.cacheId, pid)
           loader.resume(item.istreamOutputId)
         else:
-          outCacheId = loader.addCacheFile(item.ostreamOutputId, pid).outputId
+          outCacheId = loader.addCacheFile(item.ostreamOutputId, pid)
           loader.resume([item.istreamOutputId, item.ostreamOutputId])
         w.swrite(outCacheId)
     if item.fdin != -1:
@@ -450,7 +454,11 @@ proc acceptBuffers(client: Client) =
       discard close(item.fdout)
       container.setStream(stream, registerFun)
     else:
-      # buffer is cloned, no need to cache anything
+      # buffer is cloned, just share the parent's cached source
+      loader.shareCachedItem(container.cacheId, container.process)
+      # also add a reference here; it will be removed when the container is
+      # deleted
+      loader.shareCachedItem(container.cacheId, loader.clientPid)
       container.setCloneStream(stream, registerFun)
     let fd = int(stream.fd)
     client.fdmap[fd] = container

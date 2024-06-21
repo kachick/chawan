@@ -483,7 +483,7 @@ proc draw*(pager: Pager) =
         let bmp = NetworkBitmap(image.bmp)
         let cached = container.findCachedImage(bmp.imageId)
         if cached == nil:
-          let (cacheId, _) = pager.loader.addCacheFile(bmp.outputId,
+          let cacheId = pager.loader.addCacheFile(bmp.outputId,
             pager.loader.clientPid, container.process)
           let request = newRequest(newURL("cache:" & $cacheId).get)
           # capture bmp for the closure
@@ -566,9 +566,13 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; title = "";
     redirectDepth = 0; flags = {cfCanReinterpret, cfUserRequested};
     contentType = none(string); charsetStack: seq[Charset] = @[];
-    url = request.url; cacheId = -1; cacheFile = ""): Container =
+    url = request.url): Container =
   let stream = pager.loader.startRequest(request, loaderConfig)
   pager.loader.registerFun(stream.fd)
+  let cacheId = if request.url.scheme == "cache":
+    parseInt32(request.url.pathname).get(-1)
+  else:
+    -1
   let container = newContainer(
     bufferConfig,
     loaderConfig,
@@ -582,7 +586,6 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     contentType,
     charsetStack,
     cacheId,
-    cacheFile,
     pager.config
   )
   pager.connectingContainers.add(ConnectingContainerItem(
@@ -602,9 +605,7 @@ proc newContainerFrom(pager: Pager; container: Container; contentType: string):
     newRequest(url),
     contentType = some(contentType),
     charsetStack = container.charsetStack,
-    url = container.url,
-    cacheId = container.cacheId,
-    cacheFile = container.cacheFile
+    url = container.url
   )
 
 func findConnectingContainer*(pager: Pager; fd: int): int =
@@ -835,6 +836,7 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
     pager.setContainer(setTarget)
   pager.unreg.add(container)
   if container.process != -1:
+    pager.loader.removeCachedItem(container.cacheId)
     pager.forkserver.removeChild(container.process)
     pager.loader.removeClient(container.process)
 
@@ -926,6 +928,14 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
       container.sourcepair = pager.container
       pager.container.sourcepair = container
       pager.addContainer(container)
+
+proc getCacheFile(pager: Pager; cacheId: int): string {.jsfunc.} =
+  return pager.loader.getCacheFile(cacheId)
+
+proc cacheFile(pager: Pager): string {.jsfget.} =
+  if pager.container != nil:
+    return pager.getCacheFile(pager.container.cacheId)
+  return ""
 
 proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
   var editor = pager.config.external.editor
