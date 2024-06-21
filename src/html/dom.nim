@@ -4243,25 +4243,35 @@ proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
     return create2DContext(jctx, this, options)
   return nil
 
-#TODO quality should be `any'
+# Note: the standard says quality should be converted in a strange way for
+# backwards compat, but I don't care.
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
-    contentType = "image/png"; quality: float64 = 1): JSValue {.jsfunc.} =
+    contentType = "image/png"; quality = none(float64)): JSValue {.jsfunc.} =
   if not contentType.startsWith("image/"):
+    return
+  let url = newURL("img-codec+" & contentType.after('/') & ":encode")
+  if url.isNone:
     return
   #TODO this is dumb (and slow)
   var s = newString(this.bitmap.px.len * 4)
   copyMem(addr s[0], addr this.bitmap.px[0], this.bitmap.px.len * 4)
+  let headers = newHeaders({
+    "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
+  })
+  if (var quality = quality.get(-1); 0 <= quality and quality <= 1):
+    quality *= 99
+    quality += 1
+    headers.add("Cha-Image-Quality", $quality)
   let request = newRequest(
-    newURL("img-codec+" & contentType.after('/') & ":encode").get,
+    url.get,
     httpMethod = hmPost,
-    headers = newHeaders({
-      "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
-    }),
+    headers = headers,
     body = RequestBody(t: rbtString, s: s)
   )
   # callback will go out of scope when we return, so capture a new reference.
   let callback = JS_DupValue(ctx, callback)
   let window = this.document.window
+  let contentType = contentType.toLowerAscii()
   window.loader.fetch(request).then(proc(res: JSResult[Response]):
       EmptyPromise =
     if res.isNone:
@@ -4270,8 +4280,8 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
         # Note: this sounds dumb, and is dumb, but also standard mandated so
         # whatever.
         discard ctx.toBlob(this, callback, "image/png", quality)
-      else: # the png decoder doesn't work...
-        window.console.error("missing/broken PNG decoder")
+      else: # the png encoder doesn't work...
+        window.console.error("missing/broken PNG encoder")
       JS_FreeValue(ctx, callback)
       return
     let response = res.get

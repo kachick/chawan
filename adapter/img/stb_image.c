@@ -12,3 +12,6 @@
 #define STBI_NO_PIC
 #define STBI_NO_PNM /* (.ppm and .pgm) */
 #include "stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STIBW_NO_STDIO
+#include "stb_image_write.h"
