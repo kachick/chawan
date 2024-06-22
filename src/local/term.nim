@@ -647,12 +647,10 @@ proc clearImage*(term: Terminal; image: CanvasImage; maxh: int) =
   of imNone: discard
   of imSixel:
     # we must clear sixels the same way as we clear text.
-    var y = max(image.y, 0)
     let ey = min(image.y + int(image.bmp.height), maxh)
-    let x = image.x
-    while y < ey:
+    let x = max(image.x, 0)
+    for y in max(image.y, 0) ..< ey:
       term.lineDamage[y] = min(x, term.lineDamage[y])
-      inc y
   of imKitty:
     term.imagesToClear.add(image)
 
