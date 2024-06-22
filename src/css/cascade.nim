@@ -2,6 +2,7 @@ import std/algorithm
 import std/options
 import std/strutils
 
+import chame/tags
 import css/cssparser
 import css/cssvalues
 import css/match
@@ -16,8 +17,6 @@ import js/jscolor
 import layout/layoutunit
 import types/color
 import types/opt
-
-import chame/tags
 
 type
   RuleList* = array[PseudoElem, seq[CSSRuleDef]]

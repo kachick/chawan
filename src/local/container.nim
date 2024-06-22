@@ -5,6 +5,7 @@ import std/posix
 import std/tables
 import std/unicode
 
+import chagashi/charset
 import config/config
 import config/mimetypes
 import img/bitmap
@@ -33,8 +34,6 @@ import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
 import utils/wordbreak
-
-import chagashi/charset
 
 type
   CursorPosition* = object

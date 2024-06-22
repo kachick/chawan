@@ -1,8 +1,8 @@
 # Very minimal Intl module... TODO make it more complete
 
-import monoucha/quickjs
 import monoucha/javascript
 import monoucha/jstypes
+import monoucha/quickjs
 import monoucha/tojs
 
 type

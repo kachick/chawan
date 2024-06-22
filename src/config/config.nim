@@ -4,6 +4,7 @@ import std/streams
 import std/strutils
 import std/tables
 
+import chagashi/charset
 import config/chapath
 import config/mailcap
 import config/mimetypes
@@ -26,8 +27,6 @@ import types/urimethodmap
 import types/url
 import utils/regexutils
 import utils/twtstr
-
-import chagashi/charset
 
 type
   ColorMode* = enum

@@ -1,8 +1,10 @@
 import std/strutils
 import std/unicode
 
-import monoucha/quickjs
+import chagashi/charset
+import chagashi/decoder
 import monoucha/javascript
+import monoucha/quickjs
 import types/cell
 import types/opt
 import types/winattrs
@@ -10,9 +12,6 @@ import utils/luwrap
 import utils/strwidth
 import utils/twtstr
 import utils/wordbreak
-
-import chagashi/charset
-import chagashi/decoder
 
 type
   LineEditState* = enum

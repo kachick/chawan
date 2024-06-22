@@ -334,8 +334,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
 
 proc genClientKey(pager: Pager): ClientKey =
   var key: ClientKey
-  let n = pager.devRandom.recvData(addr key[0], key.len)
-  doAssert n == key.len
+  pager.devRandom.recvDataLoop(key)
   return key
 
 proc addLoaderClient*(pager: Pager; pid: int; config: LoaderClientConfig):

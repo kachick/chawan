@@ -2,12 +2,12 @@ import std/math
 import std/options
 import std/times
 
-import monoucha/quickjs
-import monoucha/jserror
 import monoucha/fromjs
 import monoucha/javascript
+import monoucha/jserror
 import monoucha/jstypes
 import monoucha/jsutils
+import monoucha/quickjs
 import monoucha/tojs
 import types/opt
 

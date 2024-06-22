@@ -475,7 +475,7 @@ proc handleRead(client: Client; fd: int) =
     var hadlf = true
     while true:
       try:
-        let n = estream.recvData(addr buffer[0], BufferSize)
+        let n = estream.recvData(buffer)
         if n == 0:
           break
         var i = 0

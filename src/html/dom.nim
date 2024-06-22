@@ -6,6 +6,9 @@ import std/sets
 import std/strutils
 import std/tables
 
+import chagashi/charset
+import chagashi/decoder
+import chame/tags
 import css/cssparser
 import css/cssvalues
 import css/mediaquery
@@ -43,11 +46,6 @@ import types/winattrs
 import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
-
-import chagashi/charset
-import chagashi/decoder
-
-import chame/tags
 
 type
   FormMethod* = enum

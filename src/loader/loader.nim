@@ -1071,7 +1071,7 @@ proc onError*(loader: FileLoader; fd: int) =
     when defined(debug):
       var lbuf {.noinit.}: array[BufferSize, char]
       if not response.body.isend:
-        let n = response.body.recvData(addr lbuf[0], lbuf.len)
+        let n = response.body.recvData(lbuf)
         assert n == 0
       assert response.body.isend
     response.bodyRead.resolve()

@@ -2,14 +2,13 @@ import std/options
 import std/strutils
 import std/tables
 
+import chame/tags
 import css/cssparser
 import css/selectorparser
 import css/stylednode
 import html/catom
 import html/dom
 import utils/twtstr
-
-import chame/tags
 
 #TODO rfNone should match insensitively for certain properties
 func attrSelectorMatches(elem: Element; sel: Selector): bool =

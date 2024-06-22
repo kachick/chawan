@@ -10,6 +10,10 @@ import std/selectors
 import std/tables
 import std/unicode
 
+import chagashi/charset
+import chagashi/decoder
+import chagashi/decodercore
+import chame/tags
 import config/config
 import css/cascade
 import css/cssparser
@@ -53,12 +57,6 @@ import types/url
 import types/winattrs
 import utils/strwidth
 import utils/twtstr
-
-import chagashi/charset
-import chagashi/decoder
-import chagashi/decodercore
-
-import chame/tags
 
 type
   BufferCommand* = enum

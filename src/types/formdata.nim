@@ -80,7 +80,7 @@ proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
       if ps != nil:
         var buf {.noinit.}: array[4096, uint8]
         while true:
-          let n = ps.recvData(addr buf[0], 4096)
+          let n = ps.recvData(buf)
           if n == 0:
             break
           stream.sendDataLoop(addr buf[0], n)
