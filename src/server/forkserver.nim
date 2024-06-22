@@ -168,6 +168,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
       discard sig
       gpstream.sclose()
       gssock.close(unlink = false)
+      exitnow(1)
     enterBufferSandbox(sockDir)
     let loader = FileLoader(
       process: loaderPid,
