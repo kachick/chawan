@@ -68,8 +68,7 @@ type
     kittyId: int
     bmp: Bitmap
 
-  Terminal* = ref TerminalObj
-  TerminalObj = object
+  Terminal* = ref object
     cs*: Charset
     config: Config
     istream*: PosixStream
@@ -95,6 +94,8 @@ type
     ibuf*: string # buffer for chars when we can't process them
     sixelRegisterNum: int
     kittyId: int # counter for kitty image (*not* placement) ids.
+    cursorx: int
+    cursory: int
 
 # control sequence introducer
 template CSI(s: varargs[string, `$`]): string =
@@ -283,7 +284,11 @@ proc endFormat(term: Terminal; flag: FormatFlags): string =
   return SGR(FormatCodes[flag].e)
 
 proc setCursor*(term: Terminal; x, y: int) =
-  term.write(term.cursorGoto(x, y))
+  assert x >= 0 and y >= 0
+  if x != term.cursorx or y != term.cursory:
+    term.write(term.cursorGoto(x, y))
+    term.cursorx = x
+    term.cursory = y
 
 proc enableAltScreen(term: Terminal): string =
   when termcap_found:
@@ -608,6 +613,8 @@ proc outputGrid*(term: Terminal) =
     term.cleared = true
   else:
     term.outfile.write(term.generateSwapOutput())
+  term.cursorx = -1
+  term.cursory = -1
 
 func findImage(term: Terminal; pid, imageId: int): CanvasImage =
   for it in term.canvasImages:
@@ -633,25 +640,50 @@ proc positionImage(term: Terminal; image: CanvasImage; x, y, maxw, maxh: int):
   image.dispw = min(int(image.bmp.width) + xpx, maxwpx) - xpx
   image.disph = min(int(image.bmp.height) + ypx, maxhpx) - ypx
   image.damaged = true
-  return image.dispw > 0 and image.disph > 0
+  return image.dispw > image.offx and image.disph > image.offy
+
+proc clearImage*(term: Terminal; image: CanvasImage; maxh: int) =
+  case term.imageMode
+  of imNone: discard
+  of imSixel:
+    # we must clear sixels the same way as we clear text.
+    var y = max(image.y, 0)
+    let ey = min(image.y + int(image.bmp.height), maxh)
+    let x = image.x
+    while y < ey:
+      term.lineDamage[y] = min(x, term.lineDamage[y])
+      inc y
+  of imKitty:
+    term.imagesToClear.add(image)
+
+proc clearImages*(term: Terminal; maxh: int) =
+  for image in term.canvasImages:
+    if not image.marked:
+      term.clearImage(image, maxh)
+    image.marked = false
 
 proc loadImage*(term: Terminal; bmp: Bitmap; pid, imageId, x, y, maxw,
     maxh: int): CanvasImage =
   if (let image = term.findImage(pid, imageId); image != nil):
     # reuse image on screen
     if image.x != x or image.y != y:
-      # with sixel, we must clear the image currently on the screen the same way
-      # as we clear text.
+      # only clear sixels; with kitty we just move the existing image
       if term.imageMode == imSixel:
-        var y = max(image.y, 0)
-        let ey = min(image.y + int(image.bmp.height), maxh)
-        let x = image.x
-        while y < ey:
-          term.lineDamage[y] = min(x, term.lineDamage[y])
-          inc y
+        term.clearImage(image, maxh)
       if not term.positionImage(image, x, y, maxw, maxh):
         # no longer on screen
         return nil
+    elif term.imageMode == imSixel:
+      # check if any line our image is on is damaged
+      let ey = min(image.y + int(image.bmp.height), maxh)
+      let mx = (image.offx + image.dispw) div term.attrs.ppc
+      for y in max(image.y, 0) ..< ey:
+        if term.lineDamage[y] < mx:
+          image.damaged = true
+          break
+    # only mark old images; new images will not be checked until the next
+    # initImages call.
+    image.marked = true
     return image
   # new image
   let image = CanvasImage(bmp: bmp, pid: pid, imageId: imageId)
@@ -807,14 +839,14 @@ proc clearCanvas*(term: Terminal) =
   term.cleared = false
   let maxw = term.attrs.width
   let maxh = term.attrs.height - 1
-  var toRemove: seq[int] = @[]
-  for i, image in term.canvasImages:
-    if not term.positionImage(image, image.x, image.y, maxw, maxh):
-      toRemove.add(i)
-      if term.imageMode == imKitty:
-        term.imagesToClear.add(image)
-  for i in countdown(toRemove.high, 0):
-    term.canvasImages.delete(toRemove[i])
+  var newImages: seq[CanvasImage] = @[]
+  for image in term.canvasImages:
+    if term.positionImage(image, image.x, image.y, maxw, maxh):
+      image.damaged = true
+      image.marked = true
+      newImages.add(image)
+  term.clearImages(maxh)
+  term.canvasImages = newImages
 
 # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 proc disableRawMode(term: Terminal) =
@@ -1216,6 +1248,8 @@ proc initScreen(term: Terminal) =
     term.write(term.enableAltScreen())
   if term.config.input.use_mouse:
     term.enableMouse()
+  term.cursorx = -1
+  term.cursory = -1
 
 proc start*(term: Terminal; istream: PosixStream): TermStartResult =
   term.istream = istream

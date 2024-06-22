@@ -38,7 +38,7 @@ type
     hist: LineHistory
     histindex: int
     histtmp: string
-    invalid*: bool
+    redraw*: bool
 
 jsDestructor(LineEdit)
 
@@ -135,7 +135,7 @@ proc insertCharseq(edit: LineEdit; s: string) =
   edit.news &= rem
   edit.cursori += s.len
   edit.cursorx += s.notwidth()
-  edit.invalid = true
+  edit.redraw = true
 
 proc cancel(edit: LineEdit) {.jsfunc.} =
   edit.state = lesCancel
@@ -151,7 +151,7 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
     edit.news.delete(edit.cursori - len .. edit.cursori - 1)
     edit.cursori -= len
     edit.cursorx -= r.width()
-    edit.invalid = true
+    edit.redraw = true
  
 proc write*(edit: LineEdit; s: string; cs: Charset): bool =
   if cs == CHARSET_UTF_8:
@@ -177,7 +177,7 @@ proc delete(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
     let len = edit.news.runeLenAt(edit.cursori)
     edit.news.delete(edit.cursori ..< edit.cursori + len)
-    edit.invalid = true
+    edit.redraw = true
 
 proc escape(edit: LineEdit) {.jsfunc.} =
   edit.escNext = true
@@ -187,12 +187,12 @@ proc clear(edit: LineEdit) {.jsfunc.} =
     edit.news.delete(0..edit.cursori - 1)
     edit.cursori = 0
     edit.cursorx = 0
-    edit.invalid = true
+    edit.redraw = true
 
 proc kill(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
     edit.news.setLen(edit.cursori)
-    edit.invalid = true
+    edit.redraw = true
 
 proc backward(edit: LineEdit) {.jsfunc.} =
   if edit.cursori > 0:
@@ -200,7 +200,7 @@ proc backward(edit: LineEdit) {.jsfunc.} =
     edit.cursori -= len
     edit.cursorx -= r.width()
     if edit.cursorx < edit.shiftx:
-      edit.invalid = true
+      edit.redraw = true
 
 proc forward(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
@@ -208,7 +208,7 @@ proc forward(edit: LineEdit) {.jsfunc.} =
     fastRuneAt(edit.news, edit.cursori, r)
     edit.cursorx += r.width()
     if edit.cursorx >= edit.shiftx + edit.maxwidth:
-      edit.invalid = true
+      edit.redraw = true
 
 proc prevWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori == 0:
@@ -225,7 +225,7 @@ proc prevWord(edit: LineEdit) {.jsfunc.} =
     edit.cursori -= len
     edit.cursorx -= r.width()
   if edit.cursorx < edit.shiftx:
-    edit.invalid = true
+    edit.redraw = true
 
 proc nextWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori >= edit.news.len:
@@ -246,14 +246,14 @@ proc nextWord(edit: LineEdit) {.jsfunc.} =
       break
     edit.cursorx += r.width()
   if edit.cursorx >= edit.shiftx + edit.maxwidth:
-    edit.invalid = true
+    edit.redraw = true
 
 proc clearWord(edit: LineEdit) {.jsfunc.} =
   let oc = edit.cursori
   edit.prevWord()
   if oc != edit.cursori:
     edit.news.delete(edit.cursori .. oc - 1)
-    edit.invalid = true
+    edit.redraw = true
 
 proc killWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori >= edit.news.len:
@@ -269,20 +269,20 @@ proc killWord(edit: LineEdit) {.jsfunc.} =
       edit.news.delete(oc ..< edit.cursori)
     edit.cursori = oc
     edit.cursorx = ox
-    edit.invalid = true
+    edit.redraw = true
 
 proc begin(edit: LineEdit) {.jsfunc.} =
   edit.cursori = 0
   edit.cursorx = 0
   if edit.shiftx > 0:
-    edit.invalid = true
+    edit.redraw = true
 
 proc `end`(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
     edit.cursori = edit.news.len
     edit.cursorx = edit.news.notwidth()
     if edit.cursorx >= edit.shiftx + edit.maxwidth:
-      edit.invalid = true
+      edit.redraw = true
 
 proc prevHist(edit: LineEdit) {.jsfunc.} =
   if edit.histindex > 0:
@@ -294,7 +294,7 @@ proc prevHist(edit: LineEdit) {.jsfunc.} =
     # the string.
     edit.begin()
     edit.end()
-    edit.invalid = true
+    edit.redraw = true
 
 proc nextHist(edit: LineEdit) {.jsfunc.} =
   if edit.histindex + 1 < edit.hist.lines.len:
@@ -302,7 +302,7 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
     edit.news = edit.hist.lines[edit.histindex]
     edit.begin()
     edit.end()
-    edit.invalid = true
+    edit.redraw = true
   elif edit.histindex < edit.hist.lines.len:
     inc edit.histindex
     edit.news = edit.histtmp
@@ -322,7 +322,7 @@ proc readLine*(prompt, current: string; termwidth: int; disallowed: set[char];
     news: current,
     disallowed: disallowed,
     hide: hide,
-    invalid: true,
+    redraw: true,
     cursori: current.len,
     cursorx: current.notwidth(),
     # - 1, so that the cursor always has place

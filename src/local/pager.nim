@@ -26,7 +26,6 @@ import loader/loader
 import loader/request
 import local/container
 import local/lineedit
-import local/select
 import local/term
 import monoucha/fromjs
 import monoucha/javascript
@@ -109,6 +108,10 @@ type
     ndFirstChild
     ndAny = "any"
 
+  Surface = object
+    redraw: bool
+    grid: FixedGrid
+
   Pager* = ref object
     alertState: PagerAlertState
     alerts*: seq[string]
@@ -122,7 +125,7 @@ type
     container*: Container
     cookiejars: Table[string, CookieJar]
     devRandom: PosixStream
-    display: FixedGrid
+    display: Surface
     forkserver*: ForkServer
     formRequestMap*: Table[string, FormRequestType]
     hasload*: bool # has a page been successfully loaded since startup?
@@ -132,7 +135,7 @@ type
     isearchpromise: EmptyPromise
     jsctx: JSContext
     lineData: LineData
-    lineedit*: Option[LineEdit]
+    lineedit*: LineEdit
     linehist: array[LineMode, LineHistory]
     linemode: LineMode
     loader*: FileLoader
@@ -142,12 +145,11 @@ type
     numload*: int # number of pages currently being loaded
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     procmap*: seq[ProcMapItem]
-    redraw: bool
     regex: Opt[Regex]
     reverseSearch: bool
     scommand*: string
     selector*: Selector[int]
-    statusgrid*: FixedGrid
+    status: Surface
     term*: Terminal
     unreg*: seq[Container]
 
@@ -164,8 +166,15 @@ func loaderPid(pager: Pager): int64 {.jsfget.} =
 
 func getRoot(container: Container): Container =
   var c = container
-  while c.parent != nil: c = c.parent
+  while c.parent != nil:
+    c = c.parent
   return c
+
+func bufWidth(pager: Pager): int =
+  return pager.attrs.width
+
+func bufHeight(pager: Pager): int =
+  return pager.attrs.height - 1
 
 # depth-first descendant iterator
 iterator descendants(parent: Container): Container {.inline.} =
@@ -186,10 +195,22 @@ iterator containers*(pager: Pager): Container {.inline.} =
     for c in root.descendants:
       yield c
 
+proc clearDisplay(pager: Pager) =
+  pager.display = Surface(
+    grid: newFixedGrid(pager.bufWidth, pager.bufHeight),
+    redraw: true
+  )
+
+proc clearStatus(pager: Pager) =
+  pager.status = Surface(
+    grid: newFixedGrid(pager.attrs.width),
+    redraw: true
+  )
+
 proc setContainer*(pager: Pager; c: Container) {.jsfunc.} =
   pager.container = c
-  pager.redraw = true
   if c != nil:
+    c.queueDraw()
     pager.term.setTitle(c.getTitle())
 
 proc hasprop(ctx: JSContext; pager: Pager; s: string): bool {.jshasprop.} =
@@ -259,13 +280,12 @@ proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
   let hist = pager.getLineHist(mode)
   if pager.term.isatty() and pager.config.input.use_mouse:
     pager.term.disableMouse()
-  let edit = readLine($mode & extraPrompt, current, pager.attrs.width, {}, hide,
-    hist)
-  pager.lineedit = some(edit)
+  pager.lineedit = readLine($mode & extraPrompt, current, pager.attrs.width,
+    {}, hide, hist)
   pager.linemode = mode
 
 proc clearLineEdit(pager: Pager) =
-  pager.lineedit = none(LineEdit)
+  pager.lineedit = nil
   if pager.term.isatty() and pager.config.input.use_mouse:
     pager.term.enableMouse()
 
@@ -342,52 +362,43 @@ proc launchPager*(pager: Pager; istream: PosixStream; selector: Selector[int]) =
   of tsrSuccess: discard
   of tsrDA1Fail:
     pager.alert("Failed to query DA1, please set display.query-da1 = false")
-  pager.display = newFixedGrid(pager.attrs.width, pager.attrs.height - 1)
-  pager.statusgrid = newFixedGrid(pager.attrs.width)
-
-proc clearDisplay(pager: Pager) =
-  pager.display = newFixedGrid(pager.display.width, pager.display.height)
-
-proc buffer(pager: Pager): Container {.jsfget, inline.} = pager.container
-
-proc refreshDisplay(pager: Pager; container = pager.container) =
   pager.clearDisplay()
-  let hlcolor = cellColor(pager.config.display.highlight_color)
-  container.drawLines(pager.display, hlcolor)
-  if pager.config.display.highlight_marks:
-    container.highlightMarks(pager.display, hlcolor)
+  pager.clearStatus()
+
+proc buffer(pager: Pager): Container {.jsfget, inline.} =
+  return pager.container
 
 # Note: this function does not work correctly if start < i of last written char
 proc writeStatusMessage(pager: Pager; str: string; format = Format();
     start = 0; maxwidth = -1; clip = '$'): int {.discardable.} =
   var maxwidth = maxwidth
   if maxwidth == -1:
-    maxwidth = pager.statusgrid.len
+    maxwidth = pager.status.grid.len
   var i = start
-  let e = min(start + maxwidth, pager.statusgrid.width)
+  let e = min(start + maxwidth, pager.status.grid.width)
   if i >= e:
     return i
-  pager.redraw = true
+  pager.status.redraw = true
   for r in str.runes:
     let w = r.width()
     if i + w >= e:
-      pager.statusgrid[i].format = format
-      pager.statusgrid[i].str = $clip
+      pager.status.grid[i].format = format
+      pager.status.grid[i].str = $clip
       inc i # Note: we assume `clip' is 1 cell wide
       break
     if r.isControlChar():
-      pager.statusgrid[i].str = "^"
-      pager.statusgrid[i + 1].str = $getControlLetter(char(r))
-      pager.statusgrid[i + 1].format = format
+      pager.status.grid[i].str = "^"
+      pager.status.grid[i + 1].str = $getControlLetter(char(r))
+      pager.status.grid[i + 1].format = format
     else:
-      pager.statusgrid[i].str = $r
-    pager.statusgrid[i].format = format
+      pager.status.grid[i].str = $r
+    pager.status.grid[i].format = format
     i += w
   result = i
   var def = Format()
   while i < e:
-    pager.statusgrid[i].str = ""
-    pager.statusgrid[i].format = def
+    pager.status.grid[i].str = ""
+    pager.status.grid[i].format = def
     inc i
 
 # Note: should only be called directly after user interaction.
@@ -416,7 +427,7 @@ proc refreshStatusMsg*(pager: Pager) =
       pager.writeStatusMessage(title, format, mw)
     else:
       let hover2 = " " & hover
-      let maxwidth = pager.statusgrid.width - hover2.width() - mw
+      let maxwidth = pager.status.grid.width - hover2.width() - mw
       let tw = pager.writeStatusMessage(title, format, mw, maxwidth, '>')
       pager.writeStatusMessage(hover2, format, tw)
 
@@ -455,8 +466,13 @@ proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
   ofile.flushFile()
 
 proc redraw(pager: Pager) {.jsfunc.} =
-  pager.redraw = true
   pager.term.clearCanvas()
+  pager.display.redraw = true
+  pager.status.redraw = true
+  if pager.container != nil:
+    pager.container.redraw = true
+    if pager.container.select != nil:
+      pager.container.select.redraw = true
 
 proc loadCachedImage(pager: Pager; container: Container; bmp: NetworkBitmap) =
   #TODO this is kinda dumb, because we cannot unload cached images.
@@ -478,7 +494,7 @@ proc loadCachedImage(pager: Pager; container: Container; bmp: NetworkBitmap) =
       return nil
     return res.get.saveToBitmap(bmp)
   ).then(proc() =
-    pager.redraw = true
+    container.redraw = true
     cachedImage.loaded = true
     pager.loader.removeCachedItem(cacheId)
   )
@@ -504,65 +520,72 @@ proc initImages(pager: Pager; container: Container) =
       imageId = pager.imageId
       inc pager.imageId
     let canvasImage = pager.term.loadImage(image.bmp, container.process, imageId,
-      image.x - container.fromx, image.y - container.fromy, pager.attrs.width,
-      pager.attrs.height - 1)
+      image.x - container.fromx, image.y - container.fromy, pager.bufWidth,
+      pager.bufHeight)
     if canvasImage != nil:
       newImages.add(canvasImage)
-      canvasImage.marked = true
-  if pager.term.imageMode == imKitty:
-    for image in pager.term.canvasImages:
-      if not image.marked:
-        pager.term.imagesToClear.add(image)
-      image.marked = false
+  pager.term.clearImages(pager.bufHeight)
   pager.term.canvasImages = newImages
 
 proc draw*(pager: Pager) =
+  var redraw = false
   let container = pager.container
   if container != nil:
-    if pager.redraw:
-      pager.refreshDisplay()
-      pager.term.writeGrid(pager.display)
-    if container.select.open and container.select.redraw:
-      container.select.drawSelect(pager.display)
-      pager.term.writeGrid(pager.display)
+    if container.redraw:
+      pager.clearDisplay()
+      let hlcolor = cellColor(pager.config.display.highlight_color)
+      container.drawLines(pager.display.grid, hlcolor)
+      if pager.config.display.highlight_marks:
+        container.highlightMarks(pager.display.grid, hlcolor)
+      container.redraw = false
+      pager.display.redraw = true
+    if (let select = container.select; select != nil and select.redraw):
+      select.drawSelect(pager.display.grid)
+      select.redraw = false
+      pager.display.redraw = true
+  if pager.display.redraw:
+    pager.term.writeGrid(pager.display.grid)
+    pager.display.redraw = false
+    redraw = true
   if pager.askpromise != nil or pager.askcharpromise != nil:
-    discard
-  elif pager.lineedit.isSome:
-    if pager.lineedit.get.invalid:
-      let x = pager.lineedit.get.generateOutput()
+    pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
+    pager.status.redraw = false
+    redraw = true
+  elif pager.lineedit != nil:
+    if pager.lineedit.redraw:
+      let x = pager.lineedit.generateOutput()
       pager.term.writeGrid(x, 0, pager.attrs.height - 1)
-      pager.lineedit.get.invalid = false
-      pager.redraw = true
-  else:
-    pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
-  if pager.redraw:
-    if container != nil and pager.term.imageMode != imNone:
-      pager.initImages(container)
+      pager.lineedit.redraw = false
+      redraw = true
+  elif pager.status.redraw:
+    pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
+    pager.status.redraw = false
+    redraw = true
+  if container != nil and pager.term.imageMode != imNone:
+    # init images only after term canvas has been finalized
+    pager.initImages(container)
+  if redraw:
     pager.term.hideCursor()
     pager.term.outputGrid()
     if pager.term.imageMode != imNone:
       pager.term.outputImages()
   if pager.askpromise != nil:
     pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
-  elif pager.lineedit.isSome:
-    pager.term.setCursor(pager.lineedit.get.getCursorX(),
-      pager.attrs.height - 1)
+  elif pager.lineedit != nil:
+    pager.term.setCursor(pager.lineedit.getCursorX(), pager.attrs.height - 1)
   elif container != nil:
-    if container.select.open:
-      pager.term.setCursor(container.select.getCursorX(),
-        container.select.getCursorY())
+    if (let select = container.select; select != nil):
+      pager.term.setCursor(select.getCursorX(), select.getCursorY())
     else:
-      pager.term.setCursor(pager.container.acursorx, pager.container.acursory)
-  if pager.redraw:
+      pager.term.setCursor(container.acursorx, container.acursory)
+  if redraw:
     pager.term.showCursor()
   pager.term.flush()
-  pager.redraw = false
 
 proc writeAskPrompt(pager: Pager; s = "") =
-  let maxwidth = pager.statusgrid.width - s.len
+  let maxwidth = pager.status.grid.width - s.len
   let i = pager.writeStatusMessage(pager.askprompt, maxwidth = maxwidth)
   pager.askcursor = pager.writeStatusMessage(s, start = i)
-  pager.term.writeGrid(pager.statusgrid, 0, pager.attrs.height - 1)
 
 proc ask(pager: Pager; prompt: string): Promise[bool] {.jsfunc.} =
   pager.askprompt = prompt
@@ -1010,10 +1033,10 @@ proc windowChange*(pager: Pager) =
   if pager.attrs == oldAttrs:
     #TODO maybe it's more efficient to let false positives through?
     return
-  if pager.lineedit.isSome:
-    pager.lineedit.get.windowChange(pager.attrs)
-  pager.display = newFixedGrid(pager.attrs.width, pager.attrs.height - 1)
-  pager.statusgrid = newFixedGrid(pager.attrs.width)
+  if pager.lineedit != nil:
+    pager.lineedit.windowChange(pager.attrs)
+  pager.clearDisplay()
+  pager.clearStatus()
   for container in pager.containers:
     container.windowChange(pager.attrs)
   if pager.askprompt != "":
@@ -1241,14 +1264,14 @@ proc compileSearchRegex(pager: Pager; s: string): Result[Regex, string] =
   return compileSearchRegex(s, flags)
 
 proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
-  let lineedit = pager.lineedit.get
+  let lineedit = pager.lineedit
   pager.isearchpromise = pager.isearchpromise.then(proc(): EmptyPromise =
     case lineedit.state
     of lesCancel:
       pager.iregex.err()
       pager.container.popCursorPos()
       pager.container.clearSearchHighlights()
-      pager.redraw = true
+      pager.container.redraw = true
       pager.isearchpromise = nil
     of lesEdit:
       if lineedit.news != "":
@@ -1271,7 +1294,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
       pager.container.markPos()
       pager.container.clearSearchHighlights()
       pager.container.sendCursorPosition()
-      pager.redraw = true
+      pager.container.redraw = true
       pager.isearchpromise = nil
   )
 
@@ -1292,7 +1315,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     )
 
 proc updateReadLine*(pager: Pager) =
-  let lineedit = pager.lineedit.get
+  let lineedit = pager.lineedit
   if pager.linemode in {lmISearchF, lmISearchB}:
     pager.updateReadLineISearch(pager.linemode)
   else:
@@ -1359,8 +1382,7 @@ proc updateReadLine*(pager: Pager) =
         data.stream.sclose()
       else: discard
       pager.lineData = nil
-  if lineedit.state in {lesCancel, lesFinish} and
-      pager.lineedit.get == lineedit:
+  if lineedit.state in {lesCancel, lesFinish} and pager.lineedit == lineedit:
     pager.clearLineEdit()
 
 # Same as load(s + '\n')
@@ -1773,7 +1795,6 @@ proc askDownloadPath(pager: Pager; container: Container; response: Response) =
     stream: response.body
   )
   pager.deleteContainer(container, container.find(ndAny))
-  pager.redraw = true
   pager.refreshStatusMsg()
   dec pager.numload
 
@@ -1840,7 +1861,6 @@ proc connected(pager: Pager; container: Container; response: Response) =
   else:
     dec pager.numload
     pager.deleteContainer(container, container.find(ndAny))
-    pager.redraw = true
     pager.refreshStatusMsg()
 
 # true if done, false if keep
@@ -1915,11 +1935,6 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
     pager.dupeBuffer(container, url2)
   of cetNoAnchor:
     pager.alert("Couldn't find anchor " & event.anchor)
-  of cetUpdate:
-    if container == pager.container:
-      pager.redraw = true
-      if event.force:
-        pager.term.clearCanvas()
   of cetReadLine:
     if container == pager.container:
       pager.setLineEdit(lmBuffer, event.value, hide = event.password,
@@ -1931,7 +1946,6 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
         pager.container.readSuccess(s)
       else:
         pager.container.readCanceled()
-      pager.redraw = true
   of cetReadFile:
     if container == pager.container:
       pager.setLineEdit(lmBufferFile, "")
@@ -1989,6 +2003,10 @@ proc handleEvents*(pager: Pager; container: Container) =
     let event = container.events.popFirst()
     if not pager.handleEvent0(container, event):
       break
+
+proc handleEvents*(pager: Pager) =
+  if pager.container != nil:
+    pager.handleEvents(pager.container)
 
 proc handleEvent*(pager: Pager; container: Container) =
   try:

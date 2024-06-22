@@ -7,8 +7,9 @@ import std/posix
 import std/selectors
 import std/strutils
 import std/tables
-import std/unicode
 
+import chagashi/charset
+import chagashi/decoder
 import config/config
 import html/catom
 import html/chadombuilder
@@ -54,8 +55,6 @@ import types/cookie
 import types/opt
 import types/url
 import utils/twtstr
-
-import chagashi/charset
 
 type
   Client* = ref object of Window
@@ -183,11 +182,6 @@ proc feedNext(client: Client) {.jsfunc.} =
 proc alert(client: Client; msg: string) {.jsfunc.} =
   client.pager.alert(msg)
 
-proc handlePagerEvents(client: Client) =
-  let container = client.pager.container
-  if container != nil:
-    client.pager.handleEvents(container)
-
 proc evalActionJS(client: Client; action: string): JSValue =
   client.config.cmd.map.withValue(action, p):
     return JS_DupValue(client.jsctx, p[])
@@ -244,7 +238,7 @@ proc handleCommandInput(client: Client; c: char): EmptyPromise =
     if not client.feednext:
       client.pager.precnum = 0
       client.pager.notnum = false
-      client.handlePagerEvents()
+      client.pager.handleEvents()
     return p
   if client.config.input.use_mouse:
     if client.pager.inputBuffer == "\e[<":
@@ -321,12 +315,12 @@ proc input(client: Client): EmptyPromise =
         client.pager.fulfillAsk(false)
     elif client.pager.askcharpromise != nil:
       buf &= c
-      if buf.validateUtf8() != -1:
+      if buf.validateUtf8Surr() != -1:
         continue
       client.pager.fulfillCharAsk(buf)
-    elif client.pager.lineedit.isSome:
+    elif client.pager.lineedit != nil:
       client.pager.inputBuffer &= c
-      let edit = client.pager.lineedit.get
+      let edit = client.pager.lineedit
       if edit.escNext:
         edit.escNext = false
         if edit.write(client.pager.inputBuffer, client.pager.term.cs):
@@ -469,7 +463,7 @@ proc acceptBuffers(client: Client) =
 proc handleRead(client: Client; fd: int) =
   if client.pager.term.istream != nil and fd == client.pager.term.istream.fd:
     client.input().then(proc() =
-      client.handlePagerEvents()
+      client.pager.handleEvents()
     )
   elif (let i = client.pager.findConnectingContainer(fd); i != -1):
     client.pager.handleConnectingContainer(i)
@@ -589,8 +583,8 @@ proc inputLoop(client: Client) =
     if client.pager.scommand != "":
       client.command(client.pager.scommand)
       client.pager.scommand = ""
-      client.handlePagerEvents()
-    if client.pager.container == nil and client.pager.lineedit.isNone:
+      client.pager.handleEvents()
+    if client.pager.container == nil and client.pager.lineedit == nil:
       # No buffer to display.
       if not client.pager.hasload:
         # Failed to load every single URL the user passed us. We quit, and that
@@ -800,7 +794,7 @@ proc btoa(ctx: JSContext; client: Client; data: JSValue): DOMResult[string]
   return btoa(ctx, data)
 
 func line(client: Client): LineEdit {.jsfget.} =
-  return client.pager.lineedit.get(nil)
+  return client.pager.lineedit
 
 proc addJSModules(client: Client; ctx: JSContext) =
   ctx.addWindowModule2()

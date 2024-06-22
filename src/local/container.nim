@@ -17,7 +17,6 @@ import layout/renderdocument
 import loader/headers
 import loader/loader
 import loader/request
-import local/select
 import monoucha/javascript
 import monoucha/jsregex
 import monoucha/jstypes
@@ -49,8 +48,8 @@ type
     setxsave: bool
 
   ContainerEventType* = enum
-    cetAnchor, cetNoAnchor, cetUpdate, cetReadLine, cetReadArea, cetReadFile,
-    cetOpen, cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle, cetCancel
+    cetAnchor, cetNoAnchor, cetReadLine, cetReadArea, cetReadFile, cetOpen,
+    cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle, cetCancel
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -68,8 +67,6 @@ type
       anchor*: string
     of cetAlert:
       msg*: string
-    of cetUpdate:
-      force*: bool
     else: discard
 
   HighlightType = enum
@@ -163,9 +160,299 @@ type
     images*: seq[PosBitmap]
     cachedImages*: seq[CachedImage]
     luctx: LUContext
+    redraw*: bool
+
+  Select = ref object
+    container: Container
+    options: seq[string]
+    multiple: bool
+    oselected: seq[int] # old selection
+    selected: seq[int] # new selection
+    cursor: int # cursor distance from y
+    maxw: int # widest option
+    maxh: int # maximum height on screen (yes the naming is dumb)
+    si: int # first index to display
+    # location on screen
+    #TODO make this absolute
+    x: int
+    y: int
+    redraw*: bool
+    bpos: seq[int]
 
 jsDestructor(Highlight)
 jsDestructor(Container)
+
+# Forward declarations
+proc onclick(container: Container; res: ClickResult; save: bool)
+proc updateCursor(container: Container)
+proc cursorLastLine*(container: Container)
+proc triggerEvent(container: Container; t: ContainerEventType)
+
+proc queueDraw(select: Select) =
+  select.redraw = true
+
+proc windowChange(select: Select; height: int) =
+  select.maxh = height - 2
+  if select.y + select.options.len >= select.maxh:
+    select.y = height - select.options.len
+    if select.y < 0:
+      select.si = -select.y
+      select.y = 0
+  if select.selected.len > 0:
+    let i = select.selected[0]
+    if select.si > i:
+      select.si = i
+    elif select.si + select.maxh < i:
+      select.si = max(i - select.maxh, 0)
+  select.queueDraw()
+
+# index of option currently under cursor
+func hover(select: Select): int =
+  return select.cursor + select.si
+
+func dispheight(select: Select): int =
+  return select.maxh - select.y
+
+proc `hover=`(select: Select; i: int) =
+  let i = clamp(i, 0, select.options.high)
+  if i >= select.si + select.dispheight:
+    select.si = i - select.dispheight + 1
+    select.cursor = select.dispheight - 1
+  elif i < select.si:
+    select.si = i
+    select.cursor = 0
+  else:
+    select.cursor = i - select.si
+
+proc cursorDown(select: Select) =
+  if select.hover < select.options.high and
+      select.cursor + select.y < select.maxh - 1:
+    inc select.cursor
+    select.queueDraw()
+  elif select.si < select.options.len - select.maxh:
+    inc select.si
+    select.queueDraw()
+
+proc cursorUp(select: Select) =
+  if select.cursor > 0:
+    dec select.cursor
+    select.queueDraw()
+  elif select.si > 0:
+    dec select.si
+    select.queueDraw()
+  elif select.multiple and select.cursor > -1:
+    select.cursor = -1
+
+proc close(select: Select) =
+  let container = select.container
+  container.select = nil
+
+proc cancel(select: Select) =
+  let container = select.container
+  container.iface.select(select.oselected).then(proc(res: ClickResult) =
+    container.onclick(res, save = false))
+  select.close()
+
+proc submit(select: Select) =
+  let container = select.container
+  container.iface.select(select.selected).then(proc(res: ClickResult) =
+    container.onclick(res, save = false))
+  select.close()
+
+proc click(select: Select) =
+  if not select.multiple:
+    select.selected = @[select.hover]
+    select.submit()
+  elif select.cursor == -1:
+    select.submit()
+  else:
+    var k = select.selected.len
+    let i = select.hover
+    for j in 0 ..< select.selected.len:
+      if select.selected[j] >= i:
+        k = j
+        break
+    if k < select.selected.len and select.selected[k] == i:
+      select.selected.delete(k)
+    else:
+      select.selected.insert(i, k)
+    select.queueDraw()
+
+proc cursorLeft(select: Select) =
+  select.submit()
+
+proc cursorRight(select: Select) =
+  select.click()
+
+proc getCursorX*(select: Select): int =
+  if select.cursor == -1:
+    return select.x
+  return select.x + 1
+
+proc getCursorY*(select: Select): int =
+  return select.y + 1 + select.cursor
+
+proc cursorFirstLine(select: Select) =
+  if select.cursor != 0 or select.si != 0:
+    select.cursor = 0
+    select.si = 0
+    select.queueDraw()
+
+proc cursorLastLine(select: Select) =
+  if select.hover < select.options.len:
+    select.cursor = select.dispheight - 1
+    select.si = max(select.options.len - select.maxh, 0)
+    select.queueDraw()
+
+proc cursorNextMatch(select: Select; regex: Regex; wrap: bool) =
+  var j = -1
+  for i in select.hover + 1 ..< select.options.len:
+    if regex.exec(select.options[i]).success:
+      j = i
+      break
+  if j != -1:
+    select.hover = j
+    select.queueDraw()
+  elif wrap:
+    for i in 0 ..< select.hover:
+      if regex.exec(select.options[i]).success:
+        j = i
+        break
+    if j != -1:
+      select.hover = j
+      select.queueDraw()
+
+proc cursorPrevMatch(select: Select; regex: Regex; wrap: bool) =
+  var j = -1
+  for i in countdown(select.hover - 1, 0):
+    if regex.exec(select.options[i]).success:
+      j = i
+      break
+  if j != -1:
+    select.hover = j
+    select.queueDraw()
+  elif wrap:
+    for i in countdown(select.options.high, select.hover):
+      if regex.exec(select.options[i]).success:
+        j = i
+        break
+    if j != -1:
+      select.hover = j
+      select.queueDraw()
+
+proc pushCursorPos(select: Select) =
+  select.bpos.add(select.hover)
+
+proc popCursorPos(select: Select; nojump = false) =
+  select.hover = select.bpos.pop()
+  if not nojump:
+    select.queueDraw()
+
+const HorizontalBar = $Rune(0x2500)
+const VerticalBar = $Rune(0x2502)
+const CornerTopLeft = $Rune(0x250C)
+const CornerTopRight = $Rune(0x2510)
+const CornerBottomLeft = $Rune(0x2514)
+const CornerBottomRight = $Rune(0x2518)
+
+proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
+    upmore, downmore: bool) =
+  for y in sy .. ey:
+    var x = 0
+    while x < sx:
+      if display[y * display.width + x].str == "":
+        display[y * display.width + x].str = " "
+        inc x
+      else:
+        #x = display[y * display.width + x].str.twidth(x)
+        inc x
+  # Draw corners.
+  let tl = if upmore: VerticalBar else: CornerTopLeft
+  let tr = if upmore: VerticalBar else: CornerTopRight
+  let bl = if downmore: VerticalBar else: CornerBottomLeft
+  let br = if downmore: VerticalBar else: CornerBottomRight
+  const fmt = Format()
+  display[sy * display.width + sx].str = tl
+  display[sy * display.width + ex].str = tr
+  display[ey * display.width + sx].str = bl
+  display[ey * display.width + ex].str = br
+  display[sy * display.width + sx].format = fmt
+  display[sy * display.width + ex].format = fmt
+  display[ey * display.width + sx].format = fmt
+  display[ey * display.width + ex].format = fmt
+  # Draw top, bottom borders.
+  let ups = if upmore: " " else: HorizontalBar
+  let downs = if downmore: " " else: HorizontalBar
+  for x in sx + 1 .. ex - 1:
+    display[sy * display.width + x].str = ups
+    display[ey * display.width + x].str = downs
+    display[sy * display.width + x].format = fmt
+    display[ey * display.width + x].format = fmt
+  if upmore:
+    display[sy * display.width + sx + (ex - sx) div 2].str = ":"
+  if downmore:
+    display[ey * display.width + sx + (ex - sx) div 2].str = ":"
+  # Draw left, right borders.
+  for y in sy + 1 .. ey - 1:
+    display[y * display.width + sx].str = VerticalBar
+    display[y * display.width + ex].str = VerticalBar
+    display[y * display.width + sx].format = fmt
+    display[y * display.width + ex].format = fmt
+
+proc drawSelect*(select: Select; display: var FixedGrid) =
+  if display.width < 2 or display.height < 2:
+    return # border does not fit...
+  # Max width, height with one row/column on the sides.
+  let mw = display.width - 2
+  let mh = display.height - 2
+  var sy = select.y
+  let si = select.si
+  var ey = min(sy + select.options.len, mh) + 1
+  var sx = select.x
+  if sx + select.maxw >= mw:
+    sx = display.width - select.maxw
+    if sx < 0:
+      # This means the widest option is wider than the available screen.
+      # w3m simply cuts off the part that doesn't fit, and we do that too,
+      # but I feel like this may not be the best solution.
+      sx = 0
+  var ex = min(sx + select.maxw, mw) + 1
+  let upmore = select.si > 0
+  let downmore = select.si + mh < select.options.len
+  drawBorders(display, sx, ex, sy, ey, upmore, downmore)
+  if select.multiple and not upmore:
+    display[sy * display.width + sx].str = "X"
+  # move inside border
+  inc sy
+  inc sx
+  var r: Rune
+  var k = 0
+  var format = Format()
+  while k < select.selected.len and select.selected[k] < si:
+    inc k
+  for y in sy ..< ey:
+    let i = y - sy + si
+    var j = 0
+    var x = sx
+    let dls = y * display.width
+    if k < select.selected.len and select.selected[k] == i:
+      format.flags.incl(ffReverse)
+      inc k
+    else:
+      format.flags.excl(ffReverse)
+    while j < select.options[i].len:
+      fastRuneAt(select.options[i], j, r)
+      let rw = r.twidth(x)
+      let ox = x
+      x += rw
+      if x > ex:
+        break
+      display[dls + ox].str = $r
+      display[dls + ox].format = format
+    while x < ex:
+      display[dls + x].str = " "
+      display[dls + x].format = format
+      inc x
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
@@ -190,7 +477,8 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     process: -1,
     mainConfig: mainConfig,
     flags: flags,
-    luctx: luctx
+    luctx: luctx,
+    redraw: true
   )
 
 func location(container: Container): URL {.jsfget.} =
@@ -380,7 +668,10 @@ func startx(hl: Highlight): int =
     hl.x2
   else:
     min(hl.x1, hl.x2)
-func starty(hl: Highlight): int = min(hl.y1, hl.y2)
+
+func starty(hl: Highlight): int =
+  return min(hl.y1, hl.y2)
+
 func endx(hl: Highlight): int =
   if hl.y1 > hl.y2:
     hl.x1
@@ -388,7 +679,9 @@ func endx(hl: Highlight): int =
     hl.x2
   else:
     max(hl.x1, hl.x2)
-func endy(hl: Highlight): int = max(hl.y1, hl.y2)
+
+func endy(hl: Highlight): int =
+  return max(hl.y1, hl.y2)
 
 func colorNormal(container: Container; hl: Highlight; y: int;
     limitx: Slice[int]): Slice[int] =
@@ -448,8 +741,6 @@ proc triggerEvent(container: Container; event: ContainerEvent) =
 proc triggerEvent(container: Container; t: ContainerEventType) =
   container.triggerEvent(ContainerEvent(t: t))
 
-proc updateCursor(container: Container)
-
 proc setNumLines(container: Container; lines: int; finish = false) =
   if container.numLines != lines:
     container.numLines = lines
@@ -458,7 +749,8 @@ proc setNumLines(container: Container; lines: int; finish = false) =
       container.startpos = none(CursorPosition)
     container.updateCursor()
 
-proc cursorLastLine*(container: Container)
+proc queueDraw*(container: Container) =
+  container.redraw = true
 
 proc requestLines(container: Container): EmptyPromise {.discardable.} =
   if container.iface == nil:
@@ -483,12 +775,9 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
         container.cursorLastLine()
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w or isBgNew:
-      container.triggerEvent(cetUpdate)
+      container.queueDraw()
     container.images = res.images
   )
-
-proc redraw(container: Container) {.jsfunc.} =
-  container.triggerEvent(ContainerEvent(t: cetUpdate, force: true))
 
 proc sendCursorPosition*(container: Container) =
   if container.iface == nil:
@@ -508,7 +797,7 @@ proc setFromY(container: Container; y: int) {.jsfunc.} =
   if container.pos.fromy != y:
     container.pos.fromy = max(min(y, container.maxfromy), 0)
     container.needslines = true
-    container.triggerEvent(cetUpdate)
+    container.queueDraw()
 
 proc setFromX(container: Container; x: int; refresh = true) {.jsfunc.} =
   if container.pos.fromx != x:
@@ -518,7 +807,7 @@ proc setFromX(container: Container; x: int; refresh = true) {.jsfunc.} =
         container.currentLineWidth())
       if refresh:
         container.sendCursorPosition()
-    container.triggerEvent(cetUpdate)
+    container.queueDraw()
 
 proc setFromXY(container: Container; x, y: int) {.jsfunc.} =
   container.setFromY(y)
@@ -564,7 +853,7 @@ proc setCursorX(container: Container; x: int; refresh = true; save = true)
   if container.cursorx == x and container.currentSelection != nil and
       container.currentSelection.x2 != x:
     container.currentSelection.x2 = x
-    container.triggerEvent(cetUpdate)
+    container.queueDraw()
   if refresh:
     container.sendCursorPosition()
   if save:
@@ -586,7 +875,7 @@ proc setCursorY(container: Container; y: int; refresh = true) {.jsfunc.} =
       container.setFromY(y)
     container.pos.cursory = y
   if container.currentSelection != nil and container.currentSelection.y2 != y:
-    container.triggerEvent(cetUpdate)
+    container.queueDraw()
     container.currentSelection.y2 = y
   container.restoreCursorX()
   if refresh:
@@ -679,25 +968,25 @@ proc setCursorXYCenter(container: Container; x, y: int; refresh = true)
     container.centerColumn()
 
 proc cursorDown(container: Container; n = 1) {.jsfunc.} =
-  if container.select.open:
+  if container.select != nil:
     container.select.cursorDown()
   else:
     container.setCursorY(container.cursory + n)
 
 proc cursorUp(container: Container; n = 1) {.jsfunc.} =
-  if container.select.open:
+  if container.select != nil:
     container.select.cursorUp()
   else:
     container.setCursorY(container.cursory - n)
 
 proc cursorLeft(container: Container; n = 1) {.jsfunc.} =
-  if container.select.open:
+  if container.select != nil:
     container.select.cursorLeft()
   else:
     container.setCursorX(container.cursorFirstX() - n)
 
 proc cursorRight(container: Container; n = 1) {.jsfunc.} =
-  if container.select.open:
+  if container.select != nil:
     container.select.cursorRight()
   else:
     container.setCursorX(container.cursorLastX() + n)
@@ -947,7 +1236,7 @@ proc markPos*(container: Container) =
     container.jumpMark = pos
 
 proc cursorFirstLine(container: Container) {.jsfunc.} =
-  if container.select.open:
+  if container.select != nil:
     container.select.cursorFirstLine()
   else:
     container.markPos0()
@@ -955,7 +1244,7 @@ proc cursorFirstLine(container: Container) {.jsfunc.} =
     container.markPos()
 
 proc cursorLastLine*(container: Container) {.jsfunc.} =
-  if container.select.open:
+  if container.select != nil:
     container.select.cursorLastLine()
   else:
     container.markPos0()
@@ -1041,7 +1330,7 @@ proc updateCursor(container: Container) =
 proc gotoLine*[T: string|int](container: Container; s: T) =
   when s is string:
     if s == "":
-      redraw(container)
+      container.redraw = true
     elif s[0] == '^':
       container.cursorFirstLine()
     elif s[0] == '$':
@@ -1060,13 +1349,13 @@ proc gotoLine*[T: string|int](container: Container; s: T) =
     container.markPos()
 
 proc pushCursorPos*(container: Container) =
-  if container.select.open:
+  if container.select != nil:
     container.select.pushCursorPos()
   else:
     container.bpos.add(container.pos)
 
 proc popCursorPos*(container: Container; nojump = false) =
-  if container.select.open:
+  if container.select != nil:
     container.select.popCursorPos(nojump)
   else:
     container.pos = container.bpos.pop()
@@ -1131,17 +1420,17 @@ proc setMark*(container: Container; id: string; x = none(int);
   let y = y.get(container.cursory)
   container.marks.withValue(id, p):
     p[] = (x, y)
-    container.triggerEvent(cetUpdate)
+    container.queueDraw()
     return false
   do:
     container.marks[id] = (x, y)
-    container.triggerEvent(cetUpdate)
+    container.queueDraw()
     return true
 
 proc clearMark*(container: Container; id: string): bool {.jsfunc.} =
   result = id in container.marks
   container.marks.del(id)
-  container.triggerEvent(cetUpdate)
+  container.queueDraw()
 
 proc getMarkPos(container: Container; id: string): Opt[PagePos] {.jsfunc.} =
   if id == "`" or id == "'":
@@ -1237,18 +1526,18 @@ proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
         y2: res.y
       )
       container.highlights.add(hl)
-      container.triggerEvent(cetUpdate)
+      container.queueDraw()
       container.hlon = false
       container.needslines = true
   elif container.hlon:
     container.clearSearchHighlights()
-    container.triggerEvent(cetUpdate)
+    container.queueDraw()
     container.needslines = true
     container.hlon = false
 
 proc cursorNextMatch*(container: Container; regex: Regex; wrap, refresh: bool;
     n: int): EmptyPromise {.discardable.} =
-  if container.select.open:
+  if container.select != nil:
     #TODO
     for _ in 0 ..< n:
       container.select.cursorNextMatch(regex, wrap)
@@ -1263,7 +1552,7 @@ proc cursorNextMatch*(container: Container; regex: Regex; wrap, refresh: bool;
 
 proc cursorPrevMatch*(container: Container; regex: Regex; wrap, refresh: bool;
     n: int): EmptyPromise {.discardable.} =
-  if container.select.open:
+  if container.select != nil:
     #TODO
     for _ in 0 ..< n:
       container.select.cursorPrevMatch(regex, wrap)
@@ -1304,7 +1593,7 @@ proc cursorToggleSelection(container: Container; n = 1;
     )
     container.highlights.add(hl)
     container.currentSelection = hl
-  container.triggerEvent(cetUpdate)
+  container.queueDraw()
   return container.currentSelection
 
 #TODO I don't like this API
@@ -1481,7 +1770,7 @@ proc remoteCancel*(container: Container) =
   container.alert("Canceled loading")
 
 proc cancel*(container: Container) {.jsfunc.} =
-  if container.select.open:
+  if container.select != nil:
     container.select.cancel()
   elif container.loadState == lsLoading:
     container.loadState = lsCanceled
@@ -1522,15 +1811,21 @@ proc reshape(container: Container): EmptyPromise {.jsfunc.} =
     return container.requestLines()
   )
 
-proc onclick(container: Container; res: ClickResult; save: bool)
-
 proc displaySelect(container: Container; selectResult: SelectResult) =
-  let submitSelect = proc(selected: seq[int]) =
-    container.iface.select(selected).then(proc(res: ClickResult) =
-      container.onclick(res, save = false))
-  container.select.initSelect(selectResult, container.acursorx,
-    container.acursory, container.height, submitSelect)
-  container.triggerEvent(cetUpdate)
+  container.select = Select(
+    container: container,
+    multiple: selectResult.multiple,
+    options: selectResult.options,
+    oselected: selectResult.selected,
+    selected: selectResult.selected,
+    x: container.acursorx,
+    y: container.acursory
+  )
+  for opt in container.select.options.mitems:
+    opt.mnormalize()
+    container.select.maxw = max(container.select.maxw, opt.width())
+  container.select.windowChange(container.height)
+  container.queueDraw()
 
 proc onclick(container: Container; res: ClickResult; save: bool) =
   if res.repaint:
@@ -1547,7 +1842,7 @@ proc onclick(container: Container; res: ClickResult; save: bool) =
     container.onReadLine(res.readline.get)
 
 proc click*(container: Container) {.jsfunc.} =
-  if container.select.open:
+  if container.select != nil:
     container.select.click()
   else:
     if container.iface == nil:
@@ -1663,8 +1958,7 @@ proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)) =
       # fulfill all promises
       container.handleCommand()
 
-proc drawLines*(container: Container; display: var FixedGrid;
-    hlcolor: CellColor) =
+proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor) =
   let bgcolor = container.bgcolor
   template set_fmt(cell, cf: typed) =
     if cf.pos != -1:
@@ -1722,12 +2016,12 @@ proc drawLines*(container: Container; display: var FixedGrid;
         inc k
     # Finally, override cell formatting for highlighted cells.
     let hls = container.findHighlights(container.fromy + by)
-    let aw = container.width - (startw - container.fromx) # actual width
+    let aw = display.width - (startw - container.fromx) # actual width
     for hl in hls:
       let area = container.colorArea(hl, container.fromy + by,
         startw .. startw + aw)
       for i in area:
-        if i - startw >= container.width:
+        if i - startw >= display.width:
           break
         var hlformat = display[dls + i - startw].format
         hlformat.bgcolor = hlcolor
