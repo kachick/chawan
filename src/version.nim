@@ -16,7 +16,7 @@ macro tryImport(x: untyped; name: static string) =
 macro checkVersion(xs: static string; major, minor, patch: int) =
   let x = ident(xs & "Version")
   quote do:
-    when `x`.Major < `major` or `x`.Minor < `minor` or `x`.Patch < `patch`:
+    when (`x`.Major, `x`.Minor, `x`.Patch) < (`major`, `minor`, `patch`):
       var es = $`major` & "." & $`minor` & "." & $`patch`
       var gs = $`x`.Major & "." & $`x`.Minor & "." & $`x`.Patch
       error("Version of " & `xs` & " too low (expected " & es & ", got " &
@@ -29,4 +29,4 @@ tryImport monoucha/version, "monoucha"
 static:
   checkVersion("chagashi", 0, 5, 2)
   checkVersion("chame", 1, 0, 0)
-  checkVersion("monoucha", 0, 1, 1)
+  checkVersion("monoucha", 0, 2, 0)

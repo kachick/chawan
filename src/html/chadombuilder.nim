@@ -372,7 +372,7 @@ proc parseFromString(ctx: JSContext; parser: DOMParser; str, t: string):
     builder.finish()
     return ok(builder.document)
   of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
-    return err(newInternalError("XML parsing is not supported yet"))
+    return errInternalError("XML parsing is not supported yet")
   else:
     return errTypeError("Invalid mime type")
 

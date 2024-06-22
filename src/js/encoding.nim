@@ -29,7 +29,7 @@ func newJSTextDecoder(label = "utf-8", options = TextDecoderOptions()):
     JSResult[JSTextDecoder] {.jsctor.} =
   let encoding = getCharset(label)
   if encoding in {CHARSET_UNKNOWN, CHARSET_REPLACEMENT}:
-    return err(newRangeError("Invalid encoding label"))
+    return errRangeError("Invalid encoding label")
   return ok(JSTextDecoder(
     ignoreBOM: options.ignoreBOM,
     fatal: options.fatal,

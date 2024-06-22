@@ -1081,7 +1081,7 @@ proc dispatchEvent(buffer: Buffer; ctype, jsName: string; elem: Element):
   let ctx = buffer.window.jsctx
   let event = newEvent(ctx, ctype, elem)
   var jsEvent = ctx.toJS(event)
-  let jsNameAtom = JS_NewAtomLen(ctx, jsName, csize_t(jsName.len))
+  let jsNameAtom = JS_NewAtomLen(ctx, cstring(jsName), csize_t(jsName.len))
   for a in elem.branch:
     event.currentTarget = a
     var stop = false
