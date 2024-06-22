@@ -175,8 +175,10 @@ proc iclose*(handle: LoaderHandle) =
       # not an ideal solution, but better than silently eating malformed
       # headers
       try:
-        handle.sendStatus(500)
-        handle.sendHeaders(newHeaders())
+        if handle.rstate == rsBeforeStatus:
+          handle.sendStatus(500)
+        if handle.rstate == rsBeforeHeaders:
+          handle.sendHeaders(newHeaders())
         handle.output.ostream.setBlocking(true)
         const msg = "Error: malformed header in CGI script"
         discard handle.output.ostream.sendData(msg)
