@@ -138,7 +138,9 @@ proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
 
 proc setLocation(window: Window; s: string): Err[JSError]
     {.jsfset: "location".} =
-  window.document.setLocation(s)
+  if window.document == nil:
+    return errTypeError("document is null")
+  return window.document.setLocation(s)
 
 func getWindow(window: Window): Window {.jsuffget: "window".} =
   return window
