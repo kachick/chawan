@@ -8,6 +8,7 @@ import std/selectors
 import std/tables
 import std/unicode
 
+import chagashi/charset
 import config/chapath
 import config/config
 import config/mailcap
@@ -49,8 +50,6 @@ import utils/mimeguess
 import utils/regexutils
 import utils/strwidth
 import utils/twtstr
-
-import chagashi/charset
 
 type
   LineMode* = enum
@@ -688,19 +687,23 @@ func findProcMapItem*(pager: Pager; pid: int): int =
   -1
 
 proc dupeBuffer(pager: Pager; container: Container; url: URL) =
-  container.clone(url, pager.loader).then(proc(container: Container) =
-    if container == nil:
-      pager.alert("Failed to duplicate buffer.")
-    else:
-      pager.addContainer(container)
-      pager.procmap.add(ProcMapItem(
-        container: container,
-        fdin: -1,
-        fdout: -1,
-        istreamOutputId: -1,
-        ostreamOutputId: -1
-      ))
-  )
+  let p = container.clone(url, pager.loader)
+  if p == nil:
+    pager.alert("Failed to duplicate buffer.")
+  else:
+    p.then(proc(container: Container) =
+      if container == nil:
+        pager.alert("Failed to duplicate buffer.")
+      else:
+        pager.addContainer(container)
+        pager.procmap.add(ProcMapItem(
+          container: container,
+          fdin: -1,
+          fdout: -1,
+          istreamOutputId: -1,
+          ostreamOutputId: -1
+        ))
+    )
 
 proc dupeBuffer(pager: Pager) {.jsfunc.} =
   pager.dupeBuffer(pager.container, pager.container.url)
