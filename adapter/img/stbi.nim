@@ -57,7 +57,7 @@ proc main() =
   let f = scheme.after('+')
   case getEnv("MAPPED_URI_PATH")
   of "decode":
-    if f notin ["jpeg", "gif", "bmp", "png"]:
+    if f notin ["jpeg", "gif", "bmp", "png", "x-unknown"]:
       stdout.write("Cha-Control: ConnectionError 1 unknown format " & f)
     var x: cint
     var y: cint
