@@ -183,8 +183,9 @@ proc alert(client: Client; msg: string) {.jsfunc.} =
   client.pager.alert(msg)
 
 proc evalActionJS(client: Client; action: string): JSValue =
-  client.config.cmd.map.withValue(action, p):
-    return JS_DupValue(client.jsctx, p[])
+  if action.startsWith("cmd."):
+    client.config.cmd.map.withValue(action.substr("cmd.".len), p):
+      return JS_DupValue(client.jsctx, p[])
   return client.evalJS(action, "<command>")
 
 # Warning: this is not re-entrant.

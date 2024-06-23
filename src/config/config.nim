@@ -678,7 +678,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
     if vv.t == tvtTable:
       ctx.parseConfigValue(x, vv, kkk)
     else: # tvtString
-      x.init.add((kkk, vv.s))
+      x.init.add((kkk.substr("cmd.".len), vv.s))
 
 type ParseConfigResult* = object
   success*: bool
