@@ -899,7 +899,7 @@ proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
   let total = widthpx + sizes.margin[dtHorizontal].sum() +
     sizes.padding[dtHorizontal].sum()
   let underflow = parentWidth.u - total
-  if isauto or sizes.space.w.t == scFitContent:
+  if isauto:
     if underflow >= 0:
       sizes.space.w = SizeConstraint(t: sizes.space.w.t, u: underflow)
     else:
