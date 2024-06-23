@@ -1119,17 +1119,22 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
     minMaxSizes: lctx.resolveMinMaxSizes(space, inlinePadding, blockPadding,
       computed)
   )
-  if not preserveHeight: # Note: preserveHeight is only true for flex.
-    sizes.space.h = maxContent()
-  if computed{"width"}.canpx(sizes.space.w):
-    let widthpx = computed{"width"}.spx(lctx, sizes.space.w, computed,
-      inlinePadding)
+  for dim in DimensionType: # prevent overflow
+    if sizes.space[dim].isDefinite() and space[dim].isDefinite():
+      let overflow = sizes.space[dim].u + sizes.margin[dim].sum() +
+        sizes.padding[dim].sum() - space[dim].u
+      if overflow > 0:
+        sizes.space[dim].u = max(0, sizes.space[dim].u - overflow)
+  if computed{"width"}.canpx(space.w):
+    let widthpx = computed{"width"}.spx(lctx, space.w, computed, inlinePadding)
     sizes.space.w = stretch(clamp(widthpx, sizes.minWidth, sizes.maxWidth))
   elif sizes.space.w.isDefinite():
     sizes.space.w = fitContent(clamp(sizes.space.w.u, sizes.minWidth,
       sizes.maxWidth))
-  if computed{"height"}.canpx(sizes.space.h):
-    let heightpx = computed{"height"}.spx(lctx, sizes.space.h, computed,
+  if not preserveHeight: # Note: preserveHeight is only true for flex.
+    sizes.space.h = maxContent()
+  if computed{"height"}.canpx(space.h):
+    let heightpx = computed{"height"}.spx(lctx, space.h, computed,
       blockPadding)
     sizes.space.h = stretch(clamp(heightpx, sizes.minHeight, sizes.maxHeight))
   elif sizes.space.h.isDefinite():
