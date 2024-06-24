@@ -279,6 +279,12 @@ template offsety(state: LineBoxState): untyped =
 func size(ictx: var InlineContext): var Size =
   ictx.root.state.size
 
+func sum(rect: RelativeRect): Size =
+  return [
+    dtHorizontal: rect[dtHorizontal].sum(),
+    dtVertical: rect[dtVertical].sum()
+  ]
+
 # Whitespace between words
 func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
   if ictx.whitespacenum == 0:
@@ -966,20 +972,19 @@ func resolveMinMaxSize(length: CSSLength; sc: SizeConstraint;
   return fallback
 
 func resolveMinMaxSizes(lctx: LayoutContext; space: AvailableSpace;
-    inlinePadding, blockPadding: LayoutUnit; computed: CSSComputedValues):
-    array[DimensionType, Span] =
+    paddingSum: Size; computed: CSSComputedValues): array[DimensionType, Span] =
   return [
     dtHorizontal: Span(
-      start: computed{"min-width"}.resolveMinMaxSize(space.w, 0, inlinePadding,
-        computed, lctx),
+      start: computed{"min-width"}.resolveMinMaxSize(space.w, 0,
+        paddingSum[dtHorizontal], computed, lctx),
       send: computed{"max-width"}.resolveMinMaxSize(space.w, LayoutUnit.high,
-        inlinePadding, computed, lctx)
+        paddingSum[dtHorizontal], computed, lctx)
     ),
     dtVertical: Span(
-      start: computed{"min-height"}.resolveMinMaxSize(space.h, 0, blockPadding,
-        computed, lctx),
+      start: computed{"min-height"}.resolveMinMaxSize(space.h, 0,
+        paddingSum[dtVertical], computed, lctx),
       send: computed{"max-height"}.resolveMinMaxSize(space.h, LayoutUnit.high,
-        blockPadding, computed, lctx)
+        paddingSum[dtVertical], computed, lctx)
     )
   ]
 
@@ -1030,15 +1035,20 @@ proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
     # same reasoning as for width.
     sizes.space.h = stretch(sizes.minHeight)
 
+const CvalSizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
+const CvalStartMap = [dtHorizontal: cptLeft, dtVertical: cptTop]
+const CvalEndMap = [dtHorizontal: cptRight, dtVertical: cptBottom]
+
 proc resolveAbsoluteSize(sizes: var ResolvedSizes; space: AvailableSpace;
-    dim: DimensionType; cvalSize, cvalLeft, cvalRight: CSSLength;
-    computed: CSSComputedValues; lctx: LayoutContext) =
-  # Note: cvalLeft, cvalRight are top/bottom when called with vertical dim
+    dim: DimensionType; computed: CSSComputedValues; lctx: LayoutContext) =
+  let cvalSize = computed[CvalSizeMap[dim]].length
   if cvalSize.auto:
     if space[dim].isDefinite:
       let u = max(space[dim].u - sizes.positioned[dim].sum() -
         sizes.margin[dim].sum() - sizes.padding[dim].sum(), 0)
-      if not cvalLeft.auto and not cvalRight.auto:
+      let cvalStart = computed[CvalStartMap[dim]].length
+      let cvalEnd = computed[CvalEndMap[dim]].length
+      if not cvalStart.auto and not cvalEnd.auto:
         # width is auto and left & right are not auto.
         # Solve for width.
         sizes.space[dim] = stretch(u)
@@ -1058,18 +1068,14 @@ proc resolveAbsoluteSize(sizes: var ResolvedSizes; space: AvailableSpace;
 proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     computed: CSSComputedValues): ResolvedSizes =
   let padding = resolvePadding(space.w, lctx, computed)
-  let inlinePadding = padding[dtHorizontal].sum()
-  let blockPadding = padding[dtVertical].sum()
+  let paddingSum = padding.sum()
   var sizes = ResolvedSizes(
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
-    # Take defined sizes if our width/height resolves to auto.
-    # For block boxes, this is:
-    # (width: stretch(parentWidth), height: max-content)
     space: space,
-    minMaxSizes: lctx.resolveMinMaxSizes(space, inlinePadding, blockPadding,
-      computed)
+    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed)
   )
+  # for tables, fit-content by default
   if computed{"display"} == DisplayTableWrapper:
     sizes.space.w = fitContent(sizes.space.w)
   # height is max-content normally, but fit-content for clip.
@@ -1081,10 +1087,10 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     # only compute this when needed
     sizes.positioned = resolvePositioned(space, lctx, computed)
   # Finally, calculate available width and height.
-  sizes.resolveBlockWidth(space.w, inlinePadding, computed, lctx)
+  sizes.resolveBlockWidth(space.w, paddingSum[dtHorizontal], computed, lctx)
   #TODO parent height should be lctx height in quirks mode for percentage
   # resolution.
-  sizes.resolveBlockHeight(space.h, blockPadding, computed, lctx)
+  sizes.resolveBlockHeight(space.h, paddingSum[dtVertical], computed, lctx)
   return sizes
 
 # Calculate and resolve available width & height for absolutely positioned
@@ -1098,48 +1104,33 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; computed: CSSComputedValues):
     positioned: resolvePositioned(space, lctx, computed),
     minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
   )
-  sizes.resolveAbsoluteSize(space, dtHorizontal, computed{"width"},
-    computed{"left"}, computed{"right"}, computed, lctx)
-  sizes.resolveAbsoluteSize(space, dtVertical, computed{"height"},
-    computed{"top"}, computed{"bottom"}, computed, lctx)
+  for dim in DimensionType:
+    sizes.resolveAbsoluteSize(space, dim, computed, lctx)
   return sizes
 
 # Calculate and resolve available width & height for floating boxes.
 proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
-    preserveHeight: bool; computed: CSSComputedValues):
-    ResolvedSizes =
+    preserveHeight: bool; computed: CSSComputedValues): ResolvedSizes =
   let padding = resolvePadding(space.w, lctx, computed)
-  let inlinePadding = padding[dtHorizontal].sum()
-  let blockPadding = padding[dtVertical].sum()
+  let paddingSum = padding.sum()
   var sizes = ResolvedSizes(
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
-    space: availableSpace(w = fitContent(space.w), h = space.h),
-    # note: we use parent's space here intentionally.
-    minMaxSizes: lctx.resolveMinMaxSizes(space, inlinePadding, blockPadding,
-      computed)
+    space: space,
+    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed)
   )
-  for dim in DimensionType: # prevent overflow
-    if sizes.space[dim].isDefinite() and space[dim].isDefinite():
-      let overflow = sizes.space[dim].u + sizes.margin[dim].sum() +
-        sizes.padding[dim].sum() - space[dim].u
-      if overflow > 0:
-        sizes.space[dim].u = max(0, sizes.space[dim].u - overflow)
-  if computed{"width"}.canpx(space.w):
-    let widthpx = computed{"width"}.spx(lctx, space.w, computed, inlinePadding)
-    sizes.space.w = stretch(clamp(widthpx, sizes.minWidth, sizes.maxWidth))
-  elif sizes.space.w.isDefinite():
-    sizes.space.w = fitContent(clamp(sizes.space.w.u, sizes.minWidth,
-      sizes.maxWidth))
   if not preserveHeight: # Note: preserveHeight is only true for flex.
     sizes.space.h = maxContent()
-  if computed{"height"}.canpx(space.h):
-    let heightpx = computed{"height"}.spx(lctx, space.h, computed,
-      blockPadding)
-    sizes.space.h = stretch(clamp(heightpx, sizes.minHeight, sizes.maxHeight))
-  elif sizes.space.h.isDefinite():
-    sizes.space.h = fitContent(clamp(sizes.space.h.u, sizes.minHeight,
-      sizes.maxHeight))
+  for dim in DimensionType:
+    let length = computed[CvalSizeMap[dim]].length
+    if length.canpx(space[dim]):
+      let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
+      let span = sizes.minMaxSizes[dim]
+      sizes.space[dim] = stretch(clamp(u, span.start, span.send))
+    elif sizes.space[dim].isDefinite():
+      let u = sizes.space[dim].u - sizes.margin[dim].sum() - paddingSum[dim]
+      let span = sizes.minMaxSizes[dim]
+      sizes.space[dim] = fitContent(clamp(u, span.start, span.send))
   return sizes
 
 # Calculate and resolve available width, height, padding, margins, etc.
@@ -2149,7 +2140,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
         it.sizes.space[dim] = stretch(u - it.sizes.padding[dim].sum())
         totalWeight += it.weights[wt]
         #TODO we should call this only on freeze, and then put another loop to
-        # the end for non-freezed items
+        # the end for non-frozen items
         lctx.layoutFlexChild(it.child, it.sizes)
         mctx.updateMaxSizes(it.child)
 
