@@ -352,6 +352,9 @@ proc paintInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     let x2 = toInt(offset.x + area.offset.x + area.size.w)
     let y2 = toInt(offset.y + area.offset.y + area.size.h)
     grid.paintBackground(state, bgcolor, x1, y1, x2, y2, fragment.node)
+  if fragment.t == iftParent:
+    for child in fragment.children:
+      grid.paintInlineFragment(state, child, offset, bgcolor)
 
 proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     fragment: InlineFragment; offset: Offset) =

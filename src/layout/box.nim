@@ -160,6 +160,10 @@ proc `+=`*(a: var Offset; b: Offset) =
   a.x += b.x
   a.y += b.y
 
+proc `-=`*(a: var Offset; b: Offset) =
+  a.x -= b.x
+  a.y -= b.y
+
 func left*(s: RelativeRect): LayoutUnit =
   return s[dtHorizontal].start
 

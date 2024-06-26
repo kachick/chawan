@@ -20,4 +20,5 @@ do	printf '%s\r' "$h"
 	else	printf 'WARNING: expected file not found for %s\n' "$h"
 	fi
 done
+printf '\n'
 exit "$failed"

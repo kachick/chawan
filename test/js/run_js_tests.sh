@@ -10,4 +10,5 @@ do	printf '%s\r' "$h"
 		printf 'FAIL: %s\n' "$h"
 	fi
 done
+printf '\n'
 exit "$failed"
