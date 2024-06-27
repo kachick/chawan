@@ -108,10 +108,11 @@ proc bufferCleared*(output: OutputHandle) =
   else:
     output.currentBuffer = nil
 
-proc tee*(outputIn: OutputHandle; ostream: PosixStream; outputId, pid: int) =
-  let parent = outputIn.parent
-  parent.outputs.add(OutputHandle(
-    parent: parent,
+proc tee*(outputIn: OutputHandle; ostream: PosixStream; outputId, pid: int):
+    OutputHandle =
+  assert outputIn.suspended
+  let output = OutputHandle(
+    parent: outputIn.parent,
     ostream: ostream,
     currentBuffer: outputIn.currentBuffer,
     currentBufferIdx: outputIn.currentBufferIdx,
@@ -120,7 +121,13 @@ proc tee*(outputIn: OutputHandle; ostream: PosixStream; outputId, pid: int) =
     outputId: outputId,
     ownerPid: pid,
     suspended: outputIn.suspended
-  ))
+  )
+  when defined(debug):
+    output.url = outputIn.url
+  if outputIn.parent != nil:
+    assert outputIn.parent.parser == nil
+    outputIn.parent.outputs.add(output)
+  return output
 
 template output*(handle: LoaderHandle): OutputHandle =
   handle.outputs[0]
@@ -194,6 +201,6 @@ proc oclose*(output: OutputHandle) =
 proc close*(handle: LoaderHandle) =
   handle.iclose()
   for output in handle.outputs:
-    #TODO assert not output.registered
+    assert not output.registered
     if output.ostream != nil:
       output.oclose()

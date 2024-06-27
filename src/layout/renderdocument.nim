@@ -218,6 +218,8 @@ type
   PosBitmap* = ref object
     x*: int
     y*: int
+    width*: int
+    height*: int
     bmp*: Bitmap
 
   RenderState = object
@@ -379,6 +381,8 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
         state.images.add(PosBitmap(
           x: (offset.x div state.attrs.ppc).toInt,
           y: (offset.y div state.attrs.ppl).toInt,
+          width: atom.size.w.toInt,
+          height: atom.size.h.toInt,
           bmp: atom.bmp
         ))
   if fragment.computed{"position"} != PositionStatic:

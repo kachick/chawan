@@ -89,6 +89,7 @@ elif defined(linux) and not disableSandbox:
       "getrlimit", # glibc uses it after fork it seems
       "getsockname", # Nim needs it for connecting
       "gettimeofday", # used by QuickJS in Date.now()
+      "lseek", # glibc calls lseek on open files at exit
       "mmap", # memory allocation
       "mmap2", # memory allocation
       "mremap", # memory allocation
@@ -131,6 +132,7 @@ elif defined(linux) and not disableSandbox:
     const allowList = [
       cstring"close", "exit_group", # duh
       "read", "write", "recv", "send", "recvfrom", "sendto", # socket i/o
+      "lseek", # glibc calls lseek on open files at exit
       "fcntl", "fcntl64", # so we can set nonblock etc.
       "mmap", "mmap2", "mremap", "munmap", "brk", # memory allocation
       "poll", # curl needs poll

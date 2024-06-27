@@ -1370,7 +1370,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   ictx.whitespacenum = 0
 
 proc addInlineImage(ictx: var InlineContext; state: var InlineState;
-    bmp: Bitmap) =
+    bmp: Bitmap; padding: LayoutUnit) =
   let h = int(bmp.height).toLayoutUnit().ceilTo(ictx.cellHeight)
   let iastate = InlineAtomState(
     vertalign: state.fragment.computed{"vertical-align"},
@@ -1381,6 +1381,20 @@ proc addInlineImage(ictx: var InlineContext; state: var InlineState;
     bmp: bmp,
     size: size(w = int(bmp.width), h = h), #TODO overflow
   )
+  let computed = state.fragment.computed
+  let lctx = ictx.lctx
+  if computed{"width"}.canpx(ictx.space.w):
+    let w = computed{"width"}.spx(lctx, ictx.space.w, computed, padding)
+    if not computed{"height"}.canpx(ictx.space.h):
+      # maintain aspect ratio
+      atom.size.h = atom.size.h div atom.size.w * w
+    atom.size.w = w
+  if computed{"height"}.canpx(ictx.space.h):
+    let h = computed{"height"}.spx(lctx, ictx.space.h, computed, padding)
+    if not computed{"width"}.canpx(ictx.space.w):
+      # maintain aspect ratio
+      atom.size.w = atom.size.w div atom.size.h * h
+    atom.size.h = h
   discard ictx.addAtom(state, iastate, atom)
 
 func calcLineHeight(computed: CSSComputedValues; lctx: LayoutContext):
@@ -1421,7 +1435,7 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   case fragment.t
   of iftNewline: ictx.flushLine(state)
   of iftBox: ictx.addInlineBlock(state, fragment.box)
-  of iftBitmap: ictx.addInlineImage(state, fragment.bmp)
+  of iftBitmap: ictx.addInlineImage(state, fragment.bmp, padding.sum())
   of iftText: ictx.layoutText(state, fragment.text)
   of iftParent:
     for child in fragment.children:
@@ -2636,13 +2650,12 @@ proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment) =
 
 proc pushInlineText(ctx: var InnerBlockContext; computed: CSSComputedValues;
     styledNode: StyledNode; text: string) =
-  let box = InlineFragment(
+  ctx.pushInline(InlineFragment(
     t: iftText,
     computed: computed,
     node: styledNode,
     text: text
-  )
-  ctx.pushInline(box)
+  ))
 
 proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
@@ -2788,13 +2801,12 @@ proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode;
     ctx.pushInlineText(computed, parent, child.content.s)
   of ContentImage:
     if child.content.bmp != nil:
-      let wrapper = InlineFragment(
+      ctx.pushInline(InlineFragment(
         t: iftBitmap,
-        computed: computed,
+        computed: parent.computed,
         node: parent,
         bmp: child.content.bmp
-      )
-      ctx.pushInline(wrapper)
+      ))
     else:
       ctx.pushInlineText(computed, parent, "[img]")
   of ContentVideo:

@@ -21,6 +21,7 @@ import io/socketstream
 import io/stdio
 import io/tempfile
 import io/urlfilter
+import layout/renderdocument
 import loader/connecterror
 import loader/headers
 import loader/loader
@@ -472,7 +473,7 @@ proc redraw(pager: Pager) {.jsfunc.} =
     if pager.container.select != nil:
       pager.container.select.redraw = true
 
-proc loadCachedImage(pager: Pager; container: Container; bmp: NetworkBitmap) =
+proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap) =
   #TODO this is kinda dumb, because we cannot unload cached images.
   # ideally the filesystem cache should serve as the only cache, but right
   # now it's just sort of a temporary place before the image is dumped to
@@ -481,22 +482,42 @@ proc loadCachedImage(pager: Pager; container: Container; bmp: NetworkBitmap) =
   # load start" event in container, and then add one in the pager?
   # the first option seems better; it's simpler, and buffers can add arbitrary
   # cache files if they just tell the pager it's an image anyway.
-  let cacheId = pager.loader.addCacheFile(bmp.outputId,
-    pager.loader.clientPid, container.process)
-  let request = newRequest(newURL("cache:" & $cacheId).get)
+  let bmp = NetworkBitmap(image.bmp)
+  let request = newRequest(newURL("cache:" & $bmp.cacheId).get)
   let cachedImage = CachedImage(bmp: bmp)
-  pager.loader.fetch(request).then(proc(res: JSResult[Response]): EmptyPromise =
+  pager.loader.shareCachedItem(bmp.cacheId, pager.loader.clientPid,
+    container.process)
+  pager.loader.fetch(request).then(proc(res: JSResult[Response]):
+      Promise[JSResult[Response]] =
     if res.isNone:
-      let i = container.cachedImages.find(cachedImage)
-      container.cachedImages.del(i)
-      return nil
-    return res.get.saveToBitmap(bmp)
+      return
+    let response = res.get
+    let headers = newHeaders()
+    if uint64(image.width) != bmp.width or uint64(image.height) != bmp.height:
+      headers.add("Cha-Image-Target-Dimensions", $image.width & 'x' &
+        $image.height)
+    let request = newRequest(
+      newURL("img-codec+" & bmp.contentType.after('/') & ":decode").get,
+      httpMethod = hmPost,
+      headers = headers,
+      body = RequestBody(t: rbtOutput, outputId: response.outputId),
+    )
+    let r = pager.loader.fetch(request)
+    response.resume()
+    response.unregisterFun()
+    response.body.sclose()
+    return r
+  ).then(proc(res: JSResult[Response]): EmptyPromise =
+    let response = res.get
+    # take target sizes
+    bmp.width = uint64(image.width)
+    bmp.height = uint64(image.height)
+    return response.saveToBitmap(bmp)
   ).then(proc() =
     container.redraw = true
     cachedImage.loaded = true
-    pager.loader.removeCachedItem(cacheId)
+    pager.loader.removeCachedItem(bmp.cacheId)
   )
-  pager.loader.resume(bmp.outputId) # get rid of dangling output
   container.cachedImages.add(cachedImage)
 
 proc initImages(pager: Pager; container: Container) =
@@ -509,7 +530,7 @@ proc initImages(pager: Pager; container: Container) =
       let cached = container.findCachedImage(bmp.imageId)
       imageId = bmp.imageId
       if cached == nil:
-        pager.loadCachedImage(container, bmp)
+        pager.loadCachedImage(container, image)
         continue
       image.bmp = cached.bmp
       if not cached.loaded:

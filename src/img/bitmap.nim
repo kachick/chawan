@@ -9,8 +9,9 @@ type
   ImageBitmap* = ref object of Bitmap
 
   NetworkBitmap* = ref object of Bitmap
-    outputId*: int
+    cacheId*: int
     imageId*: int
+    contentType*: string
 
 proc newBitmap*(width, height: uint64): ImageBitmap =
   return ImageBitmap(

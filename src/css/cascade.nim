@@ -570,8 +570,9 @@ proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
   let elem = Element(styledChild.node)
   styledStack.stackAppend(frame, styledChild, peAfter, idx, parentDeclMap)
   case elem.tagType
-  of TAG_TEXTAREA: styledStack.stackAppend(frame, styledChild, peTextareaText, idx)
-  of TAG_IMG, TAG_IMAGE: styledStack.stackAppend(frame, styledChild, peImage, idx)
+  of TAG_TEXTAREA:
+    styledStack.stackAppend(frame, styledChild, peTextareaText, idx)
+  of TAG_IMG: styledStack.stackAppend(frame, styledChild, peImage, idx)
   of TAG_VIDEO: styledStack.stackAppend(frame, styledChild, peVideo, idx)
   of TAG_AUDIO: styledStack.stackAppend(frame, styledChild, peAudio, idx)
   of TAG_BR: styledStack.stackAppend(frame, styledChild, peNewline, idx)

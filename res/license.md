@@ -115,6 +115,7 @@ SOFTWARE.
 
 ## STB image
 
-The stb_image and stb_image_write libraries by Sean T. Barrett et al. are used
-for image transcoding. These libraries is dedicated to the public domain, and
-are distributed under the same terms as Chawan.
+The stb_image, stb_image_write and stb_image_resize libraries by
+Sean Barrett et al. are used for image transcoding. These libraries
+are dedicated to the public domain, and are distributed under the same
+terms as Chawan.

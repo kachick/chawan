@@ -129,6 +129,10 @@ proc onReadText(response: Response) =
       opaque.buf.setLen(olen)
       break
 
+proc resume*(response: Response) =
+  response.resumeFun(response.outputId)
+  response.resumeFun = nil
+
 proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   if response.body == nil:
     let p = newPromise[JSResult[string]]()
@@ -144,8 +148,7 @@ proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   response.opaque = opaque
   response.onRead = onReadText
   response.bodyUsed = true
-  response.resumeFun(response.outputId)
-  response.resumeFun = nil
+  response.resume()
   return response.bodyRead.then(proc(): JSResult[string] =
     let charset = response.getCharset(CHARSET_UTF_8)
     ok(opaque.buf.decodeAll(charset))
@@ -183,8 +186,7 @@ proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
   response.opaque = opaque
   response.onRead = onReadBlob
   response.bodyUsed = true
-  response.resumeFun(response.outputId)
-  response.resumeFun = nil
+  response.resume()
   let contentType = response.getContentType()
   return response.bodyRead.then(proc(): JSResult[Blob] =
     let p = realloc(opaque.p, opaque.len)
@@ -220,8 +222,7 @@ proc saveToBitmap*(response: Response; bmp: Bitmap): EmptyPromise =
   response.opaque = opaque
   response.onRead = onReadBitmap
   response.bodyUsed = true
-  response.resumeFun(response.outputId)
-  response.resumeFun = nil
+  response.resume()
   return response.bodyRead
 
 proc json(ctx: JSContext; this: Response): Promise[JSResult[JSValue]]

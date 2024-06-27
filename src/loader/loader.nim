@@ -174,6 +174,16 @@ func findCachedHandle(ctx: LoaderContext; cacheId: int): LoaderHandle =
 type PushBufferResult = enum
   pbrDone, pbrUnregister
 
+proc register(ctx: LoaderContext; output: OutputHandle) =
+  assert not output.registered
+  ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
+  output.registered = true
+
+proc unregister(ctx: LoaderContext; output: OutputHandle) =
+  assert output.registered
+  ctx.selector.unregister(output.ostream.fd)
+  output.registered = false
+
 # Either write data to the target output, or append it to the list of buffers to
 # write and register the output in our selector.
 proc pushBuffer(ctx: LoaderContext; output: OutputHandle; buffer: LoaderBuffer;
@@ -203,8 +213,7 @@ proc pushBuffer(ctx: LoaderContext; output: OutputHandle; buffer: LoaderBuffer;
     if n < buffer.len:
       output.currentBuffer = buffer
       output.currentBufferIdx = n
-      ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
-      output.registered = true
+      ctx.register(output)
   else:
     output.buffers.addLast(buffer)
   pbrDone
@@ -213,8 +222,11 @@ proc getOutputId(ctx: LoaderContext): int =
   result = ctx.outputNum
   inc ctx.outputNum
 
-proc redirectToStream(ctx: LoaderContext; output: OutputHandle;
-    ps: PosixStream): bool =
+proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
+    targetPath: string): bool =
+  let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY, 0o600)
+  if ps == nil:
+    return false
   try:
     if output.currentBuffer != nil:
       let n = ps.sendData(output.currentBuffer, output.currentBufferIdx)
@@ -227,7 +239,7 @@ proc redirectToStream(ctx: LoaderContext; output: OutputHandle;
         ps.sclose()
         return false
   except ErrorBrokenPipe:
-    # ps or output is dead; give up.
+    # ps is dead; give up.
     ps.sclose()
     return false
   if output.istreamAtEnd:
@@ -240,13 +252,6 @@ proc redirectToStream(ctx: LoaderContext; output: OutputHandle;
       outputId: ctx.getOutputId()
     ))
   return true
-
-proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
-    targetPath: string): bool =
-  let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY, 0o600)
-  if ps == nil:
-    return false
-  return ctx.redirectToStream(output, ps)
 
 proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
     int =
@@ -326,8 +331,7 @@ proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: LoaderHandle) =
     output.parent = nil
     let i = handle.outputs.find(output)
     if output.registered:
-      ctx.selector.unregister(output.ostream.fd)
-      output.registered = false
+      ctx.unregister(output)
     handle.outputs.del(i)
   for output in handle.outputs:
     if r == hrrBrokenPipe:
@@ -397,8 +401,8 @@ proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: LoaderHandle;
   else:
     handle.sendResult(ERROR_URL_NOT_IN_CACHE)
 
-proc loadResource(ctx: LoaderContext; client: ClientData; config: LoaderClientConfig;
-    request: Request; handle: LoaderHandle) =
+proc loadResource(ctx: LoaderContext; client: ClientData;
+    config: LoaderClientConfig; request: Request; handle: LoaderHandle) =
   var redo = true
   var tries = 0
   var prevurl: URL = nil
@@ -419,16 +423,18 @@ proc loadResource(ctx: LoaderContext; client: ClientData; config: LoaderClientCo
         config.insecureSSLNoVerify, ostream)
       if handle.istream != nil:
         if ostream != nil:
-          let output = ctx.findOutput(request.body.outputId, client)
-          if output != nil:
-            if not ctx.redirectToStream(output, ostream):
-              # give up.
-              handle.rejectHandle(ERROR_FAILED_TO_REDIRECT)
-              return
+          let outputIn = ctx.findOutput(request.body.outputId, client)
+          if outputIn != nil:
+            ostream.setBlocking(false)
+            let output = outputIn.tee(ostream, ctx.getOutputId(), client.pid)
+            ctx.outputMap[ostream.fd] = output
+            output.suspended = false
+            ctx.register(output)
           else:
             ostream.sclose()
         ctx.addFd(handle)
       else:
+        assert ostream == nil
         handle.close()
     elif request.url.scheme == "stream":
       ctx.loadStream(handle, request)
@@ -538,16 +544,15 @@ proc removeClient(ctx: LoaderContext; stream: SocketStream;
     ctx.clientData.del(pid)
   stream.sclose()
 
-proc addCacheFile(ctx: LoaderContext; stream: SocketStream;
+proc addCacheFile(ctx: LoaderContext; stream: SocketStream; client: ClientData;
     r: var BufferedReader) =
   var outputId: int
   var targetPid: int
-  var sourcePid: int
   r.sread(outputId)
+  #TODO get rid of targetPid
   r.sread(targetPid)
-  r.sread(sourcePid)
-  let sourceClient = ctx.clientData[sourcePid]
-  let output = ctx.findOutput(outputId, sourceClient)
+  doAssert ctx.isPrivileged(client) or client.pid == targetPid
+  let output = ctx.findOutput(outputId, client)
   assert output != nil
   let targetClient = ctx.clientData[targetPid]
   let id = ctx.addCacheFile(targetClient, output)
@@ -613,10 +618,11 @@ proc tee(ctx: LoaderContext; stream: SocketStream; client: ClientData;
   var targetPid: int
   r.sread(sourceId)
   r.sread(targetPid)
-  let output = ctx.findOutput(sourceId, client)
-  if output != nil:
+  let outputIn = ctx.findOutput(sourceId, client)
+  if outputIn != nil:
     let id = ctx.getOutputId()
-    output.tee(stream, id, targetPid)
+    let output = outputIn.tee(stream, id, targetPid)
+    ctx.outputMap[output.ostream.fd] = output
     stream.withPacketWriter w:
       w.swrite(id)
     stream.setBlocking(false)
@@ -635,8 +641,7 @@ proc suspend(ctx: LoaderContext; stream: SocketStream; client: ClientData;
       output.suspended = true
       if output.registered:
         # do not waste cycles trying to push into output
-        output.registered = false
-        ctx.selector.unregister(output.ostream.fd)
+        ctx.unregister(output)
 
 proc resume(ctx: LoaderContext; stream: SocketStream; client: ClientData;
     r: var BufferedReader) =
@@ -646,9 +651,7 @@ proc resume(ctx: LoaderContext; stream: SocketStream; client: ClientData;
     let output = ctx.findOutput(id, client)
     if output != nil:
       output.suspended = false
-      assert not output.registered
-      output.registered = true
-      ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
+      ctx.register(output)
 
 proc equalsConstantTime(a, b: ClientKey): bool =
   static:
@@ -690,9 +693,6 @@ proc acceptConnection(ctx: LoaderContext) =
       of lcRemoveClient:
         privileged_command
         ctx.removeClient(stream, r)
-      of lcAddCacheFile:
-        privileged_command
-        ctx.addCacheFile(stream, r)
       of lcShareCachedItem:
         privileged_command
         ctx.shareCachedItem(stream, r)
@@ -708,6 +708,8 @@ proc acceptConnection(ctx: LoaderContext) =
       of lcGetCacheFile:
         privileged_command
         ctx.getCacheFile(stream, client, r)
+      of lcAddCacheFile:
+        ctx.addCacheFile(stream, client, r)
       of lcRemoveCachedItem:
         ctx.removeCachedItem(stream, client, r)
       of lcLoad:
@@ -812,8 +814,7 @@ proc handleWrite(ctx: LoaderContext; output: OutputHandle;
       unregWrite.add(output)
     else:
       # all buffers sent, no need to select on this output again for now
-      output.registered = false
-      ctx.selector.unregister(output.ostream.fd)
+      ctx.unregister(output)
 
 proc finishCycle(ctx: LoaderContext; unregRead: var seq[LoaderHandle];
     unregWrite: var seq[OutputHandle]) =
@@ -835,7 +836,7 @@ proc finishCycle(ctx: LoaderContext; unregRead: var seq[LoaderHandle];
   for output in unregWrite:
     if output.ostream != nil:
       if output.registered:
-        ctx.selector.unregister(output.ostream.fd)
+        ctx.unregister(output)
       ctx.outputMap.del(output.ostream.fd)
       output.oclose()
       let handle = output.parent
@@ -973,20 +974,14 @@ proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
   r.sread(outputId)
   return (stream, outputId)
 
-# sourcePid is the PID of the output's owner. This is used in pager for images,
-# so that we can be sure that a container only loads images on the page that
-# it owns.
-proc addCacheFile*(loader: FileLoader; outputId, targetPid: int;
-    sourcePid = -1): int =
+proc addCacheFile*(loader: FileLoader; outputId, targetPid: int): int =
   let stream = loader.connect()
   if stream == nil:
     return -1
-  let sourcePid = if sourcePid == -1: loader.clientPid else: sourcePid
   stream.withLoaderPacketWriter loader, w:
     w.swrite(lcAddCacheFile)
     w.swrite(outputId)
     w.swrite(targetPid)
-    w.swrite(sourcePid)
   var r = stream.initPacketReader()
   var outputId: int
   r.sread(outputId)
@@ -1098,12 +1093,13 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
     stream.sclose()
   return response
 
-proc shareCachedItem*(loader: FileLoader; id, targetPid: int) =
+proc shareCachedItem*(loader: FileLoader; id, targetPid: int; sourcePid = -1) =
   let stream = loader.connect()
   if stream != nil:
+    let sourcePid = if sourcePid != -1: sourcePid else: loader.clientPid
     stream.withLoaderPacketWriter loader, w:
       w.swrite(lcShareCachedItem)
-      w.swrite(loader.clientPid)
+      w.swrite(sourcePid)
       w.swrite(targetPid)
       w.swrite(id)
     stream.sclose()

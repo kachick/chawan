@@ -17,7 +17,10 @@ type stbi_io_callbacks = object
 
 proc stbi_load_from_callbacks(clbk: ptr stbi_io_callbacks; user: pointer;
   x, y, channels_in_file: var cint; desired_channels: cint):
-  ptr UncheckedArray[uint8] {.importc.}
+  ptr uint8 {.importc.}
+
+proc stbi_info_from_callbacks(clbk: ptr stbi_io_callbacks; user: pointer;
+  x, y, comp: var cint): cint {.importc.}
 
 proc stbi_failure_reason(): cstring {.importc.}
 
@@ -31,10 +34,7 @@ proc mySkip(user: pointer; n: cint) {.cdecl.} =
   let n = int(n)
   var i = 0
   while i < n:
-    let j = stdin.readBuffer(addr data[0], n - i)
-    if j < data.len:
-      break
-    i += j
+    i += stdin.readBuffer(addr data[0], min(n - i, data.len))
 
 proc myEof(user: pointer): cint {.cdecl.} =
   return cint(stdin.endOfFile())
@@ -51,6 +51,11 @@ proc stbi_write_jpg_to_func(fun: stbi_write_func; context: pointer;
 proc myWriteFunc(context, data: pointer; size: cint) {.cdecl.} =
   discard stdout.writeBuffer(data, size)
 
+proc stbir_resize_uint8(input_pixels: ptr uint8;
+  input_w, input_h, input_stride_in_bytes: cint; output_pixels: ptr uint8;
+  output_w, output_h, output_stride_in_bytes, num_channels: cint): cint
+  {.importc.}
+
 proc main() =
   enterNetworkSandbox()
   let scheme = getEnv("MAPPED_URI_SCHEME")
@@ -59,6 +64,7 @@ proc main() =
   of "decode":
     if f notin ["jpeg", "gif", "bmp", "png", "x-unknown"]:
       stdout.write("Cha-Control: ConnectionError 1 unknown format " & f)
+      return
     var x: cint
     var y: cint
     var channels_in_file: cint
@@ -67,14 +73,51 @@ proc main() =
       skip: mySkip,
       eof: myEof
     )
+    let headers = getEnv("REQUEST_HEADERS")
+    var targetWidth = cint(-1)
+    var targetHeight = cint(-1)
+    var infoOnly = false
+    for hdr in headers.split('\n'):
+      let v = hdr.after(':').strip()
+      case hdr.until(':')
+      of "Cha-Image-Info-Only":
+        infoOnly = v == "1"
+      of "Cha-Image-Target-Dimensions":
+        let s = v.split('x')
+        if s.len != 2:
+          stdout.write("Cha-Control: ConnectionError 1 wrong dimensions")
+          return
+        let w = parseUInt32(s[0], allowSign = false)
+        let h = parseUInt32(s[1], allowSign = false)
+        if w.isNone or w.isNone:
+          stdout.write("Cha-Control: ConnectionError 1 wrong dimensions")
+          return
+        targetWidth = cint(w.get)
+        targetHeight = cint(h.get)
+    if infoOnly:
+      if stbi_info_from_callbacks(addr clbk, nil, x, y, channels_in_file) == 1:
+        stdout.write("Cha-Image-Dimensions: " & $x & "x" & $y & "\n\n")
+      else:
+        stdout.write("Cha-Control: ConnectionError 1 stbi error " &
+          $stbi_failure_reason())
+      return
     let p = stbi_load_from_callbacks(addr clbk, nil, x, y, channels_in_file, 4)
     if p == nil:
       stdout.write("Cha-Control: ConnectionError 1 stbi error " &
         $stbi_failure_reason())
-      return
-    stdout.write("Cha-Image-Dimensions: " & $x & "x" & $y & "\n\n")
-    discard stdout.writeBuffer(p, x * y * 4)
-    stbi_image_free(p)
+    elif targetWidth != -1 and targetHeight != -1:
+      let p2 = cast[ptr uint8](alloc(targetWidth * targetWidth * 4))
+      doAssert stbir_resize_uint8(p, x, y, 0, p2, targetWidth, targetHeight, 0,
+        4) == 1
+      stdout.write("Cha-Image-Dimensions: " & $targetWidth & "x" &
+        $targetHeight & "\n\n")
+      discard stdout.writeBuffer(p2, targetWidth * targetHeight * 4)
+      dealloc(p2)
+      stbi_image_free(p)
+    else:
+      stdout.write("Cha-Image-Dimensions: " & $x & "x" & $y & "\n\n")
+      discard stdout.writeBuffer(p, x * y * 4)
+      stbi_image_free(p)
   of "encode":
     let headers = getEnv("REQUEST_HEADERS")
     var quality = cint(50)
@@ -84,7 +127,6 @@ proc main() =
       case hdr.until(':')
       of "Cha-Image-Dimensions":
         let s = hdr.after(':').strip().split('x')
-        #TODO error handling
         let w = parseUInt32(s[0], allowSign = false)
         let h = parseUInt32(s[1], allowSign = false)
         if w.isNone or w.isNone:

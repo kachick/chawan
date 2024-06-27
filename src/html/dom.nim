@@ -2911,46 +2911,52 @@ proc loadResource(window: Window; image: HTMLImageElement) =
       # mixed content :/
       #TODO maybe do this in loader?
       url.scheme = "https"
-    let p = window.loader.fetch(newRequest(url))
-      .then(proc(res: JSResult[Response]): Promise[JSResult[Response]] =
+    let p = window.loader.fetch(newRequest(url)).then(
+      proc(res: JSResult[Response]): EmptyPromise =
         if res.isNone:
           return
         let response = res.get
         let contentType = response.getContentType("image/x-unknown")
         if contentType.until('/') != "image":
           return
+        let cacheId = window.loader.addCacheFile(response.outputId,
+          window.loader.clientPid)
         let request = newRequest(
           newURL("img-codec+" & contentType.after('/') & ":decode").get,
           httpMethod = hmPost,
-          body = RequestBody(t: rbtOutput, outputId: response.outputId)
+          headers = newHeaders({"Cha-Image-Info-Only": "1"}),
+          body = RequestBody(t: rbtOutput, outputId: response.outputId),
         )
         let r = window.loader.fetch(request)
-        window.loader.resume(response.outputId)
+        response.resume()
         response.unregisterFun()
         response.body.sclose()
-        return r
-      ).then(proc(res: JSResult[Response]): EmptyPromise =
-        if res.isNone:
-          return
-        let response = res.get
-        # we can close immediately; loader will not clean this output up until
-        # the `resume' command in pager.
-        response.unregisterFun()
-        response.body.sclose()
-        if "Cha-Image-Dimensions" notin response.headers.table:
-          window.console.error("Cha-Image-Dimensions missing in", $response.url)
-          return
-        let dims = response.headers.table["Cha-Image-Dimensions"][0]
-        let width = parseUInt64(dims.until('x'), allowSign = false)
-        let height = parseUInt64(dims.after('x'), allowSign = false)
-        if width.isNone or height.isNone:
-          window.console.error("wrong Cha-Image-Dimensions in", $response.url)
-          return
-        image.bitmap = NetworkBitmap(
-          width: width.get,
-          height: height.get,
-          outputId: response.outputId,
-          imageId: window.getImageId()
+        return r.then(proc(res: JSResult[Response]): EmptyPromise =
+          if res.isNone:
+            window.console.error("Failed to decode", $response.url)
+            return
+          let response = res.get
+          # close immediately; all data we're interested in is in the headers.
+          response.resume()
+          response.unregisterFun()
+          response.body.sclose()
+          if "Cha-Image-Dimensions" notin response.headers.table:
+            window.console.error("Cha-Image-Dimensions missing in",
+              $response.url)
+            return
+          let dims = response.headers.table["Cha-Image-Dimensions"][0]
+          let width = parseUInt64(dims.until('x'), allowSign = false)
+          let height = parseUInt64(dims.after('x'), allowSign = false)
+          if width.isNone or height.isNone:
+            window.console.error("wrong Cha-Image-Dimensions in", $response.url)
+            return
+          image.bitmap = NetworkBitmap(
+            width: width.get,
+            height: height.get,
+            cacheId: cacheId,
+            imageId: window.getImageId(),
+            contentType: contentType
+          )
         )
       )
     window.loadingResourcePromises.add(p)

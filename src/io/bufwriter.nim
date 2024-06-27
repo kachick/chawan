@@ -208,5 +208,6 @@ proc swrite*(writer: var BufferedWriter; bmp: Bitmap) =
   if bmp of ImageBitmap:
     writer.swrite(bmp.px)
   else:
-    writer.swrite(NetworkBitmap(bmp).outputId)
+    writer.swrite(NetworkBitmap(bmp).cacheId)
     writer.swrite(NetworkBitmap(bmp).imageId)
+    writer.swrite(NetworkBitmap(bmp).contentType)

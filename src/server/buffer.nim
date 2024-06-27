@@ -1022,6 +1022,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     let c = ps.sreadChar()
     assert c == char(0)
     ps.sclose()
+    #TODO share cached images with new buffer
     buffer.loader.resume(ids)
     return pid
 

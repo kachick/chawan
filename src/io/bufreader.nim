@@ -230,13 +230,16 @@ proc sread*(reader: var BufferedReader; bmp: var Bitmap) =
     )
     reader.sread(bmp.px)
   else:
-    var outputId: int
+    var cacheId: int
     var imageId: int
-    reader.sread(outputId)
+    var contentType: string
+    reader.sread(cacheId)
     reader.sread(imageId)
+    reader.sread(contentType)
     bmp = NetworkBitmap(
       width: width,
       height: height,
-      outputId: outputId,
-      imageId: imageId
+      cacheId: cacheId,
+      imageId: imageId,
+      contentType: contentType
     )
