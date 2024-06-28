@@ -403,7 +403,7 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
   of scMinContent, scMaxContent: ictx.size.w
   of scFitContent: ictx.space.w.u
   of scStretch: max(ictx.size.w, ictx.space.w.u)
-  var xshift = case ictx.computed{"text-align"}
+  let xshift = case ictx.computed{"text-align"}
   of TextAlignNone: LayoutUnit(0)
   of TextAlignEnd, TextAlignRight, TextAlignChaRight:
     let width = min(width, ictx.lbstate.availableWidth)
@@ -460,6 +460,7 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
         size: size(w = w, h = cellHeight)
       ))
   for (fragment, i) in ictx.lbstate.paddingTodo:
+    fragment.state.areas[i].offset.x += xshift
     fragment.state.areas[i].offset.y = areaY
   if ictx.space.w.t == scFitContent:
     ictx.size.w = max(totalWidth, ictx.size.w)
