@@ -642,6 +642,7 @@ proc suspend(ctx: LoaderContext; stream: SocketStream; client: ClientData;
       if output.registered:
         # do not waste cycles trying to push into output
         ctx.unregister(output)
+  stream.sclose()
 
 proc resume(ctx: LoaderContext; stream: SocketStream; client: ClientData;
     r: var BufferedReader) =
@@ -652,6 +653,7 @@ proc resume(ctx: LoaderContext; stream: SocketStream; client: ClientData;
     if output != nil:
       output.suspended = false
       ctx.register(output)
+  stream.sclose()
 
 proc equalsConstantTime(a, b: ClientKey): bool =
   static:
