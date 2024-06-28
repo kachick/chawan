@@ -30,6 +30,7 @@ examples.
 
 * [Start](#start)
 * [Search](#search)
+* [Buffer](#buffer)
 * [Encoding](#encoding)
 * [External](#external)
 * [Network](#network)
@@ -97,6 +98,64 @@ to true.<br>
 Warning: this is only useful for debugging. Disabling this option without
 manually redirecting standard error will result in error messages randomly
 appearing on your screen.</td>
+</tr>
+
+</table>
+
+## Buffer
+
+Buffer options are to be placed in the `[buffer]` section.
+
+Following is a list of buffer options:
+
+<table>
+
+<tr>
+<th>Name</th>
+<th>Value</th>
+<th>Function</th>
+</tr>
+
+<tr>
+<td>styling</td>
+<td>boolean</td>
+<td>Enable/disable author style sheets. Note that disabling this does not affect
+user styles set in `[css]`.</td>
+</tr>
+
+<tr>
+<td>scripting</td>
+<td>boolean</td>
+<td>Enable/disable JavaScript in *all* buffers.<br>
+Defaults to false. For security reasons, users are encouraged to selectively
+enable JavaScript with `[[siteconf]]` instead of using this setting.</td>
+</tr>
+
+<tr>
+<td>images</td>
+<td>boolean</td>
+<td>Enable/disable experimental image support.<br>
+Defaults to false, but this may change in the future.</td>
+</tr>
+
+<tr>
+<td>cookie</td>
+<td>boolean</td>
+<td>Enable/disable cookies on sites.<br>
+Defaults to false.<br>
+Note that in Chawan, each website gets a separate cookie jar, so some websites
+relying on cross-site cookies may not work as expected. You may use the
+`[[siteconf]]` "cookie-jar" and "third-party-cookie" settings to adjust this
+behavior for specific sites.</td>
+</tr>
+
+<tr>
+<td>referer-from</td>
+<td>boolean</td>
+<td>Enable/disable the "Referer" header.<br>
+Defaults to false. For security reasons, users are encouraged to leave this
+option disabled, only enabling it for specific sites in `[[siteconf]]`.
+</td>
 </tr>
 
 </table>
@@ -389,6 +448,20 @@ completely.</td>
 </tr>
 
 <tr>
+<td>image-mode</td>
+<td>"auto" / "none" / "sixel" / "kitty"</td>
+<td>Specifies the image output mode. "sixel" uses sixels for output, "kitty"
+uses the Kitty image display protocol, "none" disables image display
+completely.<br>
+"auto" tries to detect sixel or kitty support, and falls back to "none" when
+neither are available.<br>
+Defaults to "auto". However, images are still disabled by default, unless you
+also enable `buffer.images` which allows the browser to actually download
+images.
+</td>
+</tr>
+
+<tr>
 <td>alt-screen</td>
 <td>"auto" / boolean</td>
 <td>Enable/disable the alternative screen.</td>
@@ -643,15 +716,29 @@ subdomains.</td>
 <td>Whether or not we should send a Referer header when opening requests
 originating from this domain. Simplified example: if you click a link on a.com
 that refers to b.com, and referer-from is true, b.com is sent "a.com" as the
-Referer header.  
-Defaults to false.
+Referer header.<br>
+Overrides `buffer.referer-from`. Defaults to false.
 </td>
 </tr>
 
 <tr>
 <td>scripting</td>
 <td>boolean</td>
-<td>Enable/disable JavaScript execution on this site.</td>
+<td>Enable/disable JavaScript execution on this site. Overrides
+`buffer.scripting`.</td>
+</tr>
+
+<tr>
+<td>styling</td>
+<td>boolean</td>
+<td>Enable/disable author styles (CSS) on this site. Overrides
+`buffer.styling`.</td>
+</tr>
+
+<tr>
+<td>images</td>
+<td>boolean</td>
+<td>Enable/disable image display on this site. Overrides `buffer.images`.</td>
 </tr>
 
 <tr>

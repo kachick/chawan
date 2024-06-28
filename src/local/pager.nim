@@ -1074,10 +1074,11 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
   let ctx = pager.jsctx
   var res = BufferConfig(
     userstyle: pager.config.css.stylesheet,
-    referer_from: false,
-    scripting: false,
+    referer_from: pager.config.buffer.referer_from,
+    scripting: pager.config.buffer.scripting,
     charsets: pager.config.encoding.document_charset,
-    images: false,
+    images: pager.config.buffer.images,
+    styling: pager.config.buffer.styling,
     isdump: pager.config.start.headless,
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol

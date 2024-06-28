@@ -134,6 +134,7 @@ type
   BufferConfig* = object
     userstyle*: string
     referer_from*: bool
+    styling*: bool
     scripting*: bool
     images*: bool
     isdump*: bool
@@ -870,6 +871,7 @@ proc setHTML(buffer: Buffer) =
   buffer.window = newWindow(
     buffer.config.scripting,
     buffer.config.images,
+    buffer.config.styling,
     buffer.selector,
     buffer.attrs,
     factory,

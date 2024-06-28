@@ -87,6 +87,7 @@ type
     factory*: CAtomFactory
     loadingResourcePromises*: seq[EmptyPromise]
     images*: bool
+    styling*: bool
     # ID of the next image
     imageId: int
 
@@ -2245,7 +2246,7 @@ func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
   return strictParseEnum[ReferrerPolicy](element.attr(satReferrerpolicy))
 
 proc sheets*(document: Document): seq[CSSStylesheet] =
-  if document.cachedSheetsInvalid:
+  if document.cachedSheetsInvalid and document.window.styling:
     document.cachedSheets.setLen(0)
     for elem in document.html.descendants:
       if elem of HTMLStyleElement:
@@ -2860,7 +2861,7 @@ var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window; link: HTMLLinkElement) =
-  if satStylesheet notin link.relList:
+  if not window.styling or satStylesheet notin link.relList:
     return
   if link.fetchStarted:
     return

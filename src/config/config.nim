@@ -59,6 +59,7 @@ type
     scripting*: Option[bool]
     document_charset*: seq[Charset]
     images*: Option[bool]
+    styling*: Option[bool]
     stylesheet*: Option[string]
     proxy*: Option[URL]
     default_headers*: TableRef[string, string]
@@ -140,12 +141,20 @@ type
   ProtocolConfig* = ref object
     form_request*: FormRequestType
 
+  BufferSectionConfig* = object
+    styling* {.jsgetset.}: bool
+    scripting* {.jsgetset.}: bool
+    images* {.jsgetset.}: bool
+    cookie* {.jsgetset.}: bool
+    referer_from* {.jsgetset.}: bool
+
   Config* = ref object
     jsctx: JSContext
     jsvfns*: seq[JSValueFunction]
     configdir {.jsget.}: string
     `include` {.jsget.}: seq[ChaPathResolved]
     start* {.jsget.}: StartConfig
+    buffer* {.jsget.}: BufferSectionConfig
     search* {.jsget.}: SearchConfig
     css* {.jsget.}: CSSConfig
     encoding* {.jsget.}: EncodingConfig
@@ -169,6 +178,7 @@ jsDestructor(EncodingConfig)
 jsDestructor(ExternalConfig)
 jsDestructor(NetworkConfig)
 jsDestructor(DisplayConfig)
+jsDestructor(BufferSectionConfig)
 jsDestructor(Config)
 
 converter toStr*(p: ChaPathResolved): string {.inline.} =
@@ -833,4 +843,5 @@ proc addConfigModule*(ctx: JSContext) =
   ctx.registerType(ExternalConfig)
   ctx.registerType(NetworkConfig)
   ctx.registerType(DisplayConfig)
+  ctx.registerType(BufferSectionConfig, name = "BufferConfig")
   ctx.registerType(Config)

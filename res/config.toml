@@ -231,6 +231,13 @@ form-request = "mailto"
 [protocol.data]
 form-request = "data"
 
+[buffer]
+styling = true
+images = false
+scripting = false
+referer-from = false
+cookie = false
+
 [search]
 wrap = true
 ignore-case = true

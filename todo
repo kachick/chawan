@@ -74,7 +74,6 @@ layout engine:
 - writing-mode, grid, ruby, ... (i.e. cool new stuff)
 images:
 - more efficient sixel display (store encoded images)
-- document it (when performance is acceptable)
 - proper sixel color register allocation, dithering
 - fix race condition where images decoded after buffer load won't display until
   reshape

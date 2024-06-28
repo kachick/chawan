@@ -236,7 +236,7 @@ proc runJSJobs*(window: Window) =
     let ctx = r.error
     ctx.writeException(window.console.err)
 
-proc newWindow*(scripting, images: bool; selector: Selector[int];
+proc newWindow*(scripting, images, styling: bool; selector: Selector[int];
     attrs: WindowAttributes; factory: CAtomFactory; navigate: proc(url: URL);
     loader: FileLoader; url: URL): Window =
   let err = newDynFileStream(stderr)
@@ -246,6 +246,7 @@ proc newWindow*(scripting, images: bool; selector: Selector[int];
     navigator: Navigator(),
     loader: loader,
     images: images,
+    styling: styling,
     settings: EnvironmentSettings(
       scripting: scripting,
       origin: url.origin
