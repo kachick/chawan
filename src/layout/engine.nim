@@ -1372,15 +1372,10 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
 
 proc addInlineImage(ictx: var InlineContext; state: var InlineState;
     bmp: Bitmap; padding: LayoutUnit) =
-  let h = int(bmp.height).toLayoutUnit().ceilTo(ictx.cellHeight)
-  let iastate = InlineAtomState(
-    vertalign: state.fragment.computed{"vertical-align"},
-    baseline: h
-  )
   let atom = InlineAtom(
     t: iatImage,
     bmp: bmp,
-    size: size(w = int(bmp.width), h = h), #TODO overflow
+    size: size(w = int(bmp.width), h = int(bmp.height)), #TODO overflow
   )
   let computed = state.fragment.computed
   let lctx = ictx.lctx
@@ -1396,6 +1391,10 @@ proc addInlineImage(ictx: var InlineContext; state: var InlineState;
       # maintain aspect ratio
       atom.size.w = atom.size.w div atom.size.h * h
     atom.size.h = h
+  let iastate = InlineAtomState(
+    vertalign: state.fragment.computed{"vertical-align"},
+    baseline: atom.size.h
+  )
   discard ictx.addAtom(state, iastate, atom)
 
 func calcLineHeight(computed: CSSComputedValues; lctx: LayoutContext):
