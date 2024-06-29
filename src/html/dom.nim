@@ -5,6 +5,7 @@ import std/options
 import std/sets
 import std/strutils
 import std/tables
+import std/times
 
 import chagashi/charset
 import chagashi/decoder
@@ -70,6 +71,12 @@ type
   Location = ref object
     window: Window
 
+  CachedURLImage = ref object
+    expiry: int64
+    loading: bool
+    shared: seq[HTMLImageElement]
+    bmp: NetworkBitmap
+
   Window* = ref object of EventTarget
     attrs*: WindowAttributes
     internalConsole*: Console
@@ -86,6 +93,7 @@ type
     importMapsAllowed*: bool
     factory*: CAtomFactory
     loadingResourcePromises*: seq[EmptyPromise]
+    imageURLCache: Table[string, CachedURLImage]
     images*: bool
     styling*: bool
     # ID of the next image
@@ -2912,6 +2920,16 @@ proc loadResource(window: Window; image: HTMLImageElement) =
       # mixed content :/
       #TODO maybe do this in loader?
       url.scheme = "https"
+    let surl = $url
+    window.imageURLCache.withValue(surl, p):
+      if p[].expiry > getTime().utc().toTime().toUnix():
+        image.bitmap = p[].bmp
+        return
+      elif p[].loading:
+        p[].shared.add(image)
+        return
+    let cachedURL = CachedURLImage(expiry: -1, loading: true)
+    window.imageURLCache[surl] = cachedURL
     let p = window.loader.fetch(newRequest(url)).then(
       proc(res: JSResult[Response]): EmptyPromise =
         if res.isNone:
@@ -2932,9 +2950,21 @@ proc loadResource(window: Window; image: HTMLImageElement) =
         response.resume()
         response.unregisterFun()
         response.body.sclose()
+        var expiry = -1i64
+        if "Cache-Control" in response.headers:
+          for hdr in response.headers.table["Cache-Control"]:
+            var i = hdr.find("max-age=")
+            if i != -1:
+              i = hdr.skipBlanks(i + "max-age=".len)
+              let s = hdr.until(AllChars - AsciiDigit, i)
+              let pi = parseInt64(s)
+              if pi.isSome:
+                expiry = getTime().utc().toTime().toUnix() + pi.get
+              break
+        cachedURL.loading = false
+        cachedURL.expiry = expiry
         return r.then(proc(res: JSResult[Response]): EmptyPromise =
           if res.isNone:
-            window.console.error("Failed to decode", $response.url)
             return
           let response = res.get
           # close immediately; all data we're interested in is in the headers.
@@ -2951,13 +2981,17 @@ proc loadResource(window: Window; image: HTMLImageElement) =
           if width.isNone or height.isNone:
             window.console.error("wrong Cha-Image-Dimensions in", $response.url)
             return
-          image.bitmap = NetworkBitmap(
+          let bmp = NetworkBitmap(
             width: width.get,
             height: height.get,
             cacheId: cacheId,
             imageId: window.getImageId(),
             contentType: contentType
           )
+          image.bitmap = bmp
+          cachedURL.bmp = bmp
+          for share in cachedURL.shared:
+            share.bitmap = bmp
         )
       )
     window.loadingResourcePromises.add(p)

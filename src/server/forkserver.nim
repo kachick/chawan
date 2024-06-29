@@ -4,6 +4,7 @@ import std/posix
 import std/selectors
 import std/tables
 
+import chagashi/charset
 import config/config
 import html/formdata
 import io/bufreader
@@ -21,8 +22,6 @@ import types/winattrs
 import utils/proctitle
 import utils/sandbox
 import utils/strwidth
-
-import chagashi/charset
 
 type
   ForkCommand = enum

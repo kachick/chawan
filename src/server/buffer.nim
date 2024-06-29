@@ -27,7 +27,6 @@ import html/enums
 import html/env
 import html/event
 import html/formdata as formdata_impl
-import img/bitmap
 import io/bufreader
 import io/bufstream
 import io/bufwriter
@@ -1699,7 +1698,7 @@ proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
   result.bgcolor = buffer.bgcolor
   if buffer.config.images:
     for image in buffer.images:
-      if image.y <= w.b and image.y + int(image.bmp.height) >= w.a:
+      if image.y <= w.b and image.y + image.height >= w.a:
         result.images.add(image)
 
 proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =

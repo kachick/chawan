@@ -474,17 +474,14 @@ proc redraw(pager: Pager) {.jsfunc.} =
       pager.container.select.redraw = true
 
 proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap) =
-  #TODO this is kinda dumb, because we cannot unload cached images.
-  # ideally the filesystem cache should serve as the only cache, but right
-  # now it's just sort of a temporary place before the image is dumped to
-  # memory.
-  # maybe allow the buffer to add a cache file? or receive a separate "image
-  # load start" event in container, and then add one in the pager?
-  # the first option seems better; it's simpler, and buffers can add arbitrary
-  # cache files if they just tell the pager it's an image anyway.
+  #TODO we should only cache the final output in memory, not the full bitmap.
   let bmp = NetworkBitmap(image.bmp)
   let request = newRequest(newURL("cache:" & $bmp.cacheId).get)
-  let cachedImage = CachedImage(bmp: bmp)
+  let cachedImage = CachedImage(
+    bmp: bmp,
+    width: image.width,
+    height: image.height
+  )
   pager.loader.shareCachedItem(bmp.cacheId, pager.loader.clientPid,
     container.process)
   pager.loader.fetch(request).then(proc(res: JSResult[Response]):
@@ -508,15 +505,18 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap) =
     response.body.sclose()
     return r
   ).then(proc(res: JSResult[Response]): EmptyPromise =
+    if res.isNone:
+      pager.loader.removeCachedItem(bmp.cacheId)
+      return newResolvedPromise()
     let response = res.get
     # take target sizes
     bmp.width = uint64(image.width)
     bmp.height = uint64(image.height)
-    return response.saveToBitmap(bmp)
-  ).then(proc() =
-    container.redraw = true
-    cachedImage.loaded = true
-    pager.loader.removeCachedItem(bmp.cacheId)
+    return response.saveToBitmap(bmp).then(proc() =
+      container.redraw = true
+      cachedImage.loaded = true
+      pager.loader.removeCachedItem(bmp.cacheId)
+    )
   )
   container.cachedImages.add(cachedImage)
 
@@ -525,9 +525,8 @@ proc initImages(pager: Pager; container: Container) =
   for image in container.images:
     var imageId = -1
     if image.bmp of NetworkBitmap:
-      # add cache file to pager, but source it from the container.
       let bmp = NetworkBitmap(image.bmp)
-      let cached = container.findCachedImage(bmp.imageId)
+      let cached = container.findCachedImage(image)
       imageId = bmp.imageId
       if cached == nil:
         pager.loadCachedImage(container, image)
@@ -538,7 +537,7 @@ proc initImages(pager: Pager; container: Container) =
     else:
       imageId = pager.imageId
       inc pager.imageId
-    let canvasImage = pager.term.loadImage(image.bmp, container.process, imageId,
+    let canvasImage = pager.term.loadImage(image, container.process, imageId,
       image.x - container.fromx, image.y - container.fromy, pager.bufWidth,
       pager.bufHeight)
     if canvasImage != nil:
@@ -548,6 +547,7 @@ proc initImages(pager: Pager; container: Container) =
 
 proc draw*(pager: Pager) =
   var redraw = false
+  var imageRedraw = false
   let container = pager.container
   if container != nil:
     if container.redraw:
@@ -558,6 +558,7 @@ proc draw*(pager: Pager) =
         container.highlightMarks(pager.display.grid, hlcolor)
       container.redraw = false
       pager.display.redraw = true
+      imageRedraw = true
     if (let select = container.select; select != nil and select.redraw):
       select.drawSelect(pager.display.grid)
       select.redraw = false
@@ -580,7 +581,7 @@ proc draw*(pager: Pager) =
     pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
     pager.status.redraw = false
     redraw = true
-  if container != nil and pager.term.imageMode != imNone:
+  if imageRedraw and pager.term.imageMode != imNone:
     # init images only after term canvas has been finalized
     pager.initImages(container)
   if redraw:

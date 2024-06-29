@@ -188,7 +188,7 @@ proc add*(cookiejar: CookieJar; cookies: seq[Cookie]) =
 proc serialize*(cookiejar: CookieJar; url: URL): string =
   if not cookiejar.filter.match(url):
     return "" # fail
-  let t = now().toTime().toUnix()
+  let t = getTime().utc().toTime().toUnix()
   #TODO sort
   for i in countdown(cookiejar.cookies.high, 0):
     let cookie = cookiejar.cookies[i]
@@ -208,10 +208,7 @@ proc serialize*(cookiejar: CookieJar; url: URL): string =
     result &= cookie.value
 
 proc newCookie*(str: string; url: URL = nil): JSResult[Cookie] {.jsctor.} =
-  let cookie = Cookie(
-    expires: -1,
-    created: now().toTime().toUnix()
-  )
+  let cookie = Cookie(expires: -1, created: getTime().utc().toTime().toUnix())
   var first = true
   var haspath = false
   var hasdomain = false
@@ -222,12 +219,8 @@ proc newCookie*(str: string; url: URL = nil): JSResult[Cookie] {.jsctor.} =
       first = false
       continue
     let part = part.strip(leading = true, trailing = false, AsciiWhitespace)
-    var n = 0
-    for i in 0..part.high:
-      if part[i] == '=':
-        n = i
-        break
-    if n == 0:
+    let n = part.find('=')
+    if n <= 0:
       continue
     let key = part.substr(0, n - 1)
     let val = part.substr(n + 1)

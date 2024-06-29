@@ -99,6 +99,8 @@ type
 
   CachedImage* = ref object
     loaded*: bool
+    width*: int
+    height*: int
     bmp*: NetworkBitmap
 
   Container* = ref object
@@ -2038,10 +2040,12 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
       hlformat.bgcolor = hlcolor
       display[y * display.width + x].format = hlformat
 
-func findCachedImage*(container: Container; id: int): CachedImage =
-  for image in container.cachedImages:
-    if image.bmp.imageId == id:
-      return image
+func findCachedImage*(container: Container; image: PosBitmap): CachedImage =
+  let imageId = NetworkBitmap(image.bmp).imageId
+  for it in container.cachedImages:
+    if it.bmp.imageId == imageId and it.width == image.width and
+        it.height == image.height:
+      return it
   return nil
 
 proc handleEvent*(container: Container) =

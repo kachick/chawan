@@ -7,20 +7,20 @@ import std/termios
 import std/unicode
 
 import bindings/termcap
+import chagashi/charset
+import chagashi/decoder
+import chagashi/encoder
 import config/config
 import img/bitmap
 import io/posixstream
 import js/base64
+import layout/renderdocument
 import types/cell
 import types/color
 import types/opt
 import types/winattrs
 import utils/strwidth
 import utils/twtstr
-
-import chagashi/charset
-import chagashi/decoder
-import chagashi/encoder
 
 #TODO switch away from termcap...
 
@@ -66,7 +66,7 @@ type
     damaged: bool
     marked*: bool
     kittyId: int
-    bmp: Bitmap
+    pbmp: PosBitmap
 
   Terminal* = ref object
     cs*: Charset
@@ -221,6 +221,9 @@ const ANSIColorMap = [
   rgb(0, 255, 255),
   rgb(255, 255, 255)
 ]
+
+template bmp(image: CanvasImage): Bitmap =
+  image.pbmp.bmp
 
 proc flush*(term: Terminal) =
   term.outfile.flushFile()
@@ -616,9 +619,12 @@ proc outputGrid*(term: Terminal) =
   term.cursorx = -1
   term.cursory = -1
 
-func findImage(term: Terminal; pid, imageId: int): CanvasImage =
+func findImage(term: Terminal; pid, imageId: int; pbmp: PosBitmap):
+    CanvasImage =
   for it in term.canvasImages:
-    if it.pid == pid and it.imageId == imageId:
+    if it.pid == pid and it.imageId == imageId and
+        it.pbmp.width == pbmp.width and it.pbmp.height == pbmp.height and
+        it.pbmp.x == pbmp.x and it.pbmp.y == pbmp.y:
       return it
   return nil
 
@@ -660,9 +666,9 @@ proc clearImages*(term: Terminal; maxh: int) =
       term.clearImage(image, maxh)
     image.marked = false
 
-proc loadImage*(term: Terminal; bmp: Bitmap; pid, imageId, x, y, maxw,
+proc loadImage*(term: Terminal; pbmp: PosBitmap; pid, imageId, x, y, maxw,
     maxh: int): CanvasImage =
-  if (let image = term.findImage(pid, imageId); image != nil):
+  if (let image = term.findImage(pid, imageId, pbmp); image != nil):
     # reuse image on screen
     if image.x != x or image.y != y:
       # only clear sixels; with kitty we just move the existing image
@@ -672,7 +678,7 @@ proc loadImage*(term: Terminal; bmp: Bitmap; pid, imageId, x, y, maxw,
         # no longer on screen
         return nil
     elif term.imageMode == imSixel:
-      # check if any line our image is on is damaged
+      # check if any line of our image is damaged
       let ey = min(image.y + int(image.bmp.height), maxh)
       let mx = (image.offx + image.dispw) div term.attrs.ppc
       for y in max(image.y, 0) ..< ey:
@@ -684,7 +690,7 @@ proc loadImage*(term: Terminal; bmp: Bitmap; pid, imageId, x, y, maxw,
     image.marked = true
     return image
   # new image
-  let image = CanvasImage(bmp: bmp, pid: pid, imageId: imageId)
+  let image = CanvasImage(pbmp: pbmp, pid: pid, imageId: imageId)
   if term.positionImage(image, x, y, maxw, maxh):
     return image
   # no longer on screen
