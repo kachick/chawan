@@ -152,10 +152,18 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     of "center", "middle": set_cv "text-align", TextAlignChaCenter
     of "left": set_cv "text-align", TextAlignChaLeft
     of "right": set_cv "text-align", TextAlignChaRight
+  template map_img_align =
+    case element.attr(satAlign).toLowerAscii()
+    of "left":
+      set_cv "float", FloatLeft
+      set_cv "display", DisplayBlock
+    of "right":
+      set_cv "float", FloatRight
+      set_cv "display", DisplayBlock
   template map_table_align =
     case element.attr(satAlign).toLowerAscii()
     of "left":
-     set_cv "float", FloatLeft
+      set_cv "float", FloatLeft
     of "right":
       set_cv "float", FloatRight
     of "center":
@@ -229,7 +237,11 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     map_align
   of TAG_COL:
     map_width
-  of TAG_IMG, TAG_CANVAS:
+  of TAG_IMG:
+    map_width
+    map_height
+    map_img_align
+  of TAG_CANVAS:
     map_width
     map_height
   of TAG_HTML:
