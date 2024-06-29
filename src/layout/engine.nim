@@ -1375,22 +1375,31 @@ proc addInlineImage(ictx: var InlineContext; state: var InlineState;
   let atom = InlineAtom(
     t: iatImage,
     bmp: bmp,
-    size: size(w = int(bmp.width), h = int(bmp.height)), #TODO overflow
+    size: size(w = int(bmp.width), h = int(bmp.height)) #TODO overflow
   )
   let computed = state.fragment.computed
   let lctx = ictx.lctx
-  if computed{"width"}.canpx(ictx.space.w):
+  let hasWidth = computed{"width"}.canpx(ictx.space.w)
+  let hasHeight = computed{"height"}.canpx(ictx.space.h)
+  if hasWidth:
     let w = computed{"width"}.spx(lctx, ictx.space.w, computed, padding)
-    if not computed{"height"}.canpx(ictx.space.h):
+    if not hasHeight:
       # maintain aspect ratio
       atom.size.h = atom.size.h div atom.size.w * w
     atom.size.w = w
-  if computed{"height"}.canpx(ictx.space.h):
+  if hasHeight:
     let h = computed{"height"}.spx(lctx, ictx.space.h, computed, padding)
-    if not computed{"width"}.canpx(ictx.space.w):
+    if not hasWidth:
       # maintain aspect ratio
       atom.size.w = atom.size.w div atom.size.h * h
     atom.size.h = h
+  if not hasWidth and not hasHeight:
+    if ictx.space.w.isDefinite() and atom.size.w > ictx.space.w.u:
+      atom.size.h = atom.size.h div atom.size.w * ictx.space.w.u
+      atom.size.w = ictx.space.w.u
+    if ictx.space.h.isDefinite() and atom.size.h > ictx.space.h.u:
+      atom.size.w = atom.size.w div atom.size.h * ictx.space.h.u
+      atom.size.h = ictx.space.h.u
   let iastate = InlineAtomState(
     vertalign: state.fragment.computed{"vertical-align"},
     baseline: atom.size.h
