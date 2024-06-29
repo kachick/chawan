@@ -749,7 +749,7 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
   let H = disph * int(bmp.width) # end at disph
   var m = y * term.attrs.width * term.attrs.ppl # track absolute y
   let realw = dispw - offx
-  let cx0 = x * term.attrs.ppc + offx
+  let cx0 = x * term.attrs.ppc
   while n < H:
     var bands = newSeq[SixelBand]()
     for i in 0 ..< 6:
