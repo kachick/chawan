@@ -106,7 +106,7 @@ proc main() =
       stdout.write("Cha-Control: ConnectionError 1 stbi error " &
         $stbi_failure_reason())
     elif targetWidth != -1 and targetHeight != -1:
-      let p2 = cast[ptr uint8](alloc(targetWidth * targetWidth * 4))
+      let p2 = cast[ptr uint8](alloc(targetWidth * targetHeight * 4))
       doAssert stbir_resize_uint8(p, x, y, 0, p2, targetWidth, targetHeight, 0,
         4) == 1
       stdout.write("Cha-Image-Dimensions: " & $targetWidth & "x" &
