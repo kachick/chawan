@@ -221,35 +221,41 @@ proc fromJSEmptyPromise*(ctx: JSContext; val: JSValue): JSResult[EmptyPromise] =
   return ok(p)
 
 proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue =
-  var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
+  if promise == nil:
+    return JS_NULL
+  var resolvingFuncs: array[2, JSValue]
+  let jsPromise = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
   promise.then(proc() =
-    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 0, nil)
+    let res = JS_Call(ctx, resolvingFuncs[0], JS_UNDEFINED, 0, nil)
     JS_FreeValue(ctx, res)
-    JS_FreeValue(ctx, resolving_funcs[0])
-    JS_FreeValue(ctx, resolving_funcs[1]))
+    JS_FreeValue(ctx, resolvingFuncs[0])
+    JS_FreeValue(ctx, resolvingFuncs[1]))
   return jsPromise
 
 proc toJS*[T](ctx: JSContext; promise: Promise[T]): JSValue =
-  var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
+  if promise == nil:
+    return JS_NULL
+  var resolvingFuncs: array[2, JSValue]
+  let jsPromise = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
   promise.then(proc(x: T) =
     let x = toJS(ctx, x)
-    let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
+    let res = JS_Call(ctx, resolvingFuncs[0], JS_UNDEFINED, 1,
       x.toJSValueArray())
     JS_FreeValue(ctx, res)
     JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, resolving_funcs[0])
-    JS_FreeValue(ctx, resolving_funcs[1]))
+    JS_FreeValue(ctx, resolvingFuncs[0])
+    JS_FreeValue(ctx, resolvingFuncs[1]))
   return jsPromise
 
 proc toJS*[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
-  var resolving_funcs: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, resolving_funcs.toJSValueArray())
+  if promise == nil:
+    return JS_NULL
+  var resolvingFuncs: array[2, JSValue]
+  let jsPromise = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
   promise.then(proc(x: Result[T, E]) =
@@ -258,7 +264,7 @@ proc toJS*[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
         JS_UNDEFINED
       else:
         toJS(ctx, x.get)
-      let res = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED, 1,
+      let res = JS_Call(ctx, resolvingFuncs[0], JS_UNDEFINED, 1,
         x.toJSValueArray())
       JS_FreeValue(ctx, res)
       JS_FreeValue(ctx, x)
@@ -267,10 +273,10 @@ proc toJS*[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
         JS_UNDEFINED
       else:
         toJS(ctx, x.error)
-      let res = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
+      let res = JS_Call(ctx, resolvingFuncs[1], JS_UNDEFINED, 1,
         x.toJSValueArray())
       JS_FreeValue(ctx, res)
       JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, resolving_funcs[0])
-    JS_FreeValue(ctx, resolving_funcs[1]))
+    JS_FreeValue(ctx, resolvingFuncs[0])
+    JS_FreeValue(ctx, resolvingFuncs[1]))
   return jsPromise

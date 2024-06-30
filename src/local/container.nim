@@ -1602,8 +1602,10 @@ proc cursorToggleSelection(container: Container; n = 1;
 proc getSelectionText(container: Container; hl: Highlight = nil):
     Promise[string] {.jsfunc.} =
   if container.iface == nil:
-    return
+    return nil
   let hl = if hl == nil: container.currentSelection else: hl
+  if hl == nil:
+    return nil
   if hl.t != hltSelect:
     let p = newPromise[string]()
     p.resolve("")
