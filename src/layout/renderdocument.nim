@@ -354,19 +354,21 @@ proc paintInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     let x2 = toInt(offset.x + area.offset.x + area.size.w)
     let y2 = toInt(offset.y + area.offset.y + area.size.h)
     grid.paintBackground(state, bgcolor, x1, y1, x2, y2, fragment.node)
-  if fragment.t == iftParent:
-    for child in fragment.children:
-      grid.paintInlineFragment(state, child, offset, bgcolor)
 
 proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
-    fragment: InlineFragment; offset: Offset) =
+    fragment: InlineFragment; offset: Offset; bgcolor0: ARGBColor) =
   let bgcolor = fragment.computed{"background-color"}
-  if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.argbcolor.a > 0:
-    #TODO color blending
-    grid.paintInlineFragment(state, fragment, offset, bgcolor)
+  var bgcolor0 = bgcolor0
+  case bgcolor.t
+  of ctNone: discard
+  of ctANSI: grid.paintInlineFragment(state, fragment, offset, bgcolor)
+  of ctRGB:
+    bgcolor0 = bgcolor0.blend(bgcolor.argbcolor)
+    if bgcolor0.a > 0:
+      grid.paintInlineFragment(state, fragment, offset, cellColor(bgcolor0))
   if fragment.t == iftParent:
     for child in fragment.children:
-      grid.renderInlineFragment(state, child, offset)
+      grid.renderInlineFragment(state, child, offset, bgcolor0)
   else:
     let format = fragment.computed.toFormat()
     for atom in fragment.state.atoms:
@@ -394,7 +396,8 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
 
 proc renderRootInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     root: RootInlineFragment; offset: Offset) =
-  grid.renderInlineFragment(state, root.fragment, root.state.offset + offset)
+  grid.renderInlineFragment(state, root.fragment, root.state.offset + offset,
+    rgba(0, 0, 0, 0))
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset) =
