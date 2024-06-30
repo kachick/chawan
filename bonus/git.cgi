@@ -31,7 +31,8 @@ for (const p of std.getenv("QUERY_STRING").split('&')) {
 }
 
 function startGitCmd(config, params) {
-	std.out.puts("Content-Type: text/html\n\n");
+	std.out.puts("Content-Type: text/html\n\n" +
+	"<style>form{display:inline} input{margin:0}</style>");
 	std.out.flush();
 	const [read_fd, write_fd] = os.pipe();
 	const [read_fd2, write_fd2] = os.pipe();
@@ -75,15 +76,23 @@ const cgi4 = `${cgi0}&params=stash%20apply`;
 if (params[0] == "log") {
 	runGitCmd(config, params, /[a-f0-9]{40}/g,
 		x => `<a href='${cgi1}%20${x}'>${x}</a>`)
-} else if (params[0] == "branch" && params.length == 1) {
+} else if (params[0] == "branch" && (params.length == 1 ||
+	params.length == 2 && params[1] == "--list")) {
 	runGitCmd(config, params, /^(\s+)([\w.-]+)$/g,
 		(_, ws, name) => `${ws}<a href='${cgi2}%20${name}'>${name}</a>\
- (<a href='${cgi3}%20${name}'>switch</a>)`);
+ <form method=POST action='${cgi3}%20${name}'><input type=submit value=switch></form>`);
 } else if (params[0] == "stash" && params[1] == "list") {
 	runGitCmd(config, params, /^stash@\{([0-9]+)\}/g,
 		(s, n) => `stash@{<a href='${cgi1}%20${s}'>${n}</a>}\
- (<a href='${cgi4}%20${s}'>apply</a>)`);
+ <form method=POST action='${cgi4}%20${s}'><input type=submit value=apply></form>`);
 } else {
+	const safeForGet = ["show", "diff", "blame", "status"];
+	if (std.getenv("REQUEST_METHOD") != "POST" &&
+		!safeForGet.includes(params[0])) {
+		std.out.puts(`Content-Type: text/plain\n\nnot allowed`);
+		std.out.flush();
+		std.exit(1);
+	}
 	const title = encodeURIComponent('git ' + params.join(' '));
 	std.out.puts(`Content-Type: text/x-ansi;title=${title}\n\n`);
 	std.out.flush();
