@@ -2141,6 +2141,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       it.child.state.margin[odim].start
     fctx.box.applyOverflowDimensions(it.child)
     offset[dim] += it.child.state.size[dim]
+    offset[dim] += it.child.state.margin[dim].send
   fctx.totalMaxSize[dim] = max(fctx.totalMaxSize[dim], offset[dim])
   fctx.mains.add(mctx)
   mctx = FlexMainContext()
@@ -2150,7 +2151,11 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   assert box.inline == nil
   let lctx = bctx.lctx
   var i = 0
-  var fctx = FlexContext(lctx: lctx, box: box)
+  var fctx = FlexContext(
+    lctx: lctx,
+    box: box,
+    offset: offset(x = sizes.padding.left, y = sizes.padding.top)
+  )
   var mctx = FlexMainContext()
   let flexDir = box.computed{"flex-direction"}
   let canWrap = box.computed{"flex-wrap"} != FlexWrapNowrap
@@ -2161,7 +2166,8 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       child.computed)
     let flexBasis = child.computed{"flex-basis"}
     if not flexBasis.auto:
-      childSizes.space[dim] = stretch(flexBasis.px(lctx, sizes.space[dim]))
+      childSizes.space[dim] = stretch(flexBasis.spx(lctx, sizes.space[dim],
+        child.computed, childSizes.padding[dim].sum()))
     lctx.layoutFlexChild(child, childSizes)
     if not flexBasis.auto and childSizes.space.w.isDefinite and
         child.state.xminwidth > childSizes.space.w.u:
