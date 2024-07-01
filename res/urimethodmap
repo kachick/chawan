@@ -21,3 +21,4 @@ img-codec+jpeg:		cgi-bin:stbi
 img-codec+gif:		cgi-bin:stbi
 img-codec+bmp:		cgi-bin:stbi
 img-codec+x-unknown:	cgi-bin:stbi
+img-codec+webp:		cgi-bin:jebp

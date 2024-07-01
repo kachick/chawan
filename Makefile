@@ -51,7 +51,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
-	$(OUTDIR_CGI_BIN)/stbi \
+	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc \
 	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
 
@@ -109,6 +109,8 @@ $(OUTDIR_CGI_BIN)/gopher: adapter/protocol/curlwrap.nim adapter/protocol/curlerr
 		src/loader/connecterror.nim $(twtstr)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h src/utils/sandbox.nim
+$(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h \
+		src/utils/sandbox.nim
 $(OUTDIR_LIBEXEC)/urldec: $(twtstr)
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/gophertypes.nim $(twtstr)
@@ -162,7 +164,8 @@ manpages = $(manpages1) $(manpages5)
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
 
-protocols = http about data file ftp gopher gmifetch cha-finger man spartan stbi
+protocols = http about data file ftp gopher gmifetch cha-finger man spartan \
+	stbi jebp
 converters = gopher2html md2html ansi2html gmi2html
 tools = urldec urlenc
 
