@@ -14,7 +14,7 @@ import config/config
 import img/bitmap
 import io/posixstream
 import js/base64
-import layout/renderdocument
+import types/blob
 import types/cell
 import types/color
 import types/opt
@@ -66,7 +66,11 @@ type
     damaged: bool
     marked*: bool
     kittyId: int
-    pbmp: PosBitmap
+    bmp: Bitmap
+    # absolute x, y in container
+    rx: int
+    ry: int
+    data: Blob
 
   Terminal* = ref object
     cs*: Charset
@@ -221,9 +225,6 @@ const ANSIColorMap = [
   rgb(0, 255, 255),
   rgb(255, 255, 255)
 ]
-
-template bmp(image: CanvasImage): Bitmap =
-  image.pbmp.bmp
 
 proc flush*(term: Terminal) =
   term.outfile.flushFile()
@@ -619,12 +620,12 @@ proc outputGrid*(term: Terminal) =
   term.cursorx = -1
   term.cursory = -1
 
-func findImage(term: Terminal; pid, imageId: int; pbmp: PosBitmap):
+func findImage(term: Terminal; pid, imageId: int; bmp: Bitmap; rx, ry: int):
     CanvasImage =
   for it in term.canvasImages:
     if it.pid == pid and it.imageId == imageId and
-        it.pbmp.width == pbmp.width and it.pbmp.height == pbmp.height and
-        it.pbmp.x == pbmp.x and it.pbmp.y == pbmp.y:
+        it.bmp.width == bmp.width and it.bmp.height == bmp.height and
+        it.rx == rx and it.ry == ry:
       return it
   return nil
 
@@ -666,9 +667,9 @@ proc clearImages*(term: Terminal; maxh: int) =
       term.clearImage(image, maxh)
     image.marked = false
 
-proc loadImage*(term: Terminal; pbmp: PosBitmap; pid, imageId, x, y, maxw,
-    maxh: int): CanvasImage =
-  if (let image = term.findImage(pid, imageId, pbmp); image != nil):
+proc loadImage*(term: Terminal; bmp: Bitmap; data: Blob; pid, imageId,
+    x, y, rx, ry, maxw, maxh: int): CanvasImage =
+  if (let image = term.findImage(pid, imageId, bmp, rx, ry); image != nil):
     # reuse image on screen
     if image.x != x or image.y != y:
       # only clear sixels; with kitty we just move the existing image
@@ -690,7 +691,14 @@ proc loadImage*(term: Terminal; pbmp: PosBitmap; pid, imageId, x, y, maxw,
     image.marked = true
     return image
   # new image
-  let image = CanvasImage(pbmp: pbmp, pid: pid, imageId: imageId)
+  let image = CanvasImage(
+    bmp: bmp,
+    pid: pid,
+    imageId: imageId,
+    data: data,
+    rx: rx,
+    ry: ry
+  )
   if term.positionImage(image, x, y, maxw, maxh):
     return image
   # no longer on screen
@@ -802,10 +810,10 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   const MaxBytes = 4096 * 3 div 4
   var i = MaxBytes
   # transcode to RGB
-  let p = cast[ptr UncheckedArray[uint8]](addr image.bmp.px[0])
-  let L = image.bmp.px.len * 4
+  let p = cast[ptr UncheckedArray[uint8]](image.data.buffer)
+  let L = int(image.data.size)
   let m = if i < L: '1' else: '0'
-  outs &= ",a=T,f=32,m=" & m & ';'
+  outs &= ",a=T,f=100,m=" & m & ';'
   outs.btoa(p.toOpenArray(0, min(L, i) - 1))
   outs &= ST
   term.write(outs)

@@ -22,6 +22,7 @@ import monoucha/javascript
 import monoucha/jsregex
 import monoucha/jstypes
 import server/buffer
+import types/blob
 import types/cell
 import types/color
 import types/cookie
@@ -101,6 +102,7 @@ type
     loaded*: bool
     width*: int
     height*: int
+    data*: Blob
     bmp*: NetworkBitmap
 
   Container* = ref object

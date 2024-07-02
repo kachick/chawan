@@ -127,7 +127,7 @@ elif defined(linux) and not disableSandbox:
     onSignal SIGSYS:
       discard sig
       raise newException(Defect, "Sandbox violation in network process")
-    let ctx = seccomp_init(SCMP_ACT_KILL_PROCESS)
+    let ctx = seccomp_init(SCMP_ACT_TRAP)
     doAssert pointer(ctx) != nil
     const allowList = [
       cstring"close", "exit_group", # duh
