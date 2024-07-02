@@ -12,7 +12,6 @@ display:
 	  both.
 - dark mode (basically max Y)
 - override bgcolor ourselves when terminal fails to report it
-- allow overriding ansi colors
 config:
 - important: config editor
 - completely replace siteconf; the new solution should:

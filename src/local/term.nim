@@ -100,6 +100,7 @@ type
     kittyId: int # counter for kitty image (*not* placement) ids.
     cursorx: int
     cursory: int
+    colorMap: array[16, RGBColor]
 
 # control sequence introducer
 template CSI(s: varargs[string, `$`]): string =
@@ -143,6 +144,11 @@ template XTSETTITLE(s: string): string =
 
 const XTGETFG = OSC(10, "?") # get foreground color
 const XTGETBG = OSC(11, "?") # get background color
+const XTGETANSI = block: # get ansi colors
+  var s = ""
+  for n in 0 ..< 16:
+    s &= OSC(4, n, "?")
+  s
 
 # DEC set
 template DECSET(s: varargs[string, `$`]): string =
@@ -205,26 +211,6 @@ proc readChar*(term: Terminal): char =
 
 template SGR*(s: varargs[string, `$`]): string =
   CSI(s) & "m"
-
-#TODO a) this should be customizable
-const ANSIColorMap = [
-  rgb(0, 0, 0),
-  rgb(205, 0, 0),
-  rgb(0, 205, 0),
-  rgb(205, 205, 0),
-  rgb(0, 0, 238),
-  rgb(205, 0, 205),
-  rgb(0, 205, 205),
-  rgb(229, 229, 229),
-  rgb(127, 127, 127),
-  rgb(255, 0, 0),
-  rgb(0, 255, 0),
-  rgb(255, 255, 0),
-  rgb(92, 92, 255),
-  rgb(255, 0, 255),
-  rgb(0, 255, 255),
-  rgb(255, 255, 255)
-]
 
 proc flush*(term: Terminal) =
   term.outfile.flushFile()
@@ -309,35 +295,40 @@ proc disableAltScreen(term: Terminal): string =
 func mincontrast(term: Terminal): int32 =
   return term.config.display.minimum_contrast
 
-proc getRGB(a: CellColor; termDefault: RGBColor): RGBColor =
+proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
   case a.t
   of ctNone:
     return termDefault
   of ctANSI:
     if a.color >= 16:
       return EightBitColor(a.color).toRGB()
-    return ANSIColorMap[a.color]
+    return term.colorMap[a.color]
   of ctRGB:
     return a.rgbcolor
 
 # Use euclidian distance to quantize RGB colors.
-proc approximateANSIColor(rgb, termDefault: RGBColor): CellColor =
-  var a = 0i32
+proc approximateANSIColor(term: Terminal; rgb, termDefault: RGBColor):
+    CellColor =
+  var a = 0
   var n = -1
-  for i in -1 .. ANSIColorMap.high:
+  if rgb == termDefault:
+    return defaultColor
+  for i in -1 .. term.colorMap.high:
     let color = if i >= 0:
-      ANSIColorMap[i]
+      term.colorMap[i]
     else:
       termDefault
     if color == rgb:
-      return if i == -1: defaultColor else: ANSIColor(i).cellColor()
-    let x = int32(color.r) - int32(rgb.r)
-    let y = int32(color.g) - int32(rgb.g)
-    let z = int32(color.b) - int32(rgb.b)
+      return ANSIColor(i).cellColor()
+    {.push overflowChecks:off.}
+    let x = int(color.r) - int(rgb.r)
+    let y = int(color.g) - int(rgb.g)
+    let z = int(color.b) - int(rgb.b)
     let xx = x * x
     let yy = y * y
     let zz = z * z
     let b = xx + yy + zz
+    {.pop.}
     if i == -1 or b < a:
       n = i
       a = b
@@ -347,8 +338,8 @@ proc approximateANSIColor(rgb, termDefault: RGBColor): CellColor =
 proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
   let contrast = term.mincontrast
   let cfgcolor = fgcolor
-  let bgcolor = getRGB(bgcolor, term.defaultBackground)
-  let fgcolor = getRGB(fgcolor, term.defaultForeground)
+  let bgcolor = term.getRGB(bgcolor, term.defaultBackground)
+  let fgcolor = term.getRGB(fgcolor, term.defaultForeground)
   let bgY = int(bgcolor.Y)
   var fgY = int(fgcolor.Y)
   let diff = abs(bgY - fgY)
@@ -370,7 +361,7 @@ proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
     of cmTrueColor:
       return cellColor(newrgb)
     of cmANSI:
-      return approximateANSIColor(newrgb, term.defaultForeground)
+      return term.approximateANSIColor(newrgb, term.defaultForeground)
     of cmEightBit:
       return cellColor(newrgb.toEightBit())
     of cmMonochrome:
@@ -406,13 +397,13 @@ proc processFormat*(term: Terminal; format: var Format; cellf: Format): string =
     if cellf.bgcolor.t == ctANSI and cellf.bgcolor.color > 15:
       cellf.bgcolor = cellf.fgcolor.eightbit.toRGB().cellColor()
     if cellf.bgcolor.t == ctRGB:
-      cellf.bgcolor = approximateANSIColor(cellf.bgcolor.rgbcolor,
+      cellf.bgcolor = term.approximateANSIColor(cellf.bgcolor.rgbcolor,
         term.defaultBackground)
     if cellf.fgcolor.t == ctANSI and cellf.fgcolor.color > 15:
       cellf.fgcolor = cellf.fgcolor.eightbit.toRGB().cellColor()
     if cellf.fgcolor.t == ctRGB:
       if cellf.bgcolor.t == ctNone:
-        cellf.fgcolor = approximateANSIColor(cellf.fgcolor.rgbcolor,
+        cellf.fgcolor = term.approximateANSIColor(cellf.fgcolor.rgbcolor,
           term.defaultForeground)
       else:
         # ANSI fgcolor + bgcolor at the same time is broken
@@ -770,7 +761,7 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
         var c0 = bmp.px[n + bx + offx]
         if c0.a != 255:
           let bgcolor0 = term.canvas[my + cx].format.bgcolor
-          let bgcolor = bgcolor0.getRGB(term.defaultBackground)
+          let bgcolor = term.getRGB(bgcolor0, term.defaultBackground)
           let c1 = bgcolor.blend(c0)
           c0 = RGBAColorBE(r: c1.r, g: c1.g, b: c1.b, a: c1.a)
         let c = uint8(c0.toEightBit())
@@ -926,23 +917,40 @@ type
     attrs: set[QueryAttrs]
     fgcolor: Option[RGBColor]
     bgcolor: Option[RGBColor]
+    colorMap: seq[tuple[n: int; rgb: RGBColor]]
     widthPx: int
     heightPx: int
     width: int
     height: int
     registers: int
 
+proc consumeIntUntil(term: Terminal; sentinel: char): int =
+  var n = 0
+  while (let c = term.readChar(); c != sentinel):
+    if (let x = decValue(c); x != -1):
+      n *= 10
+      n += x
+    else:
+      return -1
+  return n
+
 proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
   if not windowOnly:
-    const outs =
-      XTGETFG &
-      XTGETBG &
-      KITTYQUERY &
+    var outs = ""
+    if term.config.display.default_background_color.isNone:
+      outs &= XTGETBG
+    if term.config.display.default_foreground_color.isNone:
+      outs &= XTGETFG
+    if term.config.display.image_mode.isNone:
+      outs &= KITTYQUERY
+      outs &= XTSMGRAPHICS(1, 1, 0) # color registers
+    if term.config.display.color_mode.isNone:
+      outs &= XTGETTCAP("524742")
+    outs &=
+      XTGETANSI &
       GEOMPIXEL &
       GEOMCELL &
-      XTSMGRAPHICS(1, 1, 0) & # color registers
-      XTGETTCAP("524742") &
       DA1
     term.outfile.write(outs)
   else:
@@ -954,8 +962,10 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   term.flush()
   result = QueryResult(success: false, attrs: {})
   while true:
-    template consume(term: Terminal): char = term.readChar()
-    template fail = return
+    template consume(term: Terminal): char =
+      term.readChar()
+    template fail =
+      return
     template expect(term: Terminal; c: char) =
       if term.consume != c:
         fail
@@ -966,13 +976,9 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       while (let cc = term.consume; cc != c):
         discard
     template consume_int_till(term: Terminal; sentinel: char): int =
-      var n = 0
-      while (let c = term.consume; c != sentinel):
-        if (let x = decValue(c); x != -1):
-          n *= 10
-          n += x
-        else:
-          fail
+      let n = term.consumeIntUntil(sentinel)
+      if n == -1:
+        fail
       n
     template consume_int_greedy(term: Terminal; lastc: var char): int =
       var n = 0
@@ -1024,10 +1030,10 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       else: fail
     of ']':
       # OSC
-      term.expect '1'
-      let c = term.consume
-      if c notin {'0', '1'}: fail
-      term.expect ';'
+      let c = term.consumeIntUntil(';')
+      var n: int
+      if c == 4:
+        n = term.consumeIntUntil(';')
       if term.consume == 'r' and term.consume == 'g' and term.consume == 'b':
         term.expect ':'
         var was_esc = false
@@ -1040,10 +1046,10 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
             if i > 4 or v0 == -1:
               fail # wat
             let v = uint8(v0)
-            if i == 0: # 1st place
+            if i == 0: # 1st place - expand it for when we don't get a 2nd place
               val = (v shl 4) or v
-            elif i == 1: # 2nd place
-              val = (val xor 0xF) or v
+            elif i == 1: # 2nd place - clear expanded placeholder from 1st place
+              val = (val and not 0xFu8) or v
             # all other places are irrelevant
             inc i
           was_esc = c == '\e'
@@ -1054,10 +1060,13 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         if was_esc:
           # we got ST, not BEL; at least kitty does this
           term.expect '\\'
-        if c == '0':
-          result.fgcolor = some(rgb(r, g, b))
-        else:
-          result.bgcolor = some(rgb(r, g, b))
+        let C = rgb(r, g, b)
+        if c == 4:
+          result.colorMap.add((n, C))
+        elif c == 10:
+          result.fgcolor = some(C)
+        else: # 11
+          result.bgcolor = some(C)
       else:
         # not RGB, give up
         term.skip_until '\a'
@@ -1135,6 +1144,8 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.defaultBackground = r.bgcolor.get
       if r.fgcolor.isSome:
         term.defaultForeground = r.fgcolor.get
+      for (n, rgb) in r.colorMap:
+        term.colorMap[n] = rgb
     else:
       # something went horribly wrong. set result to DA1 fail, pager will
       # alert the user
@@ -1284,10 +1295,30 @@ proc restart*(term: Terminal) =
       term.stdinWasUnblocked = false
     term.initScreen()
 
+const ANSIColorMap = [
+  rgb(0, 0, 0),
+  rgb(205, 0, 0),
+  rgb(0, 205, 0),
+  rgb(205, 205, 0),
+  rgb(0, 0, 238),
+  rgb(205, 0, 205),
+  rgb(0, 205, 205),
+  rgb(229, 229, 229),
+  rgb(127, 127, 127),
+  rgb(255, 0, 0),
+  rgb(0, 255, 0),
+  rgb(255, 255, 0),
+  rgb(92, 92, 255),
+  rgb(255, 0, 255),
+  rgb(0, 255, 255),
+  rgb(255, 255, 255)
+]
+
 proc newTerminal*(outfile: File; config: Config): Terminal =
   return Terminal(
     outfile: outfile,
     config: config,
     defaultBackground: ColorsRGB["black"],
-    defaultForeground: ColorsRGB["white"]
+    defaultForeground: ColorsRGB["white"],
+    colorMap: ANSIColorMap
   )
