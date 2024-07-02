@@ -411,10 +411,11 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     if box == nil: # positioned marker
       discard state.absolutePos.pop()
       continue
-    if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
-      offset.x = state.absolutePos[^1].x
-    if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
-      offset.y = state.absolutePos[^1].y
+    if box.computed{"position"} == PositionAbsolute:
+      if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
+        offset.x = state.absolutePos[^1].x
+      if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
+        offset.y = state.absolutePos[^1].y
     offset += box.state.offset
     if box.computed{"position"} != PositionStatic:
       state.absolutePos.add(offset)
