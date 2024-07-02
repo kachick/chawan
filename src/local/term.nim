@@ -410,15 +410,17 @@ proc processFormat*(term: Terminal; format: var Format; cellf: Format): string =
         cellf.fgcolor = defaultColor
     # correct
     cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
-    # print
-    case cellf.fgcolor.t
-    of ctNone: result &= SGR(39)
-    of ctANSI: result &= ansiSGR(cellf.fgcolor.color, 0)
-    else: assert false
-    case cellf.bgcolor.t
-    of ctNone: result &= SGR(49)
-    of ctANSI: result &= ansiSGR(cellf.bgcolor.color, 10)
-    else: assert false
+    if cellf.fgcolor != format.fgcolor:
+      # print
+      case cellf.fgcolor.t
+      of ctNone: result &= SGR(39)
+      of ctANSI: result &= ansiSGR(cellf.fgcolor.color, 0)
+      else: discard
+    if cellf.bgcolor != format.bgcolor:
+      case cellf.bgcolor.t
+      of ctNone: result &= SGR(49)
+      of ctANSI: result &= ansiSGR(cellf.bgcolor.color, 10)
+      else: discard
   of cmEightBit:
     # quantize
     if cellf.bgcolor.t == ctRGB:
@@ -428,14 +430,16 @@ proc processFormat*(term: Terminal; format: var Format; cellf: Format): string =
     # correct
     cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
     # print
-    case cellf.fgcolor.t
-    of ctNone: result &= SGR(39)
-    of ctANSI: result &= eightBitSGR(cellf.fgcolor.color, 0)
-    of ctRGB: assert false
-    case cellf.bgcolor.t
-    of ctNone: result &= SGR(49)
-    of ctANSI: result &= eightBitSGR(cellf.bgcolor.color, 10)
-    of ctRGB: assert false
+    if cellf.fgcolor != format.fgcolor:
+      case cellf.fgcolor.t
+      of ctNone: result &= SGR(39)
+      of ctANSI: result &= eightBitSGR(cellf.fgcolor.color, 0)
+      of ctRGB: discard
+    if cellf.bgcolor != format.bgcolor:
+      case cellf.bgcolor.t
+      of ctNone: result &= SGR(49)
+      of ctANSI: result &= eightBitSGR(cellf.bgcolor.color, 10)
+      of ctRGB: discard
   of cmTrueColor:
     # correct
     cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
