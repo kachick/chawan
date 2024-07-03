@@ -168,12 +168,6 @@ $(OUTDIR_CGI_BIN)/gopher: adapter/protocol/gopher.nim adapter/protocol/curlwrap.
 	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) --nimcache:"$(OBJDIR)/$(TARGET)/gopher" \
 		-o:"$(OUTDIR_CGI_BIN)/gopher" adapter/protocol/gopher.nim
 
-$(OUTDIR_CGI_BIN)/png: adapter/img/png.nim src/utils/sandbox.nim
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/png" \
-                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) \
-                -o:"$(OUTDIR_CGI_BIN)/png" adapter/img/png.nim
-
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h src/utils/sandbox.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
@@ -234,7 +228,6 @@ install:
 	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/man" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	#install -m755 "$(OUTDIR_CGI_BIN)/png" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_CGI_BIN)/stbi" $(LIBEXECDIR_CHAWAN)/cgi-bin
 	install -m755 "$(OUTDIR_LIBEXEC)/urldec" $(LIBEXECDIR_CHAWAN)/urldec
 	install -m755 "$(OUTDIR_LIBEXEC)/urlenc" $(LIBEXECDIR_CHAWAN)/urlenc
@@ -258,6 +251,9 @@ uninstall:
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/man
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/spartan
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/stbi
+	@# note: png has been removed in favor of stbi.
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
 	rm -f $(LIBEXECDIR_CHAWAN)/md2html
@@ -271,7 +267,8 @@ uninstall:
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mime.types.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-localcgi.5"
 	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-urimethodmap.5"
-	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-cha-protocols.5"
+	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-protocols.5"
+	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-api.5"
 	rm -f "$(DESTDIR)$(MANPREFIX1)/cha.1"
 	rm -f "$(DESTDIR)$(MANPREFIX1)/mancha.1"
 
