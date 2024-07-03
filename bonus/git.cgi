@@ -73,6 +73,7 @@ const cgi1 = `${cgi0}&params=show`;
 const cgi2 = `${cgi0}&params=log`;
 const cgi3 = `${cgi0}&params=switch`;
 const cgi4 = `${cgi0}&params=stash%20apply`;
+const cgi5 = `${cgi0}&params=stash%20drop`;
 if (params[0] == "log") {
 	runGitCmd(config, params, /[a-f0-9]{40}/g,
 		x => `<a href='${cgi1}%20${x}'>${x}</a>`)
@@ -84,7 +85,8 @@ if (params[0] == "log") {
 } else if (params[0] == "stash" && params[1] == "list") {
 	runGitCmd(config, params, /^stash@\{([0-9]+)\}/g,
 		(s, n) => `stash@{<a href='${cgi1}%20${s}'>${n}</a>}\
- <form method=POST action='${cgi4}%20${s}'><input type=submit value=apply></form>`);
+ <form method=POST action='${cgi4}%20${s}'><input type=submit value=apply></form>` +
+` <form method=POST action='${cgi5}%20${s}'><input type=submit value=drop></form>`);
 } else {
 	const safeForGet = ["show", "diff", "blame", "status"];
 	if (std.getenv("REQUEST_METHOD") != "POST" &&
