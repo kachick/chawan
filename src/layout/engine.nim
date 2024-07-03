@@ -18,6 +18,10 @@ type
     attrsp: ptr WindowAttributes
     positioned: seq[AvailableSpace]
     myRootProperties: CSSComputedValues
+    # placeholder text data
+    imgText: StyledNode
+    audioText: StyledNode
+    videoText: StyledNode
 
   # min-content: box width is longest word's width
   # max-content: box width is content width without wrapping
@@ -1445,7 +1449,7 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   of iftNewline: ictx.flushLine(state)
   of iftBox: ictx.addInlineBlock(state, fragment.box)
   of iftBitmap: ictx.addInlineImage(state, fragment.bmp, padding.sum())
-  of iftText: ictx.layoutText(state, fragment.text)
+  of iftText: ictx.layoutText(state, fragment.text.textData)
   of iftParent:
     for child in fragment.children:
       ictx.layoutInline(child)
@@ -2508,10 +2512,11 @@ proc newMarkerBox(computed: CSSComputedValues; listItemCounter: int):
   computed{"display"} = DisplayInline
   # Use pre, so the space at the end of the default markers isn't ignored.
   computed{"white-space"} = WhitespacePre
+  let s = computed{"list-style-type"}.listMarker(listItemCounter)
   return InlineFragment(
     t: iftText,
     computed: computed,
-    text: computed{"list-style-type"}.listMarker(listItemCounter)
+    text: newStyledText(s)
   )
 
 type InnerBlockContext = object
@@ -2664,12 +2669,12 @@ proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment) =
     ctx.inlineStackFragments[^1].children.add(fragment)
 
 proc pushInlineText(ctx: var InnerBlockContext; computed: CSSComputedValues;
-    styledNode: StyledNode; text: string) =
+    parent, node: StyledNode) =
   ctx.pushInline(InlineFragment(
     t: iftText,
     computed: computed,
-    node: styledNode,
-    text: text
+    node: parent,
+    text: node
   ))
 
 proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
@@ -2796,24 +2801,27 @@ proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode;
     elif quotes.auto:
       text = quoteStart(ctx.quoteLevel)
     else: return
-    ctx.pushInlineText(computed, parent, text)
+    let node = newStyledText(text)
+    ctx.pushInlineText(computed, parent, node)
     inc ctx.quoteLevel
   of ContentCloseQuote:
     if ctx.quoteLevel > 0: dec ctx.quoteLevel
     let quotes = parent.computed{"quotes"}
-    var text: string = ""
-    if quotes.qs.len > 0:
-      text = quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].e
+    let s = if quotes.qs.len > 0:
+      quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].e
     elif quotes.auto:
-      text = quoteEnd(ctx.quoteLevel)
-    else: return
+      quoteEnd(ctx.quoteLevel)
+    else:
+      return
+    let text = newStyledText(s)
     ctx.pushInlineText(computed, parent, text)
   of ContentNoOpenQuote:
     inc ctx.quoteLevel
   of ContentNoCloseQuote:
     if ctx.quoteLevel > 0: dec ctx.quoteLevel
   of ContentString:
-    ctx.pushInlineText(computed, parent, child.content.s)
+    let text = newStyledText(child.content.s)
+    ctx.pushInlineText(computed, parent, text)
   of ContentImage:
     if child.content.bmp != nil:
       ctx.pushInline(InlineFragment(
@@ -2823,18 +2831,17 @@ proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode;
         bmp: child.content.bmp
       ))
     else:
-      ctx.pushInlineText(computed, parent, "[img]")
+      ctx.pushInlineText(computed, parent, ctx.lctx.imgText)
   of ContentVideo:
-    ctx.pushInlineText(computed, parent, "[video]")
+    ctx.pushInlineText(computed, parent, ctx.lctx.videoText)
   of ContentAudio:
-    ctx.pushInlineText(computed, parent, "[audio]")
+    ctx.pushInlineText(computed, parent, ctx.lctx.audioText)
   of ContentNewline:
-    let fragment = InlineFragment(
+    ctx.pushInline(InlineFragment(
       t: iftNewline,
       computed: computed,
       node: child
-    )
-    ctx.pushInline(fragment)
+    ))
 
 proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
@@ -2855,7 +2862,7 @@ proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode;
     of stElement:
       ctx.buildFromElem(child, child.computed)
     of stText:
-      ctx.pushInlineText(computed, styledNode, child.textData)
+      ctx.pushInlineText(computed, styledNode, child)
     of stReplacement:
       ctx.buildReplacement(child, styledNode, computed)
   ctx.reconstructInlineParents()
@@ -2888,9 +2895,8 @@ proc buildInnerBlock(ctx: var InnerBlockContext) =
     of stElement:
       ctx.buildFromElem(child, child.computed)
     of stText:
-      let text = child.textData
-      if ctx.canBuildAnonymousInline(ctx.outer.computed, text):
-        ctx.pushInlineText(inlineComputed, ctx.styledNode, text)
+      if ctx.canBuildAnonymousInline(ctx.outer.computed, child.textData):
+        ctx.pushInlineText(inlineComputed, ctx.styledNode, child)
     of stReplacement:
       ctx.buildReplacement(child, ctx.styledNode, inlineComputed)
   ctx.iflush()
@@ -2928,9 +2934,8 @@ proc buildInnerFlex(ctx: var InnerBlockContext) =
         child.computed
       ctx.buildFromElem(child, computed)
     of stText:
-      let text = child.textData
-      if ctx.canBuildAnonymousInline(ctx.outer.computed, text):
-        ctx.pushInlineText(inlineComputed, ctx.styledNode, text)
+      if ctx.canBuildAnonymousInline(ctx.outer.computed, child.textData):
+        ctx.pushInlineText(inlineComputed, ctx.styledNode, child)
     of stReplacement:
       ctx.buildReplacement(child, ctx.styledNode, inlineComputed)
   ctx.iflush()
@@ -3035,7 +3040,10 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   let lctx = LayoutContext(
     attrsp: attrsp,
     positioned: @[space],
-    myRootProperties: rootProperties()
+    myRootProperties: rootProperties(),
+    imgText: newStyledText("[img]"),
+    videoText: newStyledText("[video]"),
+    audioText: newStyledText("[audio]")
   )
   let box = BlockBox(computed: root.computed, node: root)
   var ctx = newInnerBlockContext(root, box, lctx, nil)

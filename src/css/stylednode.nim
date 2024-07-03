@@ -55,8 +55,8 @@ type
       # replaced elements: quotes, or (TODO) markers, images
       content*: CSSContent
 
-func textData*(styledNode: StyledNode): string =
-  return Text(styledNode.node).data
+template textData*(styledNode: StyledNode): string =
+  CharacterData(styledNode.node).data
 
 # For debugging
 func `$`*(node: StyledNode): string =
@@ -165,6 +165,9 @@ func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
 
 func newStyledText*(parent: StyledNode; text: Text): StyledNode =
   return StyledNode(t: stText, node: text, parent: parent)
+
+func newStyledText*(text: string): StyledNode =
+  return StyledNode(t: stText, node: CharacterData(data: text))
 
 func newStyledReplacement*(parent: StyledNode; content: CSSContent):
     StyledNode =

@@ -71,7 +71,7 @@ type
     of iftParent:
       children*: seq[InlineFragment]
     of iftText:
-      text*: string
+      text*: StyledNode # note: this has no parent.
     of iftNewline:
       discard
     of iftBitmap:
