@@ -22,7 +22,7 @@ This document describes some aspects of how Chawan works.
 
 ## Module organization
 
-Explanation for the separate directories found in src/:
+Explanation for the separate directories found in `src/`:
 
 * bindings: bindings for various C libraries. (Not wrappers, just the plain
   C API as Nim procedure prototypes.)
@@ -41,6 +41,15 @@ Explanation for the separate directories found in src/:
   forkserver. (Why is loader not here? idk)
 * types: mainly definitions of data types and things I didn't know where to put.
 * utils: things I didn't know where to put part 2
+
+Additionally, "adapters" of various protocols and file formats can be found in
+`adapter/`:
+
+* protocol: includes support for every protocol supported by Chawan.
+* format: HTML converters for various text-based file formats.
+* img: image decoders and encoders. In general, these just read and output
+  RGBA data through standard I/O. (This is not very efficient, and therefore
+  subject to change.)
 
 ## Process model
 
@@ -214,11 +223,11 @@ cycle collector can break up. A cross-GC cycle collector is obviously out of
 question; then it would be easier to just replace the entire GC in one of the
 runtimes.
 
-But we don't replace anything. Instead, we hook into the QuickJS cycle
-collector (through a custom patch). Every time a JS companion object of a Nim
-object would be freed, we first check if the Nim object still has references
-from Nim, and if yes, prevent the JS object from being freed by "moving" a
-reference to the JS object (i.e. unref Nim, ref JS).
+So instead, we hook into the QuickJS cycle collector (through a custom
+patch). Every time a JS companion object of a Nim object would be freed, we
+first check if the Nim object still has references from Nim, and if yes, prevent
+the JS object from being freed by "moving" a reference to the JS object
+(i.e. unref Nim, ref JS).
 
 Then, if we want to pass the object to JS again, we add no references to the JS
 object, only to the Nim object. By this, we "moved" the reference back to JS.
@@ -270,7 +279,7 @@ works OK, but is missing features like variables.
 
 Cascading is slow, though it could be slower. Chawan has style caching, so
 re-styles are normally very fast. Also, a hash map is used for reducing initial
-style calculation times. However, we don't have a bloom filter yet.
+style calculation times. However, we don't have a Bloom filter yet.
 
 ## Layout
 
@@ -279,10 +288,10 @@ Layout can be found in the layout/ module.
 It has some problems:
 
 * CSS was designed for pixel-based displays, not for character-based ones. So we
-  have to round a lot, and sometimes this goes wrong.
-* In the past years, websites have finally started using grid, and we don't have
-  it, so those websites look very ugly.
-* Even what we do have has plenty of bugs. (Sad.)
+  have to round a lot, and sometimes this goes wrong. (This is mostly solved by
+  some basic heuristics inside the layout engine.)
+* Some (now) commonly used features like grid are not implemented, so websites
+  using those look ugly.
 * It's slow on large documents, because we don't have partial layouting
   capabilities.
 
