@@ -821,7 +821,7 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
       if styledNode.t == stElement and styledNode.node != nil:
         let elem = Element(styledNode.node)
         if not elem.hover:
-          elem.hover = true
+          elem.setHover(true)
           repaint = true
     for ht in HoverType:
       let s = HoverFun[ht](buffer, thisnode)
@@ -832,7 +832,7 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
       if styledNode.t == stElement and styledNode.node != nil:
         let elem = Element(styledNode.node)
         if elem.hover:
-          elem.hover = false
+          elem.setHover(false)
           repaint = true
   if repaint:
     buffer.do_reshape()
@@ -1384,13 +1384,13 @@ proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element): Requ
 
 proc setFocus(buffer: Buffer; e: Element): bool =
   if buffer.document.focus != e:
-    buffer.document.focus = e
+    buffer.document.setFocus(e)
     buffer.do_reshape()
     return true
 
 proc restoreFocus(buffer: Buffer): bool =
   if buffer.document.focus != nil:
-    buffer.document.focus = nil
+    buffer.document.setFocus(nil)
     buffer.do_reshape()
     return true
 
@@ -1577,15 +1577,15 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
       readline: some(ReadLineResult(t: rltFile))
     )
   of itCheckbox:
-    input.checked = not input.checked
+    input.setChecked(not input.checked)
     input.invalid = true
     buffer.do_reshape()
     return ClickResult(repaint: true)
   of itRadio:
     for radio in input.radiogroup:
-      radio.checked = false
+      radio.setChecked(false)
       radio.invalid = true
-    input.checked = true
+    input.setChecked(true)
     input.invalid = true
     buffer.do_reshape()
     return ClickResult(repaint: true)

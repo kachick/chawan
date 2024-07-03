@@ -332,7 +332,7 @@ proc applyDeclarations(styledNode: StyledNode; parent: CSSComputedValues;
     rules[coAuthor].add(rule[peNone])
   if styledNode.node != nil:
     let element = Element(styledNode.node)
-    let style = element.style_cached
+    let style = element.cachedStyle
     if style != nil:
       for decl in style.decls:
         let vals = parseComputedValues(decl.name, decl.value)
@@ -610,11 +610,12 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
     cachedChild: cachedTree
   )]
   var root: StyledNode
+  var toReset: seq[Element] = @[]
   while styledStack.len > 0:
     var frame = styledStack.pop()
     var declmap: RuleListMap
     let styledParent = frame.styledParent
-    let valid = frame.cachedChild != nil and frame.cachedChild.isValid()
+    let valid = frame.cachedChild != nil and frame.cachedChild.isValid(toReset)
     let styledChild = if valid:
       frame.applyRulesFrameValid()
     else:
@@ -627,8 +628,10 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
         # Root element
         root = styledChild
       if styledChild.t == stElement and styledChild.node != nil:
-        styledChild.applyDependValues()
         styledStack.appendChildren(frame, styledChild, declmap)
+  for element in toReset:
+    element.invalid = true
+    element.invalidDeps = {}
   return root
 
 proc applyStylesheets*(document: Document; uass, userss: CSSStylesheet;

@@ -1,4 +1,3 @@
-import chame/tags
 import css/cssvalues
 import css/selectorparser
 import html/dom
@@ -87,15 +86,14 @@ iterator elementList_rev*(node: StyledNode): StyledNode {.inline.} =
   for i in countdown(node.children.high, 0):
     yield node.children[i]
 
-func findElement*(root: StyledNode; elem: Element): StyledNode =
-  var stack: seq[StyledNode]
+func findElement*(root: StyledNode; element: Element): StyledNode =
+  var stack: seq[StyledNode] = @[]
   for child in root.elementList_rev:
     if child.t == stElement and child.pseudo == peNone:
       stack.add(child)
-  let en = Node(elem)
   while stack.len > 0:
     let node = stack.pop()
-    if node.node == en:
+    if node.node == element:
       return node
     for child in node.elementList_rev:
       if child.t == stElement and child.pseudo == peNone:
@@ -108,40 +106,22 @@ func isDomElement*(styledNode: StyledNode): bool {.inline.} =
 func parentElement*(node: StyledNode): StyledNode {.inline.} =
   node.parent
 
-func checked(element: Element): bool =
-  if element.tagType == TAG_INPUT:
-    let input = HTMLInputElement(element)
-    result = input.checked
-
-func isValid*(styledNode: StyledNode): bool =
+proc isValid*(styledNode: StyledNode; toReset: var seq[Element]): bool =
   if styledNode.t == stText:
     return true
   if styledNode.t == stReplacement:
     return true
-  if styledNode.node != nil and Element(styledNode.node).invalid:
-    return false
+  if styledNode.node != nil:
+    let element = Element(styledNode.node)
+    if element.invalid:
+      toReset.add(element)
+      return false
   for d in DependencyType:
-    for elem in styledNode.depends[d]:
-      case d
-      of dtHover:
-        if elem.prev[d] != elem.hover:
-          return false
-      of dtChecked:
-        if elem.prev[d] != elem.checked:
-          return false
-      of dtFocus:
-        let focus = elem.document.focus == elem
-        if elem.prev[d] != focus:
-          return false
+    for dep in styledNode.depends[d]:
+      if d in dep.invalidDeps:
+        toReset.add(dep)
+        return false
   return true
-
-proc applyDependValues*(styledNode: StyledNode) =
-  let elem = Element(styledNode.node)
-  elem.prev[dtHover] = elem.hover
-  elem.prev[dtChecked] = elem.checked
-  let focus = elem.document.focus == elem
-  elem.prev[dtFocus] = focus
-  elem.invalid = false
 
 proc addDependency*(styledNode: StyledNode; dep: Element; t: DependencyType) =
   if dep notin styledNode.depends[t]:

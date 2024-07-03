@@ -144,8 +144,8 @@ type
     # nodes they refer to. These are removed when the collection is destroyed,
     # and invalidated when the owner node's children or attributes change.
     liveCollections: HashSet[pointer]
-    childNodes_cached: NodeList
-    document_internal: Document # not nil
+    cachedChildNodes: NodeList
+    internalDocument: Document # not nil
 
   Attr* = ref object of Node
     dataIdx: int
@@ -180,19 +180,17 @@ type
     scriptsToExecOnLoad*: Deque[HTMLScriptElement]
     parserBlockingScript*: HTMLScriptElement
 
-    parser_cannot_change_the_mode_flag*: bool
-    is_iframe_srcdoc*: bool
-    focus*: Element
+    parserCannotChangeModeFlag*: bool
+    internalFocus: Element
     contentType* {.jsget.}: string
-
     renderBlockingElements: seq[Element]
 
     invalidCollections: HashSet[pointer] # pointers to Collection objects
 
-    all_cached: HTMLAllCollection
+    cachedAll: HTMLAllCollection
     cachedSheets: seq[CSSStylesheet]
     cachedSheetsInvalid*: bool
-    children_cached: HTMLCollection
+    cachedChildren: HTMLCollection
     #TODO I hate this but I really don't want to put chadombuilder into dom too
     parser*: pointer
 
@@ -210,7 +208,7 @@ type
 
   DocumentFragment* = ref object of Node
     host*: Element
-    children_cached*: HTMLCollection
+    cachedChildren*: HTMLCollection
 
   DocumentType* = ref object of Node
     name*: string
@@ -235,14 +233,13 @@ type
     classList* {.jsget.}: DOMTokenList
     attrs: seq[AttrData] # sorted by int(qualifiedName)
     attributesInternal: NamedNodeMap
-    hover*: bool
+    internalHover: bool
     invalid*: bool
-    style_cached*: CSSStyleDeclaration
-    children_cached: HTMLCollection
-
+    cachedStyle*: CSSStyleDeclaration
+    cachedChildren: HTMLCollection
     # The owner StyledNode is marked as invalid when one of these no longer
     # matches the DOM value.
-    prev*: array[DependencyType, bool]
+    invalidDeps*: set[DependencyType]
 
   AttrDummyElement = ref object of Element
 
@@ -260,7 +257,7 @@ type
   HTMLInputElement* = ref object of FormAssociatedElement
     inputType*: InputType
     value* {.jsget.}: string
-    checked* {.jsget.}: bool
+    internalChecked {.jsget: "checked".}: bool
     xcoord*: int
     ycoord*: int
     file*: WebFile
@@ -652,7 +649,7 @@ proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
   #TODO should not be loaded here...
-  ctx.canvas.document_internal.window.loadUnifont()
+  ctx.canvas.internalDocument.window.loadUnifont()
   let vec = ctx.transform(Vector2D(x: x, y: y))
   ctx.bitmap.fillText(text, vec.x, vec.y, ctx.state.fillStyle,
     ctx.state.textAlign)
@@ -664,7 +661,7 @@ proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
   #TODO should not be loaded here...
-  ctx.canvas.document_internal.window.loadUnifont()
+  ctx.canvas.internalDocument.window.loadUnifont()
   let vec = ctx.transform(Vector2D(x: x, y: y))
   ctx.bitmap.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle,
     ctx.state.textAlign)
@@ -892,12 +889,12 @@ proc attr*(element: Element; name: CAtom; value: string)
 proc attr*(element: Element; name: StaticAtom; value: string)
 func baseURL*(document: Document): URL
 proc delAttr(element: Element; i: int; keep = false)
-proc reflectAttrs(element: Element; name: CAtom; value: string)
+proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 
 func document*(node: Node): Document =
   if node of Document:
     return Document(node)
-  return node.document_internal
+  return node.internalDocument
 
 proc toAtom*(document: Document; s: string): CAtom =
   return document.factory.toAtom(s)
@@ -1200,14 +1197,14 @@ func isElement(node: Node): bool =
   return node of Element
 
 template parentNodeChildrenImpl(parentNode: typed) =
-  if parentNode.children_cached == nil:
-    parentNode.children_cached = newCollection[HTMLCollection](
+  if parentNode.cachedChildren == nil:
+    parentNode.cachedChildren = newCollection[HTMLCollection](
       root = parentNode,
       match = isElement,
       islive = true,
       childonly = true
     )
-  return parentNode.children_cached
+  return parentNode.cachedChildren
 
 func children(parentNode: Document): HTMLCollection {.jsfget.} =
   parentNodeChildrenImpl(parentNode)
@@ -1219,14 +1216,14 @@ func children(parentNode: Element): HTMLCollection {.jsfget.} =
   parentNodeChildrenImpl(parentNode)
 
 func childNodes(node: Node): NodeList {.jsfget.} =
-  if node.childNodes_cached == nil:
-    node.childNodes_cached = newCollection[NodeList](
+  if node.cachedChildNodes == nil:
+    node.cachedChildNodes = newCollection[NodeList](
       root = node,
       match = nil,
       islive = true,
       childonly = true
     )
-  return node.childNodes_cached
+  return node.cachedChildNodes
 
 # DOMTokenList
 func length(tokenList: DOMTokenList): uint32 {.jsfget.} =
@@ -1490,14 +1487,14 @@ func names(ctx: JSContext; collection: HTMLAllCollection): JSPropertyEnumList
   return list
 
 proc all(document: Document): HTMLAllCollection {.jsfget.} =
-  if document.all_cached == nil:
-    document.all_cached = newCollection[HTMLAllCollection](
+  if document.cachedAll == nil:
+    document.cachedAll = newCollection[HTMLAllCollection](
       root = document,
       match = isElement,
       islive = true,
       childonly = false
     )
-  return document.all_cached
+  return document.cachedAll
 
 # Location
 proc newLocation*(window: Window): Location =
@@ -1678,7 +1675,7 @@ proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
   if i != -1:
     return map.attrlist[i]
   let attr = Attr(
-    document_internal: map.element.document,
+    internalDocument: map.element.document,
     index: -1,
     dataIdx: dataIdx,
     ownerElement: map.element
@@ -1700,7 +1697,7 @@ func attributes(element: Element): NamedNodeMap {.jsfget.} =
   element.attributesInternal = NamedNodeMap(element: element)
   for i, attr in element.attrs:
     element.attributesInternal.attrlist.add(Attr(
-      document_internal: element.document,
+      internalDocument: element.document,
       index: -1,
       dataIdx: i,
       ownerElement: element
@@ -2270,6 +2267,13 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
     document.cachedSheetsInvalid = false
   return document.cachedSheets
 
+func checked*(input: HTMLInputElement): bool {.inline.} =
+  return input.internalChecked
+
+proc setChecked*(input: HTMLInputElement; b: bool) {.inline.} =
+  input.invalidDeps.incl(dtChecked)
+  input.internalChecked = b
+
 func inputString*(input: HTMLInputElement): string =
   case input.inputType
   of itCheckbox, itRadio:
@@ -2377,6 +2381,23 @@ func findAnchor*(document: Document; id: string): Element =
     if child of HTMLAnchorElement and child.name == id:
       return child
   return nil
+
+func focus*(document: Document): Element =
+  return document.internalFocus
+
+proc setFocus*(document: Document; element: Element) =
+  if document.focus != nil:
+    document.focus.invalidDeps.incl(dtFocus)
+  document.internalFocus = element
+  if element != nil:
+    element.invalidDeps.incl(dtFocus)
+
+func hover*(element: Element): bool =
+  return element.internalHover
+
+proc setHover*(element: Element; hover: bool) =
+  element.invalidDeps.incl(dtHover)
+  element.internalHover = hover
 
 func findAutoFocus*(document: Document): Element =
   for child in document.elements:
@@ -2518,7 +2539,7 @@ func getSrc*(this: HTMLVideoElement|HTMLAudioElement): string =
 
 func newText*(document: Document; data: string): Text =
   return Text(
-    document_internal: document,
+    internalDocument: document,
     data: data,
     index: -1
   )
@@ -2529,7 +2550,7 @@ func newText(ctx: JSContext; data = ""): Text {.jsctor.} =
 
 func newCDATASection(document: Document; data: string): CDATASection =
   return CDATASection(
-    document_internal: document,
+    internalDocument: document,
     data: data,
     index: -1
   )
@@ -2537,7 +2558,7 @@ func newCDATASection(document: Document; data: string): CDATASection =
 func newProcessingInstruction(document: Document; target, data: string):
     ProcessingInstruction =
   return ProcessingInstruction(
-    document_internal: document,
+    internalDocument: document,
     target: target,
     data: data,
     index: -1
@@ -2545,7 +2566,7 @@ func newProcessingInstruction(document: Document; target, data: string):
 
 func newDocumentFragment(document: Document): DocumentFragment =
   return DocumentFragment(
-    document_internal: document,
+    internalDocument: document,
     index: -1
   )
 
@@ -2555,7 +2576,7 @@ func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
 
 func newComment(document: Document; data: string): Comment =
   return Comment(
-    document_internal: document,
+    internalDocument: document,
     data: data,
     index: -1
   )
@@ -2610,10 +2631,7 @@ proc newHTMLElement*(document: Document; localName: CAtom;
     result = form
   of TAG_TEMPLATE:
     result = HTMLTemplateElement(
-      content: DocumentFragment(
-        document_internal: document,
-        host: result
-      )
+      content: DocumentFragment(internalDocument: document, host: result)
     )
   of TAG_UNKNOWN:
     result = HTMLUnknownElement()
@@ -2646,7 +2664,7 @@ proc newHTMLElement*(document: Document; localName: CAtom;
   result.localName = localName
   result.namespace = namespace
   result.namespacePrefix = prefix
-  result.document_internal = document
+  result.internalDocument = document
   let localName = document.toAtom(satClassList)
   result.classList = DOMTokenList(element: result, localName: localName)
   result.index = -1
@@ -2676,7 +2694,7 @@ func newDocument(ctx: JSContext): Document {.jsctor.} =
 func newDocumentType*(document: Document; name, publicId, systemId: string):
     DocumentType =
   return DocumentType(
-    document_internal: document,
+    internalDocument: document,
     name: name,
     publicId: publicId,
     systemId: systemId,
@@ -2766,13 +2784,13 @@ proc delAttr(element: Element; i: int; keep = false) =
         let attr = map.attrlist[j]
         let data = attr.data
         attr.ownerElement = AttrDummyElement(
-          document_internal: attr.ownerElement.document,
+          internalDocument: attr.ownerElement.document,
           index: -1,
           attrs: @[data]
         )
         attr.dataIdx = 0
       map.attrlist.del(j) # ordering does not matter
-  element.reflectAttrs(name, "")
+  element.reflectAttr(name, none(string))
   element.invalidateCollections()
   element.invalid = true
 
@@ -2858,9 +2876,9 @@ proc setter[T: uint32|string](this: CSSStyleDeclaration; u: T;
   this.element.attr(satStyle, $this.decls)
 
 proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
-  if element.style_cached == nil:
-    element.style_cached = CSSStyleDeclaration(element: element)
-  return element.style_cached
+  if element.cachedStyle == nil:
+    element.cachedStyle = CSSStyleDeclaration(element: element)
+  return element.cachedStyle
 
 # Forward declaration hack
 var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
@@ -3017,15 +3035,18 @@ proc reflectEvent(element: Element; target: EventTarget; name: StaticAtom;
     doAssert ctx.addEventListener(target, ctype, fun).isSome
   JS_FreeValue(ctx, fun)
 
-proc reflectAttrs(element: Element; name: CAtom; value: string) =
+proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
   let name = element.document.toStaticAtom(name)
   template reflect_str(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
-      element.val = value
+      element.val = value.get("")
       return
   template reflect_atom(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
-      element.val = element.document.toAtom(value)
+      if value.isSome:
+        element.val = element.document.toAtom(value.get)
+      else:
+        element.val = CAtomNull
       return
   template reflect_bool(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
@@ -3033,11 +3054,12 @@ proc reflectAttrs(element: Element; name: CAtom; value: string) =
       return
   template reflect_domtoklist0(element: Element; val: untyped) =
     element.val.toks.setLen(0)
-    for x in value.split(AsciiWhitespace):
-      if x != "":
-        let a = element.document.toAtom(x)
-        if a notin element.val:
-          element.val.toks.add(a)
+    if value.isSome:
+      for x in value.get.split(AsciiWhitespace):
+        if x != "":
+          let a = element.document.toAtom(x)
+          if a notin element.val:
+            element.val.toks.add(a)
   template reflect_domtoklist(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
       element.reflect_domtoklist0 val
@@ -3047,22 +3069,26 @@ proc reflectAttrs(element: Element; name: CAtom; value: string) =
   element.reflect_domtoklist satClass, classList
   #TODO internalNonce
   if name == satStyle:
-    element.style_cached = newCSSStyleDeclaration(element, value)
+    if value.isSome:
+      element.cachedStyle = newCSSStyleDeclaration(element, value.get)
+    else:
+      element.cachedStyle = nil
     return
   if name == satOnclick and element.scriptingEnabled:
-    element.reflectEvent(element, name, "click", value)
+    element.reflectEvent(element, name, "click", value.get(""))
     return
   case element.tagType
   of TAG_BODY:
     if name == satOnload and element.scriptingEnabled:
-      element.reflectEvent(element.document.window, name, "load", value)
+      element.reflectEvent(element.document.window, name, "load", value.get(""))
       return
   of TAG_INPUT:
     let input = HTMLInputElement(element)
     input.reflect_str satValue, value
-    input.reflect_bool satChecked, checked
-    if name == satType:
-      input.inputType = parseEnumNoCase[InputType](value).get(itText)
+    if name == satChecked:
+      input.setChecked(value.isSome)
+    elif name == satType:
+      input.inputType = parseEnumNoCase[InputType](value.get("")).get(itText)
   of TAG_OPTION:
     let option = HTMLOptionElement(element)
     option.reflect_bool satSelected, selected
@@ -3070,7 +3096,7 @@ proc reflectAttrs(element: Element; name: CAtom; value: string) =
     let button = HTMLButtonElement(element)
     button.reflect_str satValue, value
     if name == satType:
-      button.ctype = parseEnumNoCase[ButtonType](value).get(btSubmit)
+      button.ctype = parseEnumNoCase[ButtonType](value.get("")).get(btSubmit)
   of TAG_LINK:
     let link = HTMLLinkElement(element)
     if name == satRel:
@@ -3130,7 +3156,7 @@ proc attr*(element: Element; name: CAtom; value: string) =
       localName: name,
       value: value
     ), -(i + 1))
-  element.reflectAttrs(name, value)
+  element.reflectAttr(name, some(value))
 
 proc attr*(element: Element; name: StaticAtom; value: string) =
   element.attr(element.document.toAtom(name), value)
@@ -3163,7 +3189,7 @@ proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
       namespace: namespace,
       value: value
     ), element.attrs.upperBound(qualifiedName, cmpAttrName))
-  element.reflectAttrs(qualifiedName, value)
+  element.reflectAttr(qualifiedName, some(value))
 
 proc attrl(element: Element; name: StaticAtom; value: int32) =
   element.attr(name, $value)
@@ -3319,10 +3345,10 @@ proc adopt(document: Document; node: Node) =
   if oldDocument != document:
     #TODO shadow root
     for desc in node.descendants:
-      desc.document_internal = document
+      desc.internalDocument = document
       if desc of Element:
         for attr in Element(desc).attributes.attrlist:
-          attr.document_internal = document
+          attr.internalDocument = document
     #TODO custom elements
     #..adopting steps
 
@@ -3332,7 +3358,7 @@ proc resetElement*(element: Element) =
     let input = HTMLInputElement(element)
     case input.inputType
     of itCheckbox, itRadio:
-      input.checked = input.attrb(satChecked)
+      input.setChecked(input.attrb(satChecked))
     of itFile:
       input.file = nil
     else:
@@ -4031,7 +4057,7 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
       let element = HTMLInputElement(element)
       x.value = element.value
       #TODO dirty value flag
-      x.checked = element.checked
+      x.setChecked(element.checked)
       #TODO dirty checkedness flag
     Node(x)
   elif node of Attr:
@@ -4039,7 +4065,7 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
     let data = attr.data
     let x = Attr(
       ownerElement: AttrDummyElement(
-        document_internal: attr.ownerElement.document,
+        internalDocument: attr.ownerElement.document,
         index: -1,
         attrs: @[data]
       ),

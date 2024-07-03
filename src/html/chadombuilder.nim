@@ -91,7 +91,7 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   wrapper.parser = initHTML5Parser(builder, wrapper.opts)
 
 proc setQuirksModeImpl(builder: ChaDOMBuilder; quirksMode: QuirksMode) =
-  if not builder.document.parser_cannot_change_the_mode_flag:
+  if not builder.document.parserCannotChangeModeFlag:
     builder.document.mode = quirksMode
 
 proc setEncodingImpl(builder: ChaDOMBuilder; encoding: string):
