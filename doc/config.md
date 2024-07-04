@@ -120,7 +120,8 @@ Following is a list of buffer options:
 <td>styling</td>
 <td>boolean</td>
 <td>Enable/disable author style sheets. Note that disabling this does not affect
-user styles set in `[css]`.</td>
+user styles set in `[css]`.<br>
+Defaults to true (i.e. enabled).</td>
 </tr>
 
 <tr>
@@ -156,6 +157,14 @@ behavior for specific sites.</td>
 Defaults to false. For security reasons, users are encouraged to leave this
 option disabled, only enabling it for specific sites in `[[siteconf]]`.
 </td>
+</tr>
+
+<tr>
+<td>autofocus</td>
+<td>boolean</td>
+<td>When set to true, elements with an "autofocus" attribute are focused on
+automatically after the buffer is loaded.<br>
+Defaults to false</td>
 </tr>
 
 </table>
@@ -784,8 +793,8 @@ are doing.</td>
 <tr>
 <td>autofocus</td>
 <td>boolean</td>
-<td>Defaults to false. When set to true, elements with an `autofocus' attribute
-are focused on automatically after the buffer is loaded.</td>
+<td>When set to true, elements with an "autofocus" attribute are focused on
+automatically after the buffer is loaded. Overrides buffer.autofocus.</td>
 </tr>
 
 </table>

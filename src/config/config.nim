@@ -147,6 +147,7 @@ type
     images* {.jsgetset.}: bool
     cookie* {.jsgetset.}: bool
     referer_from* {.jsgetset.}: bool
+    autofocus* {.jsgetset.}: bool
 
   Config* = ref object
     jsctx: JSContext

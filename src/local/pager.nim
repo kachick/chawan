@@ -1115,6 +1115,7 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
     charsets: pager.config.encoding.document_charset,
     images: pager.config.buffer.images,
     styling: pager.config.buffer.styling,
+    autofocus: pager.config.buffer.autofocus,
     isdump: pager.config.start.headless,
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol
