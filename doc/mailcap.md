@@ -28,6 +28,7 @@ with the assumptions Chawan makes about mailcap file contents. You can restore
 the old/standard-recommended behavior by adding this to your config.toml:
 
 ```toml
+[external]
 mailcap = [
 	"~/.mailcap",
 	"/etc/mailcap",
@@ -43,18 +44,21 @@ extensions.
 
 ### Templating
 
-%s, %t works as described in the standard. However, named content type fields
-(%{...}) only work with %{charset} as of now. (TODO: fix this.)
+`%s`, `%t`, and named content type fields like `%{charset}` work as described in
+the standard.
 
 If no quoting is applied, Chawan will quote the templates automatically. (This
 works with $(command substitutions) as well.)
 
-DEPRECATED:
+DEPRECATED
 
-Also, the non-standard template %u may be specified to get the original URL
-of the resource. Note that this is no longer recommended; instead, use the
-$MAILCAP_URL environment variable which is set to the same value before the
-execution of every mailcap command.
+The non-standard template %u may be specified to get the original URL of the
+resource. (As far as I can tell, this is a Netscape extension that may or may
+not be compatible with other implementations.)
+
+Use of this is not recommended; instead, use the `$MAILCAP_URL` environment
+variable which is set to the same value before the execution of every mailcap
+command.
 
 ### Fields
 
@@ -82,18 +86,22 @@ extension fields are recognized too.
 
 ### Environment variables
 
-As noted above, the $MAILCAP_URL variable is set to the URL of the target
+As noted above, the `$MAILCAP_URL` variable is set to the URL of the target
 resource before the execution of the mailcap command. Backwards compatibility
 with mailcap agents that do not support this variable can be achieved through
-shell substitution, e.g. ${MAILCAP_URL:-string for when it is unsupported}.
+shell substitution, e.g. `${MAILCAP_URL:-string for when it is unsupported}`.
 
-Note that it is not recommended to set %s as the fallback, because it
+Note that it is not recommended to set `%s` as the fallback, because it
 will force Chawan to download the entire file before displaying it even if
 it could have been piped into the command.
 
 ## Note
 
 Entries with a content type of text/html or text/plain are ignored.
+
+Content types that do not appear in mailcap files are handled as text files in
+case they start with `text/`. Otherwise, they prompt the user to save the file
+to the disk.
 
 ## Examples
 
