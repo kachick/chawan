@@ -79,27 +79,10 @@ $(OBJDIR)/gencharwidth: res/gencharwidth.nim
 	$(NIMC) --nimcache:"$(OBJDIR)/charwidth_gen_cache" -d:danger \
 		-o:"$(OBJDIR)/gencharwidth" res/gencharwidth.nim
 
-res/map/charwidth_gen.nim: $(OBJDIR)/gencharwidth
+res/map/charwidth_gen.nim: $(OBJDIR)/gencharwidth res/map/EastAsianWidth.txt
 	$(OBJDIR)/gencharwidth > res/map/charwidth_gen.nim
 
 src/utils/strwidth.nim: res/map/charwidth_gen.nim src/utils/proptable.nim
-
-$(OUTDIR_LIBEXEC)/gopher2html: adapter/format/gopher2html.nim \
-		src/utils/twtstr.nim adapter/gophertypes.nim
-	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/gopher2html" \
-		-o:"$(OUTDIR_LIBEXEC)/gopher2html" adapter/format/gopher2html.nim
-
-$(OUTDIR_LIBEXEC)/md2html: adapter/format/md2html.nim
-	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/md2html" \
-		-o:"$(OUTDIR_LIBEXEC)/md2html" adapter/format/md2html.nim
-
-$(OUTDIR_LIBEXEC)/ansi2html: adapter/format/ansi2html.nim src/types/color.nim \
-		src/utils/twtstr.nim
-	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/ansi2html" \
-		-o:"$(OUTDIR_LIBEXEC)/ansi2html" adapter/format/ansi2html.nim
 
 GMIFETCH_CFLAGS = -Wall -Wextra -std=c89 -pedantic -g -O2 $$(pkg-config --cflags libssl) $$(pkg-config --cflags libcrypto)
 GMIFETCH_LDFLAGS = $$(pkg-config --libs libssl) $$(pkg-config --libs libcrypto)
@@ -107,83 +90,53 @@ $(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(CC) $(GMIFETCH_CFLAGS) adapter/protocol/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch" $(GMIFETCH_LDFLAGS)
 
-$(OUTDIR_LIBEXEC)/gmi2html: adapter/format/gmi2html.nim
-	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/gmi2html" \
-		-o:"$(OUTDIR_LIBEXEC)/gmi2html" adapter/format/gmi2html.nim
-
-$(OUTDIR_CGI_BIN)/cha-finger: adapter/protocol/cha-finger
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	cp adapter/protocol/cha-finger $(OUTDIR_CGI_BIN)
-
-$(OUTDIR_CGI_BIN)/man: adapter/protocol/man.nim lib/monoucha/monoucha/jsregex.nim \
-		lib/monoucha/monoucha/libregexp.nim src/types/opt.nim \
-		src/utils/twtstr.nim
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/man" \
-		-o:"$(OUTDIR_CGI_BIN)/man" adapter/protocol/man.nim
-
-$(OUTDIR_CGI_BIN)/spartan: adapter/protocol/spartan
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	cp adapter/protocol/spartan $(OUTDIR_CGI_BIN)
-
-$(OUTDIR_CGI_BIN)/http: adapter/protocol/http.nim adapter/protocol/curlwrap.nim \
+twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim
+$(OUTDIR_CGI_BIN)/man: lib/monoucha/monoucha/jsregex.nim \
+		lib/monoucha/monoucha/libregexp.nim src/types/opt.nim $(twtstr)
+$(OUTDIR_CGI_BIN)/http: adapter/protocol/curlwrap.nim \
 		adapter/protocol/curlerrors.nim adapter/protocol/curl.nim \
-		src/utils/twtstr.nim src/utils/sandbox.nim
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/http" -d:curlLibName:$(CURLLIBNAME) \
-                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) \
-                -o:"$(OUTDIR_CGI_BIN)/http" adapter/protocol/http.nim
-
-$(OUTDIR_CGI_BIN)/about: adapter/protocol/about.nim res/chawan.html \
-		res/license.md
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/about" -o:"$(OUTDIR_CGI_BIN)/about" adapter/protocol/about.nim
-
-$(OUTDIR_CGI_BIN)/data: adapter/protocol/data.nim src/utils/twtstr.nim \
-		src/types/opt.nim src/utils/map.nim src/utils/charcategory.nim \
-		src/loader/connecterror.nim
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/data" -o:"$(OUTDIR_CGI_BIN)/data" adapter/protocol/data.nim
-
-$(OUTDIR_CGI_BIN)/file: adapter/protocol/file.nim adapter/protocol/dirlist.nim \
-		src/utils/twtstr.nim src/utils/strwidth.nim \
-		res/map/EastAsianWidth.txt src/loader/connecterror.nim
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/file" -o:"$(OUTDIR_CGI_BIN)/file" adapter/protocol/file.nim
-
-$(OUTDIR_CGI_BIN)/ftp: adapter/protocol/ftp.nim adapter/protocol/dirlist.nim \
-		src/utils/twtstr.nim src/utils/strwidth.nim \
-		res/map/EastAsianWidth.txt src/loader/connecterror.nim \
-		src/types/opt.nim adapter/protocol/curl.nim
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) --nimcache:"$(OBJDIR)/$(TARGET)/ftp" \
-		-o:"$(OUTDIR_CGI_BIN)/ftp" adapter/protocol/ftp.nim
-
-$(OUTDIR_CGI_BIN)/gopher: adapter/protocol/gopher.nim adapter/protocol/curlwrap.nim \
-		adapter/protocol/curlerrors.nim adapter/gophertypes.nim \
-		adapter/protocol/curl.nim src/loader/connecterror.nim \
-		src/utils/twtstr.nim
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) -d:curlLibName:$(CURLLIBNAME) --nimcache:"$(OBJDIR)/$(TARGET)/gopher" \
-		-o:"$(OUTDIR_CGI_BIN)/gopher" adapter/protocol/gopher.nim
-
+		src/utils/sandbox.nim $(twtstr)
+$(OUTDIR_CGI_BIN)/data: src/types/opt.nim src/utils/map.nim \
+		src/loader/connecterror.nim $(twtstr)
+$(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
+$(OUTDIR_CGI_BIN)/file: adapter/protocol/dirlist.nim $(twtstr) \
+		src/utils/strwidth.nim src/loader/connecterror.nim
+$(OUTDIR_CGI_BIN)/ftp: adapter/protocol/dirlist.nim $(twtstr) \
+		src/utils/strwidth.nim src/loader/connecterror.nim src/types/opt.nim \
+		adapter/protocol/curl.nim
+$(OUTDIR_CGI_BIN)/gopher: adapter/protocol/curlwrap.nim adapter/protocol/curlerrors.nim \
+		adapter/gophertypes.nim adapter/protocol/curl.nim \
+		src/loader/connecterror.nim $(twtstr)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h src/utils/sandbox.nim
+$(OUTDIR_LIBEXEC)/urldec: $(twtstr)
+$(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
+$(OUTDIR_LIBEXEC)/gopher2html: adapter/gophertypes.nim $(twtstr)
+$(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim $(twtstr)
+
+$(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/stbi" \
-                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) \
-                -o:"$(OUTDIR_CGI_BIN)/stbi" adapter/img/stbi.nim
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
+		-d:disableSandbox=$(DANGER_DISABLE_SANDBOX) -o:"$@" $<
 
-$(OUTDIR_LIBEXEC)/urldec: adapter/tools/urldec.nim src/utils/twtstr.nim
-	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/urldec" \
-		-o:"$(OUTDIR_LIBEXEC)/urldec" adapter/tools/urldec.nim
+$(OUTDIR_CGI_BIN)/%: adapter/protocol/%
+	@mkdir -p "$(OUTDIR_CGI_BIN)"
+	cp $< "$(OUTDIR_CGI_BIN)"
 
-$(OUTDIR_LIBEXEC)/urlenc: adapter/tools/urlenc.nim src/utils/twtstr.nim
+$(OUTDIR_CGI_BIN)/%: adapter/img/%.nim
+	@mkdir -p "$(OUTDIR_CGI_BIN)"
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
+                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) -o:"$@" $<
+
+$(OUTDIR_LIBEXEC)/%: adapter/format/%.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/urlenc" \
-		-o:"$(OUTDIR_LIBEXEC)/urlenc" adapter/tools/urlenc.nim
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_LIBEXEC)/,,$@)" \
+		-o:"$@" $<
+
+$(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim
+	@mkdir -p "$(OUTDIR_LIBEXEC)"
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_LIBEXEC)/,,$@)" \
+		-o:"$@" $<
 
 $(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 	@mkdir -p "$(OBJDIR)/man"
@@ -197,15 +150,18 @@ clean:
 	rm -rf "$(OBJDIR)/$(TARGET)"
 	rm -f lib/libquickjs.a
 
-MANPAGES1 = doc/cha.1 doc/mancha.1
-MANPAGES5 = doc/cha-config.5 doc/cha-mailcap.5 doc/cha-mime.types.5 \
-	doc/cha-localcgi.5 doc/cha-urimethodmap.5 doc/cha-protocols.5 \
-	doc/cha-api.5
+manpages1 = cha.1 mancha.1
+manpages5 = cha-config.5 cha-mailcap.5 cha-mime.types.5 cha-localcgi.5 \
+	cha-urimethodmap.5 cha-protocols.5 cha-api.5
 
-MANPAGES = $(MANPAGES1) $(MANPAGES5)
+manpages = $(manpages1) $(manpages5)
 
 .PHONY: manpage
-manpage: $(MANPAGES)
+manpage: $(manpages:%=doc/%)
+
+protocols = http about data file ftp gopher gmifetch cha-finger man spartan stbi
+converters = gopher2html md2html ansi2html gmi2html
+tools = urldec urlenc
 
 .PHONY: install
 install:
@@ -214,63 +170,28 @@ install:
 	install -m755 "$(OUTDIR_BIN)/mancha" "$(DESTDIR)$(PREFIX)/bin"
 	@# intentionally not quoted
 	mkdir -p $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/http" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/about" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/data" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/file" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/ftp" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/gopher" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_LIBEXEC)/gopher2html" $(LIBEXECDIR_CHAWAN)
-	install -m755 "$(OUTDIR_LIBEXEC)/md2html" $(LIBEXECDIR_CHAWAN)
-	install -m755 "$(OUTDIR_LIBEXEC)/ansi2html" $(LIBEXECDIR_CHAWAN)
-	install -m755 "$(OUTDIR_LIBEXEC)/gmi2html" $(LIBEXECDIR_CHAWAN)
-	install -m755 "$(OUTDIR_CGI_BIN)/gmifetch" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/cha-finger" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/man" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/spartan" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_CGI_BIN)/stbi" $(LIBEXECDIR_CHAWAN)/cgi-bin
-	install -m755 "$(OUTDIR_LIBEXEC)/urldec" $(LIBEXECDIR_CHAWAN)/urldec
-	install -m755 "$(OUTDIR_LIBEXEC)/urlenc" $(LIBEXECDIR_CHAWAN)/urlenc
+	for f in $(protocols); \
+	do install -m755 "$(OUTDIR_CGI_BIN)/$$f" $(LIBEXECDIR_CHAWAN)/cgi-bin; done
+	for f in $(converters) $(tools); \
+	do install -m755 "$(OUTDIR_LIBEXEC)/$$f" $(LIBEXECDIR_CHAWAN); done
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"
-	for f in $(MANPAGES1); do install -m644 "$$f" "$(DESTDIR)$(MANPREFIX1)"; done
+	for f in $(manpages1); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX1)"; done
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"
-	for f in $(MANPAGES5); do install -m644 "$$f" "$(DESTDIR)$(MANPREFIX5)"; done
+	for f in $(manpages5); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX5)"; done
 
 .PHONY: uninstall
 uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/cha"
 	rm -f "$(DESTDIR)$(PREFIX)/bin/mancha"
 	@# intentionally not quoted
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/http
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/about
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/file
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/ftp
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gopher
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/man
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/spartan
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/stbi
+	for f in $(protocols); do rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/$$f; done
 	@# note: png has been removed in favor of stbi.
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
-	rm -f $(LIBEXECDIR_CHAWAN)/gopher2html
-	rm -f $(LIBEXECDIR_CHAWAN)/md2html
-	rm -f $(LIBEXECDIR_CHAWAN)/ansi2html
-	rm -f $(LIBEXECDIR_CHAWAN)/gmi2html
-	rm -f $(LIBEXECDIR_CHAWAN)/urldec
-	rm -f $(LIBEXECDIR_CHAWAN)/urlenc
+	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 	rmdir $(LIBEXECDIR_CHAWAN) || true
-	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-config.5"
-	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mailcap.5"
-	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-mime.types.5"
-	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-localcgi.5"
-	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-urimethodmap.5"
-	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-protocols.5"
-	rm -f "$(DESTDIR)$(MANPREFIX5)/cha-api.5"
-	rm -f "$(DESTDIR)$(MANPREFIX1)/cha.1"
-	rm -f "$(DESTDIR)$(MANPREFIX1)/mancha.1"
+	for f in $(manpages5); do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
+	for f in $(manpages1); do rm -f "$(DESTDIR)$(MANPREFIX1)/$$f"; done
 
 .PHONY: submodule
 submodule:
