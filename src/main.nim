@@ -12,17 +12,37 @@ import local/term
 import monoucha/javascript
 import server/forkserver
 import types/opt
+import utils/sandbox
 import utils/strwidth
 import utils/twtstr
 
+const ChaVersionStr0 = "Chawan browser v0.1"
+
 const ChaVersionStr = block:
-  var s = "Chawan browser v0.1 "
+  var s = ChaVersionStr0 & " ("
   when defined(debug):
-    s &= "(debug)"
+    s &= "debug"
   else:
-    s &= "(release)"
-  s &= '\n'
-  s
+    s &= "release"
+  s &= ", "
+  when SandboxMode == stNone:
+    s &= "not sandboxed"
+  else:
+    s &= "sandboxed"
+  s & ")\n"
+
+const ChaVersionStrLong = block:
+  var s = ChaVersionStr0 & " ("
+  when defined(debug):
+    s &= "debug"
+  else:
+    s &= "release"
+  s &= ", "
+  when SandboxMode == stNone:
+    s &= "not sandboxed"
+  else:
+    s &= "sandboxed by " & $SandboxMode
+  s & ")\n"
 
 proc help(i: int) =
   let s = ChaVersionStr & """
@@ -49,7 +69,7 @@ Options:
   quit(i)
 
 proc version() =
-  stdout.write(ChaVersionStr)
+  stdout.write(ChaVersionStrLong)
   quit(0)
 
 type ParamParseContext = object
@@ -86,7 +106,7 @@ proc getCharset(ctx: var ParamParseContext): Charset =
   let s = ctx.getnext()
   let charset = getCharset(s)
   if charset == CHARSET_UNKNOWN:
-    stderr.write("Unknown charset " & s & "\n")
+    stderr.writeLine("Unknown charset " & s)
     quit(1)
   return charset
 
@@ -186,14 +206,14 @@ proc main() =
   for opt in ctx.opts:
     let res = config.parseConfig(getCurrentDir(), opt, laxnames = true)
     if not res.success:
-      stderr.write(res.errorMsg)
+      stderr.writeLine(res.errorMsg)
       quit(1)
     warnings.add(res.warnings)
   config.css.stylesheet &= ctx.stylesheet
   block commands:
     let res = config.initCommands()
     if res.isNone:
-      stderr.write("Error parsing commands: " & res.error)
+      stderr.writeLine("Error parsing commands: " & res.error)
       quit(1)
   isCJKAmbiguous = config.display.double_width_ambiguous
   if ctx.pages.len == 0 and stdin.isatty():

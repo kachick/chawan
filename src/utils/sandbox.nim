@@ -33,7 +33,24 @@
 
 const disableSandbox {.booldefine.} = false
 
-when defined(freebsd) and not disableSandbox:
+type SandboxType* = enum
+  stNone = "no sandbox"
+  stCapsicum = "capsicum"
+  stPledge = "pledge"
+  stLibSeccomp = "libseccomp"
+
+const SandboxMode* = when disableSandbox:
+  stNone
+elif defined(freebsd):
+  stCapsicum
+elif defined(openbsd):
+  stPledge
+elif defined(linux):
+  stLibSeccomp
+else:
+  stNone
+
+when SandboxMode == stCapsicum:
   import bindings/capsicum
 
   proc enterBufferSandbox*(sockPath: string) =
@@ -47,7 +64,7 @@ when defined(freebsd) and not disableSandbox:
     # no difference between buffer; Capsicum is quite straightforward
     # to use in this regard.
     discard cap_enter()
-elif defined(openbsd) and not disableSandbox:
+elif SandboxMode == stPledge:
   import bindings/pledge
 
   proc enterBufferSandbox*(sockPath: string) =
@@ -60,7 +77,7 @@ elif defined(openbsd) and not disableSandbox:
   proc enterNetworkSandbox*() =
     # we don't need much to write out data from sockets to stdout.
     doAssert pledge("stdio", nil) == 0
-elif defined(linux) and not disableSandbox:
+elif SandboxMode == stLibSeccomp:
   import std/posix
   import bindings/libseccomp
 
