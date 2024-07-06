@@ -929,6 +929,10 @@ proc replace*(pager: Pager; target, container: Container) =
 proc deleteContainer(pager: Pager; container, setTarget: Container) =
   if container.loadState == lsLoading:
     container.cancel()
+  if container.replaceBackup != nil:
+    pager.setContainer(container.replaceBackup)
+  elif container.replace != nil:
+    pager.replace(container, container.replace)
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
     container.sourcepair = nil
@@ -950,8 +954,9 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
   container.parent = nil
   container.children.setLen(0)
   if container.replace != nil:
-    pager.replace(container, container.replace)
     container.replace = nil
+  elif container.replaceBackup != nil:
+    container.replaceBackup = nil
   elif pager.container == container:
     pager.setContainer(setTarget)
   pager.unreg.add(container)
@@ -1186,8 +1191,8 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
 # Load request in a new buffer.
 proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     contentType = none(string); cs = CHARSET_UNKNOWN; replace: Container = nil;
-    redirectDepth = 0; referrer: Container = nil; save = false;
-    url: URL = nil) =
+    replaceBackup: Container = nil; redirectDepth = 0;
+    referrer: Container = nil; save = false; url: URL = nil) =
   pager.navDirection = ndNext
   if referrer != nil and referrer.config.referer_from:
     request.referrer = referrer.url
@@ -1218,7 +1223,10 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     )
     if replace != nil:
       pager.replace(replace, container)
-      container.replace = replace
+      if replaceBackup == nil:
+        container.replace = replace
+      else:
+        container.replaceBackup = replaceBackup
       container.copyCursorPos(replace)
     else:
       pager.addContainer(container)
@@ -1803,8 +1811,13 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
   return CheckMailcapResult(connect: false, fdout: -1, found: true)
 
 proc redirectTo(pager: Pager; container: Container; request: Request) =
+  let replaceBackup = if container.replaceBackup != nil:
+    container.replaceBackup
+  else:
+    container.find(ndAny)
   pager.gotoURL(request, some(container.url), replace = container,
-    redirectDepth = container.redirectDepth + 1, referrer = container)
+    replaceBackup = replaceBackup, redirectDepth = container.redirectDepth + 1,
+    referrer = container)
   pager.container.loadinfo = "Redirecting to " & $request.url
   pager.onSetLoadInfo(pager.container)
   dec pager.numload

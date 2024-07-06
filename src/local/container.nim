@@ -140,6 +140,7 @@ type
     lineshift: int
     numLines*: int
     replace*: Container
+    replaceBackup*: Container # for redirection; when set, we get discarded
     code*: int # note: this is not the status code, but the ConnectErrorCode.
     errorMessage*: string
     retry*: seq[URL]
