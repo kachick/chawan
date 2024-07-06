@@ -25,7 +25,7 @@ import utils/strwidth
 
 type
   ForkCommand = enum
-    fcForkBuffer, fcForkLoader, fcRemoveChild, fcLoadConfig
+    fcLoadConfig, fcForkBuffer, fcRemoveChild
 
   ForkServer* = ref object
     istream: PosixStream
@@ -40,20 +40,21 @@ type
     sockDirFd: int
     sockDir: string
 
-proc forkLoader*(forkserver: ForkServer; config: LoaderConfig): int =
+proc loadConfig*(forkserver: ForkServer; config: Config): int =
   forkserver.ostream.withPacketWriter w:
-    w.swrite(fcForkLoader)
-    w.swrite(config)
+    w.swrite(fcLoadConfig)
+    w.swrite(config.display.double_width_ambiguous)
+    w.swrite(LoaderConfig(
+      urimethodmap: config.external.urimethodmap,
+      w3mCGICompat: config.external.w3m_cgi_compat,
+      cgiDir: seq[string](config.external.cgi_dir),
+      tmpdir: config.external.tmpdir,
+      sockdir: config.external.sockdir
+    ))
   var r = forkserver.istream.initPacketReader()
   var process: int
   r.sread(process)
   return process
-
-proc loadForkServerConfig*(forkserver: ForkServer; config: Config) =
-  forkserver.ostream.withPacketWriter w:
-    w.swrite(fcLoadConfig)
-    w.swrite(config.external.sockdir)
-    w.swrite(config.display.double_width_ambiguous)
 
 proc removeChild*(forkserver: ForkServer; pid: int) =
   forkserver.ostream.withPacketWriter w:
@@ -208,6 +209,19 @@ proc runForkServer() =
         var cmd: ForkCommand
         r.sread(cmd)
         case cmd
+        of fcLoadConfig:
+          assert ctx.loaderPid == 0
+          var config: LoaderConfig
+          r.sread(isCJKAmbiguous)
+          r.sread(config)
+          ctx.sockDir = config.sockdir
+          when defined(freebsd):
+            ctx.sockDirFd = open(cstring(ctx.sockDir), O_DIRECTORY)
+          let pid = ctx.forkLoader(config)
+          ctx.ostream.withPacketWriter w:
+            w.swrite(pid)
+          ctx.loaderPid = pid
+          ctx.children.add(pid)
         of fcRemoveChild:
           var pid: int
           r.sread(pid)
@@ -218,20 +232,6 @@ proc runForkServer() =
           let r = ctx.forkBuffer(r)
           ctx.ostream.withPacketWriter w:
             w.swrite(r)
-        of fcForkLoader:
-          assert ctx.loaderPid == 0
-          var config: LoaderConfig
-          r.sread(config)
-          let pid = ctx.forkLoader(config)
-          ctx.ostream.withPacketWriter w:
-            w.swrite(pid)
-          ctx.loaderPid = pid
-          ctx.children.add(pid)
-        of fcLoadConfig:
-          r.sread(ctx.sockDir)
-          r.sread(isCJKAmbiguous)
-          when defined(freebsd):
-            ctx.sockDirFd = open(cstring(ctx.sockDir), O_DIRECTORY)
     except EOFError:
       # EOF
       break

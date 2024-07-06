@@ -822,19 +822,12 @@ proc addJSModules(client: Client; ctx: JSContext) =
 func getClient(client: Client): Client {.jsfget: "client".} =
   return client
 
-proc newClient*(config: Config; forkserver: ForkServer; jsctx: JSContext;
-    warnings: seq[string]): Client =
+proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
+    jsctx: JSContext; warnings: seq[string]): Client =
   setControlCHook(proc() {.noconv.} = quit(1))
   let jsrt = JS_GetRuntime(jsctx)
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
   let pager = newPager(config, forkserver, jsctx, warnings)
-  let loaderPid = forkserver.forkLoader(LoaderConfig(
-    urimethodmap: config.external.urimethodmap,
-    w3mCGICompat: config.external.w3m_cgi_compat,
-    cgiDir: seq[string](config.external.cgi_dir),
-    tmpdir: config.external.tmpdir,
-    sockdir: config.external.sockdir
-  ))
   let loader = FileLoader(process: loaderPid, clientPid: getCurrentProcessId())
   loader.setSocketDir(config.external.sockdir)
   pager.setLoader(loader)

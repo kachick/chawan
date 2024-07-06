@@ -230,8 +230,8 @@ proc main() =
   # forkserver may try to open an empty dir
   discard mkdir(cstring(config.external.tmpdir), 0o700)
   discard mkdir(cstring(config.external.sockdir), 0o700)
-  forkserver.loadForkServerConfig(config)
-  let client = newClient(config, forkserver, jsctx, warnings)
+  let loaderPid = forkserver.loadConfig(config)
+  let client = newClient(config, forkserver, loaderPid, jsctx, warnings)
   try:
     client.launchClient(ctx.pages, ctx.contentType, ctx.charset, ctx.dump)
   except CatchableError:
