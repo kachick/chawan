@@ -73,19 +73,13 @@ func toFormat(computed: CSSComputedValues): Format =
     flags: flags
   )
 
-proc setText(grid: var FlexibleGrid; linestr: string; x, y: int; format: Format;
-    node: StyledNode) {.inline.} =
-  assert linestr.len != 0
+proc findFirstX(line: var FlexibleLine; x: int; outi: var int): int =
+  var cx = 0
   var i = 0
-  var r: Rune
-  # make sure we have line y
-  if grid.high < y:
-    grid.addLines(y - grid.high)
-
-  var cx = 0 # first x of new string (before padding)
-  while cx < x and i < grid[y].str.len:
+  while cx < x and i < line.str.len:
+    var r: Rune
     let pi = i
-    fastRuneAt(grid[y].str, i, r)
+    fastRuneAt(line.str, i, r)
     let w = r.twidth(cx)
     # we must ensure x is max(cx, x), otherwise our assumption of cx <= x
     # breaks down
@@ -93,74 +87,64 @@ proc setText(grid: var FlexibleGrid; linestr: string; x, y: int; format: Format;
       i = pi
       break
     cx += w
+  outi = i
+  return cx
 
-  let ostr = grid[y].str.substr(i)
-  grid[y].str.setLen(i)
-  let padwidth = x - cx
-  if padwidth > 0:
-    grid[y].str &= ' '.repeat(padwidth)
-
-  grid[y].str &= linestr
-  var linestrwidth = linestr.twidth(x)
-
-  i = 0
-  var nx = x # last x of new string
-  while nx < x + linestrwidth and i < ostr.len:
-    fastRuneAt(ostr, i, r)
-    nx += r.twidth(nx)
-
-  while x + linestrwidth < nx:
+proc setTextStr(line: var FlexibleLine; linestr, ostr: string;
+    i, x, cx, nx, targetX: int) =
+  var i = i
+  let padlen = i + x - cx
+  var widthError = max(nx - targetX, 0)
+  let linestrTargetI = padlen + linestr.len
+  line.str.setLen(linestrTargetI + widthError + ostr.len)
+  while i < padlen: # place before new string
+    line.str[i] = ' '
+    inc i
+  copyMem(addr line.str[i], unsafeAddr linestr[0], linestr.len)
+  i = linestrTargetI
+  while widthError > 0:
     # we ate half of a double width char; pad it out with spaces.
-    grid[y].str &= ' '
-    inc linestrwidth
+    line.str[i] = ' '
+    dec widthError
+    inc i
+  if ostr.len > 0:
+    copyMem(addr line.str[i], unsafeAddr ostr[0], ostr.len)
 
-  if i < ostr.len:
-    grid[y].str &= ostr.substr(i)
-
-  # Negative x values make no sense from here on, as text with negative x
-  # coordinates can not be formatted.
-  let x = max(0, x)
-  if cx < 0:
-    cx = 0
-  if nx < 0:
-    nx = 0
-
-  # Skip unchanged formats before the new string
-  var fi = grid[y].findFormatN(cx) - 1
-
-  if padwidth > 0:
+proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; ostr: string;
+    format: Format; node: StyledNode) =
+  var fi = line.findFormatN(cx) - 1 # Skip unchanged formats before new string
+  if x > cx:
     # Replace formats for padding
     var padformat = Format()
     if fi == -1:
       # No formats
       inc fi # insert after first format (meaning fi = 0)
-      grid[y].insertFormat(cx, fi, padformat)
+      line.insertFormat(cx, fi, padformat)
     else:
       # First format's pos may be == cx here.
-      if grid[y].formats[fi].pos == cx:
-        padformat.bgcolor = grid[y].formats[fi].format.bgcolor
-        let node = grid[y].formats[fi].node
-        grid[y].formats.delete(fi)
-        grid[y].insertFormat(cx, fi, padformat, node)
+      if line.formats[fi].pos == cx:
+        padformat.bgcolor = line.formats[fi].format.bgcolor
+        let node = line.formats[fi].node
+        line.formats.delete(fi)
+        line.insertFormat(cx, fi, padformat, node)
       else:
         # First format < cx => split it up
-        assert grid[y].formats[fi].pos < cx
-        padformat.bgcolor = grid[y].formats[fi].format.bgcolor
-        let node = grid[y].formats[fi].node
+        assert line.formats[fi].pos < cx
+        padformat.bgcolor = line.formats[fi].format.bgcolor
+        let node = line.formats[fi].node
         inc fi # insert after first format
-        grid[y].insertFormat(cx, fi, padformat, node)
+        line.insertFormat(cx, fi, padformat, node)
     inc fi # skip last format
-    while fi < grid[y].formats.len and grid[y].formats[fi].pos < x:
+    while fi < line.formats.len and line.formats[fi].pos < x:
       # Other formats must be > cx => replace them
-      padformat.bgcolor = grid[y].formats[fi].format.bgcolor
-      let node = grid[y].formats[fi].node
-      let px = grid[y].formats[fi].pos
-      grid[y].formats.delete(fi)
-      grid[y].insertFormat(px, fi, padformat, node)
+      padformat.bgcolor = line.formats[fi].format.bgcolor
+      let node = line.formats[fi].node
+      let px = line.formats[fi].pos
+      line.formats.delete(fi)
+      line.insertFormat(px, fi, padformat, node)
       inc fi
     dec fi # go back to previous format, so that pos <= x
-    assert grid[y].formats[fi].pos <= x
-
+    assert line.formats[fi].pos <= x
   # Now for the text's formats:
   var format = format
   var lformat: Format
@@ -168,51 +152,82 @@ proc setText(grid: var FlexibleGrid; linestr: string; x, y: int; format: Format;
   if fi == -1:
     # No formats => just insert a new format at 0
     inc fi
-    grid[y].insertFormat(x, fi, format, node)
+    line.insertFormat(x, fi, format, node)
     lformat = Format()
   else:
     # First format's pos may be == x here.
-    lformat = grid[y].formats[fi].format # save for later use
-    lnode = grid[y].formats[fi].node
-    if grid[y].formats[fi].pos == x:
+    lformat = line.formats[fi].format # save for later use
+    lnode = line.formats[fi].node
+    if line.formats[fi].pos == x:
       # Replace.
       # We must check if the old string's last x position is greater than
       # the new string's first x position. If not, we cannot inherit
       # its bgcolor (which is supposed to end before the new string started.)
       if nx > cx:
-        format.bgcolor = grid[y].formats[fi].format.bgcolor
-      grid[y].formats.delete(fi)
-      grid[y].insertFormat(x, fi, format, node)
+        format.bgcolor = line.formats[fi].format.bgcolor
+      line.formats.delete(fi)
+      line.insertFormat(x, fi, format, node)
     else:
       # First format's pos < x => split it up.
-      assert grid[y].formats[fi].pos < x
+      assert line.formats[fi].pos < x
       if nx > cx: # see above
-        format.bgcolor = grid[y].formats[fi].format.bgcolor
+        format.bgcolor = line.formats[fi].format.bgcolor
       inc fi # insert after first format
-      grid[y].insertFormat(x, fi, format, node)
+      line.insertFormat(x, fi, format, node)
   inc fi # skip last format
-
-  while fi < grid[y].formats.len and grid[y].formats[fi].pos < nx:
+  while fi < line.formats.len and line.formats[fi].pos < nx:
     # Other formats must be > x => replace them
-    format.bgcolor = grid[y].formats[fi].format.bgcolor
-    let px = grid[y].formats[fi].pos
-    lformat = grid[y].formats[fi].format # save for later use
-    lnode = grid[y].formats[fi].node
-    grid[y].formats.delete(fi)
-    grid[y].insertFormat(px, fi, format, node)
+    format.bgcolor = line.formats[fi].format.bgcolor
+    let px = line.formats[fi].pos
+    lformat = line.formats[fi].format # save for later use
+    lnode = line.formats[fi].node
+    line.formats.delete(fi)
+    line.insertFormat(px, fi, format, node)
     inc fi
-
-  if i < ostr.len and
-      (fi >= grid[y].formats.len or grid[y].formats[fi].pos > nx):
+  if ostr.len > 0 and (fi >= line.formats.len or line.formats[fi].pos > nx):
     # nx < ostr.width, but we have removed all formatting in the range of our
     # string, and no formatting comes directly after it. So we insert the
     # continuation of the last format we replaced after our string.
     # (Default format when we haven't replaced anything.)
-    grid[y].insertFormat(nx, fi, lformat, lnode)
-
+    line.insertFormat(nx, fi, lformat, lnode)
   dec fi # go back to previous format, so that pos <= nx
-  assert grid[y].formats[fi].pos <= nx
+  assert line.formats[fi].pos <= nx
   # That's it!
+
+proc setText(line: var FlexibleLine; linestr: string; x: int; format: Format;
+    node: StyledNode) =
+  assert x >= 0 and linestr.len != 0
+  var targetX = x + linestr.twidth(x)
+  var i = 0
+  var cx = line.findFirstX(x, i) # first x of new string (before padding)
+  var j = i
+  var nx = x # last x of new string
+  while nx < targetX and j < line.str.len:
+    var r: Rune
+    fastRuneAt(line.str, j, r)
+    nx += r.twidth(nx)
+  let ostr = line.str.substr(j)
+  line.setTextStr(linestr, ostr, i, x, cx, nx, targetX)
+  line.setTextFormat(x, cx, nx, ostr, format, node)
+
+proc setText(grid: var FlexibleGrid; linestr: string; x, y: int; format: Format;
+    node: StyledNode) =
+  var x = x
+  var i = 0
+  var r: Rune
+  while x < 0 and i < linestr.len:
+    fastRuneAt(linestr, i, r)
+    x += r.twidth(x)
+  if x < 0:
+    # highest x is outside the canvas, no need to draw
+    return
+  # make sure we have line y
+  if grid.high < y:
+    grid.addLines(y - grid.high)
+  if i == 0:
+    grid[y].setText(linestr, x, format, node)
+  elif i < linestr.len:
+    grid[y].setText(linestr.substr(i), x, format, node)
 
 type
   PosBitmap* = ref object
@@ -240,17 +255,7 @@ proc setRowWord(grid: var FlexibleGrid; state: var RenderState;
     # y is outside the canvas, no need to draw
     return
   var x = toInt((offset.x + word.offset.x) div state.attrs.ppc) # x cell
-  var i = 0
-  var r: Rune
-  while x < 0 and i < word.str.len:
-    fastRuneAt(word.str, i, r)
-    x += r.twidth(x)
-  if x < 0:
-    # highest x is outside the canvas, no need to draw
-    return
-  if i < word.str.len:
-    let linestr = word.str.substr(i)
-    grid.setText(linestr, x, y, format, node)
+  grid.setText(word.str, x, y, format, node)
 
 proc setSpacing(grid: var FlexibleGrid; state: var RenderState;
     spacing: InlineAtom; offset: Offset; format: Format; node: StyledNode) =
@@ -265,8 +270,10 @@ proc setSpacing(grid: var FlexibleGrid; state: var RenderState;
     i -= x
     x = 0
   if i < width:
-    let linestr = ' '.repeat(width - i)
-    grid.setText(linestr, x, y, format, node)
+    # make sure we have line y
+    if grid.high < y:
+      grid.addLines(y - grid.high)
+    grid[y].setText(' '.repeat(width - i), x, format, node)
 
 proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     color: CellColor; startx, starty, endx, endy: int; node: StyledNode) =
