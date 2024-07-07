@@ -128,10 +128,7 @@ proc insertCharseq(edit: LineEdit; s: string) =
   edit.escNext = false
   if s.len == 0:
     return
-  let rem = edit.news.substr(edit.cursori)
-  edit.news.setLen(edit.cursori)
-  edit.news &= s
-  edit.news &= rem
+  edit.news.insert(s, edit.cursori)
   edit.cursori += s.len
   edit.cursorx += s.notwidth()
   edit.redraw = true
