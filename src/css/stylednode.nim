@@ -107,9 +107,7 @@ func parentElement*(node: StyledNode): StyledNode {.inline.} =
   node.parent
 
 proc isValid*(styledNode: StyledNode; toReset: var seq[Element]): bool =
-  if styledNode.t == stText:
-    return true
-  if styledNode.t == stReplacement:
+  if styledNode.t in {stText, stReplacement}:
     return true
   if styledNode.node != nil:
     let element = Element(styledNode.node)

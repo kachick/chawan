@@ -498,19 +498,23 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
     assert child != nil
     if styledParent != nil:
       if child of Element:
-        styledChild = styledParent.newStyledElement(Element(child))
+        let element = Element(child)
+        styledChild = styledParent.newStyledElement(element)
         styledParent.children.add(styledChild)
         declmap = styledChild.calcRules(ua, user, author)
         applyStyle(styledParent, styledChild, declmap)
+        element.invalid = false
       elif child of Text:
         let text = Text(child)
         styledChild = styledParent.newStyledText(text)
         styledParent.children.add(styledChild)
     else:
       # Root element
-      styledChild = newStyledElement(Element(child))
+      let element = Element(child)
+      styledChild = newStyledElement(element)
       declmap = styledChild.calcRules(ua, user, author)
       applyStyle(styledParent, styledChild, declmap)
+      element.invalid = false
   return styledChild
 
 proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
@@ -630,7 +634,7 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
       if styledChild.t == stElement and styledChild.node != nil:
         styledStack.appendChildren(frame, styledChild, declmap)
   for element in toReset:
-    element.invalid = true
+    element.invalid = false
     element.invalidDeps = {}
   return root
 
