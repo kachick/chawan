@@ -399,6 +399,7 @@ type CascadeFrame = object
   child: Node
   pseudo: PseudoElem
   cachedChild: StyledNode
+  cachedChildren: seq[StyledNode]
   parentDeclMap: RuleListMap
 
 proc getAuthorSheets(document: Document): seq[CSSStylesheet] =
@@ -407,30 +408,24 @@ proc getAuthorSheets(document: Document): seq[CSSStylesheet] =
     author.add(sheet.applyMediaQuery(document.window))
   return author
 
-proc applyRulesFrameValid(frame: CascadeFrame): StyledNode =
+proc applyRulesFrameValid(frame: var CascadeFrame): StyledNode =
   let styledParent = frame.styledParent
   let cachedChild = frame.cachedChild
-  let styledChild = if cachedChild.t == stElement:
-    if cachedChild.pseudo != peNone:
-      # Pseudo elements can't have invalid children.
-      cachedChild
-    else:
-      # We can't just copy cachedChild.children from the previous pass,
-      # as any child could be invalid.
-      let element = Element(cachedChild.node)
-      styledParent.newStyledElement(element, cachedChild.computed,
-        cachedChild.depends)
-  else:
-    # Text
-    cachedChild
-  styledChild.parent = styledParent
+  # Pseudo elements can't have invalid children.
+  if cachedChild.t == stElement and cachedChild.pseudo == peNone:
+    # Refresh child nodes:
+    # * move old seq to a temporary location in frame
+    # * create new seq, assuming capacity == len of the previous pass
+    frame.cachedChildren = move(cachedChild.children)
+    cachedChild.children = newSeqOfCap[StyledNode](frame.cachedChildren.len)
+  cachedChild.parent = styledParent
   if styledParent != nil:
-    styledParent.children.add(styledChild)
-  return styledChild
+    styledParent.children.add(cachedChild)
+  return cachedChild
 
 proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
     author: seq[CSSStylesheet]; declmap: var RuleListMap): StyledNode =
-  var styledChild: StyledNode
+  var styledChild: StyledNode = nil
   let pseudo = frame.pseudo
   let styledParent = frame.styledParent
   let child = frame.child
@@ -503,7 +498,6 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
         styledParent.children.add(styledChild)
         declmap = styledChild.calcRules(ua, user, author)
         applyStyle(styledParent, styledChild, declmap)
-        element.invalid = false
       elif child of Text:
         let text = Text(child)
         styledChild = styledParent.newStyledText(text)
@@ -514,44 +508,37 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       styledChild = newStyledElement(element)
       declmap = styledChild.calcRules(ua, user, author)
       applyStyle(styledParent, styledChild, declmap)
-      element.invalid = false
   return styledChild
 
 proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
     styledParent: StyledNode; child: Node; i: var int) =
-  if frame.cachedChild != nil:
-    var cached: StyledNode
-    while i >= 0:
-      let it = frame.cachedChild.children[i]
-      dec i
+  var cached: StyledNode = nil
+  if frame.cachedChildren.len > 0:
+    for j in countdown(i, 0):
+      let it = frame.cachedChildren[j]
       if it.node == child:
+        i = j - 1
         cached = it
         break
-    styledStack.add(CascadeFrame(
-      styledParent: styledParent,
-      child: child,
-      pseudo: peNone,
-      cachedChild: cached
-    ))
-  else:
-    styledStack.add(CascadeFrame(
-      styledParent: styledParent,
-      child: child,
-      pseudo: peNone,
-      cachedChild: nil
-    ))
+  styledStack.add(CascadeFrame(
+    styledParent: styledParent,
+    child: child,
+    pseudo: peNone,
+    cachedChild: cached
+  ))
 
 proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
     styledParent: StyledNode; pseudo: PseudoElem; i: var int;
     parentDeclMap: RuleListMap = nil) =
+  # Can't check for cachedChildren.len here, because we assume that we only have
+  # cached pseudo elems when the parent is also cached.
   if frame.cachedChild != nil:
-    var cached: StyledNode
-    let oldi = i
-    while i >= 0:
-      let it = frame.cachedChild.children[i]
-      dec i
+    var cached: StyledNode = nil
+    for j in countdown(i, 0):
+      let it = frame.cachedChildren[j]
       if it.pseudo == pseudo:
         cached = it
+        i = j - 1
         break
     # When calculating pseudo-element rules, their dependencies are added
     # to their parent's dependency list; so invalidating a pseudo-element
@@ -565,8 +552,6 @@ proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
         cachedChild: cached,
         parentDeclMap: parentDeclMap
       ))
-    else:
-      i = oldi # move pointer back to where we started
   else:
     styledStack.add(CascadeFrame(
       styledParent: styledParent,
@@ -579,13 +564,12 @@ proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
 proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
     styledChild: StyledNode; parentDeclMap: RuleListMap) =
   # i points to the child currently being inspected.
-  var idx = if frame.cachedChild != nil:
-    frame.cachedChild.children.len - 1
-  else:
-    -1
-  let elem = Element(styledChild.node)
+  var idx = frame.cachedChildren.len - 1
+  let element = Element(styledChild.node)
+  # reset invalid flag here to avoid a type conversion above
+  element.invalid = false
   styledStack.stackAppend(frame, styledChild, peAfter, idx, parentDeclMap)
-  case elem.tagType
+  case element.tagType
   of TAG_TEXTAREA:
     styledStack.stackAppend(frame, styledChild, peTextareaText, idx)
   of TAG_IMG: styledStack.stackAppend(frame, styledChild, peImage, idx)
@@ -594,10 +578,11 @@ proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
   of TAG_BR: styledStack.stackAppend(frame, styledChild, peNewline, idx)
   of TAG_CANVAS: styledStack.stackAppend(frame, styledChild, peCanvas, idx)
   else:
-    for i in countdown(elem.childList.high, 0):
-      if elem.childList[i] of Element or elem.childList[i] of Text:
-        styledStack.stackAppend(frame, styledChild, elem.childList[i], idx)
-    if elem.tagType == TAG_INPUT:
+    for i in countdown(element.childList.high, 0):
+      let child = element.childList[i]
+      if child of Element or child of Text:
+        styledStack.stackAppend(frame, styledChild, child, idx)
+    if element.tagType == TAG_INPUT:
       styledStack.stackAppend(frame, styledChild, peInputText, idx)
   styledStack.stackAppend(frame, styledChild, peBefore, idx, parentDeclMap)
 
@@ -613,7 +598,7 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
     pseudo: peNone,
     cachedChild: cachedTree
   )]
-  var root: StyledNode
+  var root: StyledNode = nil
   var toReset: seq[Element] = @[]
   while styledStack.len > 0:
     var frame = styledStack.pop()
@@ -632,9 +617,9 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
         # Root element
         root = styledChild
       if styledChild.t == stElement and styledChild.node != nil:
+        # note: following resets styledChild.node's invalid flag
         styledStack.appendChildren(frame, styledChild, declmap)
   for element in toReset:
-    element.invalid = false
     element.invalidDeps = {}
   return root
 
