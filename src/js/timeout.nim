@@ -4,16 +4,22 @@ import std/tables
 import io/dynstream
 import monoucha/javascript
 
-type TimeoutState* = object
-  timeoutid: int32
-  timeouts: Table[int32, tuple[handler: (proc()), fdi: int]]
-  intervals: Table[int32, tuple[handler: (proc()), fdi: int, tofree: JSValue]]
-  timeout_fdis: Table[int, int32]
-  interval_fdis: Table[int, int32]
-  selector: Selector[int] #TODO would be better with void...
-  jsctx: JSContext
-  err: DynStream #TODO shouldn't be needed
-  evalJSFree: proc(src, file: string) #TODO ew
+type
+  TimeoutEntry = tuple
+    handler: (proc())
+    fdi: int
+    tofree: JSValue
+
+  TimeoutState* = object
+    timeoutid: int32
+    timeouts: Table[int32, TimeoutEntry]
+    intervals: Table[int32, TimeoutEntry]
+    timeout_fdis: Table[int, int32]
+    interval_fdis: Table[int, int32]
+    selector: Selector[int] #TODO would be better with void...
+    jsctx: JSContext
+    err: DynStream #TODO shouldn't be needed
+    evalJSFree: proc(src, file: string) #TODO ew
 
 func newTimeoutState*(selector: Selector[int]; jsctx: JSContext; err: DynStream;
     evalJSFree: proc(src, file: string)): TimeoutState =
@@ -38,7 +44,7 @@ proc setTimeout*[T: JSValue|string](state: var TimeoutState; handler: T;
     let evalJSFree = state.evalJSFree
     state.timeouts[id] = ((proc() =
       evalJSFree(handler, "setTimeout handler")
-    ), fdi)
+    ), fdi, JS_NULL)
   else:
     let fun = JS_DupValue(state.jsctx, handler)
     let jsctx = state.jsctx
@@ -48,14 +54,14 @@ proc setTimeout*[T: JSValue|string](state: var TimeoutState; handler: T;
       if JS_IsException(ret):
         jsctx.writeException(err)
       JS_FreeValue(jsctx, ret)
-      JS_FreeValue(jsctx, fun)
-    ), fdi)
+    ), fdi, fun)
   return id
 
 proc clearTimeout*(state: var TimeoutState; id: int32) =
   if id in state.timeouts:
     let timeout = state.timeouts[id]
     state.selector.unregister(timeout.fdi)
+    JS_FreeValue(state.jsctx, timeout.tofree)
     state.timeout_fdis.del(timeout.fdi)
     state.timeouts.del(id)
 
@@ -102,3 +108,11 @@ proc runTimeoutFd*(state: var TimeoutState; fd: int): bool =
     state.clearTimeout(id)
     return true
   return false
+
+proc clearAll*(state: var TimeoutState) =
+  for entry in state.timeouts.values:
+    JS_FreeValue(state.jsctx, entry.tofree)
+  for entry in state.intervals.values:
+    JS_FreeValue(state.jsctx, entry.tofree)
+  state.timeouts.clear()
+  state.intervals.clear()

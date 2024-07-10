@@ -116,6 +116,7 @@ proc cleanup(client: Client) =
       JS_FreeValue(client.jsctx, val)
     for fn in client.config.jsvfns:
       JS_FreeValue(client.jsctx, fn)
+    client.timeouts.clearAll()
     assert not client.inEval
     client.jsctx.free()
     client.jsrt.free()
