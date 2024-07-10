@@ -148,7 +148,6 @@ doc/cha-%.5: $(OBJDIR)/man/cha-%.md
 .PHONY: clean
 clean:
 	rm -rf "$(OBJDIR)/$(TARGET)"
-	rm -f lib/libquickjs.a
 
 manpages1 = cha.1 mancha.1
 manpages5 = cha-config.5 cha-mailcap.5 cha-mime.types.5 cha-localcgi.5 \

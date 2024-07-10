@@ -12,7 +12,7 @@ library. For licensing terms of these, please consult the appropriate library's
 documentation.
 
 Also, Chawan is statically linked to the Nim standard library. At the time
-of writing, (i.e. as of Nim 2.0.4) this is the MIT license (same terms as
+of writing, (i.e. as of Nim 2.0.8) this is the MIT license (same terms as
 the vendored Punycode library).
 
 Table of contents:

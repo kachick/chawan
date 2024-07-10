@@ -6,9 +6,14 @@ import utils/twtstr
 # extension -> type
 type MimeTypes* = distinct Table[string, string]
 
-proc `[]`*(mimeTypes: MimeTypes; k: string): string {.borrow.}
-proc contains*(mimeTypes: MimeTypes; k: string): bool {.borrow.}
-proc hasKeyOrPut*(mimeTypes: var MimeTypes; k, v: string): bool {.borrow.}
+template `[]`*(mimeTypes: MimeTypes; k: string): string =
+  Table[string, string](mimeTypes)[k]
+
+template contains*(mimeTypes: MimeTypes; k: string): bool =
+  k in Table[string, string](mimeTypes)
+
+template hasKeyOrPut*(mimeTypes: var MimeTypes; k, v: string): bool =
+  Table[string, string](mimeTypes).hasKeyOrPut(k, v)
 
 # Add mime types found in stream to mimeTypes.
 # No error handling for now.

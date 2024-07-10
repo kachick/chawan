@@ -1,7 +1,4 @@
 a
 cha
 target/
-.test/
-profile_results.txt
 .obj/
-lib/*.a
