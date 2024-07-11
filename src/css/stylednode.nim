@@ -125,32 +125,12 @@ proc addDependency*(styledNode: StyledNode; dep: Element; t: DependencyType) =
   if dep notin styledNode.depends[t]:
     styledNode.depends[t].add(dep)
 
-func newStyledElement*(parent: StyledNode; element: Element;
-    computed: CSSComputedValues; reg: DependencyInfo): StyledNode =
-  return StyledNode(
-    t: stElement,
-    computed: computed,
-    node: element,
-    parent: parent,
-    depends: reg
-  )
-
 func newStyledElement*(parent: StyledNode; element: Element): StyledNode =
   return StyledNode(t: stElement, node: element, parent: parent)
 
 # Root
 func newStyledElement*(element: Element): StyledNode =
   return StyledNode(t: stElement, node: element)
-
-func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
-    computed: CSSComputedValues; reg: DependencyInfo): StyledNode =
-  return StyledNode(
-    t: stElement,
-    computed: computed,
-    pseudo: pseudo,
-    parent: parent,
-    depends: reg
-  )
 
 func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
     computed: CSSComputedValues): StyledNode =
@@ -167,6 +147,11 @@ func newStyledText*(parent: StyledNode; text: Text): StyledNode =
 func newStyledText*(text: string): StyledNode =
   return StyledNode(t: stText, node: CharacterData(data: text))
 
-func newStyledReplacement*(parent: StyledNode; content: CSSContent):
-    StyledNode =
-  return StyledNode(t: stReplacement, parent: parent, content: content)
+func newStyledReplacement*(parent: StyledNode; content: CSSContent;
+    pseudo: PseudoElem): StyledNode =
+  return StyledNode(
+    t: stReplacement,
+    parent: parent,
+    content: content,
+    pseudo: pseudo
+  )

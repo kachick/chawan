@@ -436,7 +436,8 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       let styledPseudo = pseudo.applyDeclarations(styledParent, declmap)
       if styledPseudo != nil and styledPseudo.computed{"content"}.len > 0:
         for content in styledPseudo.computed{"content"}:
-          styledPseudo.children.add(styledPseudo.newStyledReplacement(content))
+          let child = styledPseudo.newStyledReplacement(content, peNone)
+          styledPseudo.children.add(child)
         styledParent.children.add(styledPseudo)
     of peInputText:
       let s = HTMLInputElement(styledParent.node).inputString()
@@ -461,8 +462,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
         s: src,
         bmp: HTMLImageElement(styledParent.node).bitmap
       )
-      let styledText = styledParent.newStyledReplacement(content)
-      styledText.pseudo = pseudo
+      let styledText = styledParent.newStyledReplacement(content, pseudo)
       styledParent.children.add(styledText)
     of peCanvas:
       let content = CSSContent(
@@ -470,24 +470,20 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
         s: "canvas://",
         bmp: HTMLCanvasElement(styledParent.node).bitmap
       )
-      let styledText = styledParent.newStyledReplacement(content)
-      styledText.pseudo = pseudo
+      let styledText = styledParent.newStyledReplacement(content, pseudo)
       styledParent.children.add(styledText)
     of peVideo:
       let content = CSSContent(t: ContentVideo)
-      let styledText = styledParent.newStyledReplacement(content)
-      styledText.pseudo = pseudo
+      let styledText = styledParent.newStyledReplacement(content, pseudo)
       styledParent.children.add(styledText)
     of peAudio:
       let content = CSSContent(t: ContentAudio)
-      let styledText = styledParent.newStyledReplacement(content)
-      styledText.pseudo = pseudo
+      let styledText = styledParent.newStyledReplacement(content, pseudo)
       styledParent.children.add(styledText)
     of peNewline:
       let content = CSSContent(t: ContentNewline)
-      let styledText = styledParent.newStyledReplacement(content)
+      let styledText = styledParent.newStyledReplacement(content, pseudo)
       styledParent.children.add(styledText)
-      styledText.pseudo = pseudo
     of peNone: assert false
   else:
     assert child != nil

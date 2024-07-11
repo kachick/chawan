@@ -65,7 +65,6 @@ type
     cptPaddingLeft = "padding-left"
     cptPaddingRight = "padding-right"
     cptPaddingBottom = "padding-bottom"
-    cptWordSpacing = "word-spacing"
     cptVerticalAlign = "vertical-align"
     cptLineHeight = "line-height"
     cptTextAlign = "text-align"
@@ -439,7 +438,6 @@ const ValueTypes = [
   cptPaddingLeft: cvtLength,
   cptPaddingRight: cvtLength,
   cptPaddingBottom: cvtLength,
-  cptWordSpacing: cvtLength,
   cptVerticalAlign: cvtVerticalAlign,
   cptLineHeight: cvtLength,
   cptTextAlign: cvtTextAlign,
@@ -478,7 +476,7 @@ const ValueTypes = [
 
 const InheritedProperties = {
   cptColor, cptFontStyle, cptWhiteSpace, cptFontWeight, cptTextDecoration,
-  cptWordBreak, cptListStyleType, cptWordSpacing, cptLineHeight, cptTextAlign,
+  cptWordBreak, cptListStyleType, cptLineHeight, cptTextAlign,
   cptListStylePosition, cptCaptionSide, cptBorderSpacing, cptBorderCollapse,
   cptQuotes, cptVisibility, cptTextTransform
 }
@@ -1001,18 +999,6 @@ func cssAbsoluteLength(val: CSSComponentValue): Opt[CSSLength] =
     else: discard
   return err()
 
-func cssWordSpacing(cval: CSSComponentValue): Opt[CSSLength] =
-  if cval of CSSToken:
-    let tok = CSSToken(cval)
-    case tok.tokenType
-    of cttDimension:
-      return cssLength(tok.nvalue, tok.unit)
-    of cttIdent:
-      if tok.value.equalsIgnoreCase("normal"):
-        return ok(CSSLengthAuto)
-    else: discard
-  return err()
-
 func cssGlobal(cval: CSSComponentValue): CSSGlobalType =
   return parseIdent[CSSGlobalType](cval).get(cgtNoglobal)
 
@@ -1231,8 +1217,6 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
   of cvtColor: return_new color, ?cssColor(cval)
   of cvtLength:
     case t
-    of cptWordSpacing:
-      return_new length, ?cssWordSpacing(cval)
     of cptLineHeight:
       return_new length, ?cssLineHeight(cval)
     of cptMaxWidth, cptMaxHeight, cptMinWidth, cptMinHeight:
@@ -1293,9 +1277,8 @@ func getInitialColor(t: CSSPropertyType): CellColor =
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
-  of cptWidth, cptHeight, cptWordSpacing, cptLineHeight, cptLeft, cptRight,
-      cptTop, cptBottom, cptMaxWidth, cptMaxHeight, cptMinWidth, cptMinHeight,
-      cptFlexBasis:
+  of cptWidth, cptHeight, cptLineHeight, cptLeft, cptRight, cptTop, cptBottom,
+      cptMaxWidth, cptMaxHeight, cptMinWidth, cptMinHeight, cptFlexBasis:
     return CSSLengthAuto
   else:
     return CSSLength(auto: false, unit: cuPx, num: 0)
