@@ -387,6 +387,11 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
       of iatSpacing:
         grid.setSpacing(state, atom, offset, format, fragment.node)
       of iatImage:
+        let x1 = offset.x.toInt
+        let y1 = offset.y.toInt
+        let x2 = (offset.x + atom.size.w).toInt
+        let y2 = (offset.y + atom.size.h).toInt
+        grid.paintBackground(state, bgcolor, x1, y1, x2, y2, fragment.node)
         state.images.add(PosBitmap(
           x: (offset.x div state.attrs.ppc).toInt,
           y: (offset.y div state.attrs.ppl).toInt,
