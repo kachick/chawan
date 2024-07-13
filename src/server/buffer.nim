@@ -978,7 +978,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       doAssert outputId != -1 and stream != nil
       response.outputId = outputId
       response.body = stream
-      let fd = response.body.fd
+      let fd = int(response.body.fd)
       buffer.loader.ongoing[fd] = response
       buffer.selector.registerHandle(fd, {Read}, 0)
     if buffer.istream != nil:
@@ -1934,10 +1934,10 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   r.sread(buffer.loader.key)
   r.sread(buffer.cacheId)
   let fd = pstream.recvFileHandle()
-  buffer.fd = fd
+  buffer.fd = int(fd)
   buffer.istream = newPosixStream(fd)
   buffer.istream.setBlocking(false)
-  buffer.selector.registerHandle(fd, {Read}, 0)
+  buffer.selector.registerHandle(int(fd), {Read}, 0)
   loader.registerFun = proc(fd: int) =
     buffer.selector.registerHandle(fd, {Read}, 0)
   loader.unregisterFun = proc(fd: int) =

@@ -1937,6 +1937,10 @@ proc connected(pager: Pager; container: Container; response: Response) =
     pager.deleteContainer(container, container.find(ndAny))
     pager.refreshStatusMsg()
 
+proc unregisterFd(pager: Pager; fd: int) =
+  pager.selector.unregister(fd)
+  pager.loader.unregistered.add(fd)
+
 # true if done, false if keep
 proc handleConnectingContainer*(pager: Pager; i: int) =
   let item = pager.connectingContainers[i]
@@ -1961,8 +1965,7 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
       pager.fail(container, msg)
       # done
       pager.connectingContainers.del(i)
-      pager.selector.unregister(item.stream.fd)
-      pager.loader.unregistered.add(item.stream.fd)
+      pager.unregisterFd(int(item.stream.fd))
       stream.sclose()
   of ccsBeforeStatus:
     var r = stream.initPacketReader()
@@ -1981,8 +1984,7 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
     r.sread(response.headers)
     # done
     pager.connectingContainers.del(i)
-    pager.selector.unregister(item.stream.fd)
-    pager.loader.unregistered.add(item.stream.fd)
+    pager.unregisterFd(int(item.stream.fd))
     let redirect = response.getRedirect(container.request)
     if redirect != nil:
       stream.sclose()
@@ -1993,8 +1995,7 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
 proc handleConnectingContainerError*(pager: Pager; i: int) =
   let item = pager.connectingContainers[i]
   pager.fail(item.container, "loader died while loading")
-  pager.selector.unregister(item.stream.fd)
-  pager.loader.unregistered.add(item.stream.fd)
+  pager.unregisterFd(int(item.stream.fd))
   item.stream.sclose()
   pager.connectingContainers.del(i)
 
@@ -2067,8 +2068,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
       dec pager.numload
       pager.deleteContainer(container, container.find(ndAny))
       pager.connectingContainers.del(i)
-      pager.selector.unregister(item.stream.fd)
-      pager.loader.unregistered.add(item.stream.fd)
+      pager.unregisterFd(int(item.stream.fd))
       item.stream.sclose()
   return true
 

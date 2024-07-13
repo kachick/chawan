@@ -405,7 +405,7 @@ proc acceptBuffers(client: Client) =
     elif (let i = pager.findConnectingContainer(container); i != -1):
       # connecting to URL
       let stream = pager.connectingContainers[i].stream
-      client.selector.unregister(stream.fd)
+      client.selector.unregister(int(stream.fd))
       stream.sclose()
       pager.connectingContainers.del(i)
   let registerFun = proc(fd: int) =

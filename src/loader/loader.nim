@@ -176,12 +176,12 @@ type PushBufferResult = enum
 
 proc register(ctx: LoaderContext; output: OutputHandle) =
   assert not output.registered
-  ctx.selector.registerHandle(output.ostream.fd, {Write}, 0)
+  ctx.selector.registerHandle(int(output.ostream.fd), {Write}, 0)
   output.registered = true
 
 proc unregister(ctx: LoaderContext; output: OutputHandle) =
   assert output.registered
-  ctx.selector.unregister(output.ostream.fd)
+  ctx.selector.unregister(int(output.ostream.fd))
   output.registered = false
 
 # Either write data to the target output, or append it to the list of buffers to
@@ -271,7 +271,7 @@ proc addFd(ctx: LoaderContext; handle: LoaderHandle) =
   let output = handle.output
   output.ostream.setBlocking(false)
   handle.istream.setBlocking(false)
-  ctx.selector.registerHandle(handle.istream.fd, {Read}, 0)
+  ctx.selector.registerHandle(int(handle.istream.fd), {Read}, 0)
   assert handle.istream.fd notin ctx.handleMap
   assert output.ostream.fd notin ctx.outputMap
   ctx.handleMap[handle.istream.fd] = handle
@@ -826,7 +826,7 @@ proc finishCycle(ctx: LoaderContext; unregRead: var seq[LoaderHandle];
   # unregistered handles to nil.
   for handle in unregRead:
     if handle.istream != nil:
-      ctx.selector.unregister(handle.istream.fd)
+      ctx.selector.unregister(int(handle.istream.fd))
       ctx.handleMap.del(handle.istream.fd)
       if handle.parser != nil:
         handle.finishParse()
@@ -847,7 +847,7 @@ proc finishCycle(ctx: LoaderContext; unregRead: var seq[LoaderHandle];
         handle.outputs.del(i)
         if handle.outputs.len == 0 and handle.istream != nil:
           # premature end of all output streams; kill istream too
-          ctx.selector.unregister(handle.istream.fd)
+          ctx.selector.unregister(int(handle.istream.fd))
           ctx.handleMap.del(handle.istream.fd)
           if handle.parser != nil:
             handle.finishParse()
