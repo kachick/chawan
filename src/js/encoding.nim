@@ -1,6 +1,5 @@
 import chagashi/charset
 import chagashi/decoder
-import chagashi/decodercore
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/jstypes
@@ -13,10 +12,10 @@ type
   JSTextDecoder = ref object
     encoding: Charset
     ignoreBOM {.jsget.}: bool
-    fatal {.jsget.}: bool
+    errorMode: DecoderErrorMode
     doNotFlush: bool
     bomSeen: bool
-    td: TextDecoder
+    tdctx: TextDecoderContext
 
 jsDestructor(JSTextDecoder)
 jsDestructor(JSTextEncoder)
@@ -30,77 +29,27 @@ func newJSTextDecoder(label = "utf-8", options = TextDecoderOptions()):
   let encoding = getCharset(label)
   if encoding in {CHARSET_UNKNOWN, CHARSET_REPLACEMENT}:
     return errRangeError("Invalid encoding label")
+  let errorMode = if options.fatal: demFatal else: demReplacement
   return ok(JSTextDecoder(
     ignoreBOM: options.ignoreBOM,
-    fatal: options.fatal,
-    td: newTextDecoder(encoding),
+    errorMode: errorMode,
+    tdctx: initTextDecoderContext(encoding, errorMode),
     encoding: encoding
   ))
 
-type Growbuf = object
-  p: ptr UncheckedArray[uint8]
-  cap: int
-  len: int
-
-{.warning[Deprecated]: off.}:
-  proc `=destroy`(growbuf: var Growbuf) =
-    if growbuf.p != nil:
-      dealloc(growbuf.p)
-      growbuf.p = nil
-
-const BufferSize = 128
-proc grow(buf: var Growbuf) =
-  if buf.cap == 0:
-    buf.cap = BufferSize
-  else:
-    buf.cap *= 2
-  buf.p = cast[ptr UncheckedArray[uint8]](buf.p.realloc(buf.cap))
-
-proc write(buf: var Growbuf; s: openArray[uint8]) =
-  if buf.len + s.len > buf.cap:
-    buf.grow()
-  if s.len > 0:
-    copyMem(addr buf.p[buf.len], unsafeAddr s[0], s.len)
-  buf.len += s.len
-
-proc write(buf: var Growbuf; s: string) =
-  if buf.len + s.len > buf.cap:
-    buf.grow()
-  if s.len > 0:
-    copyMem(addr buf.p[buf.len], unsafeAddr s[0], s.len)
-  buf.len += s.len
+func fatal(this: JSTextDecoder): bool {.jsfget.} =
+  return this.errorMode == demFatal
 
 proc decode0(this: JSTextDecoder; ctx: JSContext; input: JSArrayBufferView;
     stream: bool): JSResult[JSValue] =
-  var oq = Growbuf(
-    p: cast[ptr UncheckedArray[uint8]](alloc(BufferSize)),
-    len: 0,
-    cap: BufferSize
-  )
-  let td = this.td
-  var i = 0
   let H = int(input.abuf.len) - 1
-  template handle_error =
-    if this.fatal:
-      return errTypeError("Failed to decode string")
-    oq.write("\uFFFD")
-    i = td.i
-  while true:
-    case td.decode(input.abuf.p.toOpenArray(i, H),
-      oq.p.toOpenArray(0, oq.cap - 1), oq.len)
-    of tdrDone:
-      if not stream:
-        case td.finish()
-        of tdfrDone: discard
-        of tdfrError: handle_error
-      break
-    of tdrReadInput:
-      oq.write(input.abuf.p.toOpenArray(i + td.pi, i + td.ri))
-    of tdrError:
-      handle_error
-    of tdrReqOutput:
-      oq.grow()
-  return ok(JS_NewStringLen(ctx, cast[cstring](oq.p), csize_t(oq.len)))
+  var oq = ""
+  for chunk in this.tdctx.decode(input.abuf.p.toOpenArray(0, H), not stream):
+    oq &= chunk
+  if this.tdctx.failed:
+    this.tdctx.failed = false
+    return errTypeError("Failed to decode string")
+  return ok(JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len)))
 
 type TextDecodeOptions = object of JSDict
   stream: bool
@@ -110,7 +59,7 @@ proc decode(ctx: JSContext; this: JSTextDecoder;
     input = none(JSArrayBufferView); options = TextDecodeOptions()):
     JSResult[JSValue] {.jsfunc.} =
   if not this.doNotFlush:
-    this.td = newTextDecoder(this.encoding)
+    this.tdctx = initTextDecoderContext(this.encoding, this.errorMode)
     this.bomSeen = false
   if this.doNotFlush != options.stream:
     this.doNotFlush = options.stream
