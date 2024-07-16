@@ -109,19 +109,19 @@ proc fetch[T: JSRequest|string](window: Window; input: T;
     return ok(promise)
   return ok(window.loader.fetch(input.request))
 
-proc setTimeout[T: JSValue|string](window: Window; handler: T;
-    timeout = 0i32): int32 {.jsfunc.} =
-  return window.timeouts.setTimeout(handler, timeout)
+proc setTimeout(window: Window; handler: JSValue; timeout = 0i32): int32
+    {.jsfunc.} =
+  return window.timeouts.setTimeout(ttTimeout, handler, timeout)
 
-proc setInterval[T: JSValue|string](window: Window; handler: T;
-    interval = 0i32): int32 {.jsfunc.} =
-  return window.timeouts.setInterval(handler, interval)
+proc setInterval(window: Window; handler: JSValue; interval = 0i32): int32
+    {.jsfunc.} =
+  return window.timeouts.setTimeout(ttInterval, handler, interval)
 
 proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
   window.timeouts.clearTimeout(id)
 
 proc clearInterval(window: Window; id: int32) {.jsfunc.} =
-  window.timeouts.clearInterval(id)
+  window.clearTimeout(id)
 
 func console(window: Window): Console {.jsfget.} =
   return window.internalConsole

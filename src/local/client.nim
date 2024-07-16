@@ -360,19 +360,19 @@ proc input(client: Client): EmptyPromise =
     p.resolve()
   return p
 
-proc setTimeout[T: JSValue|string](client: Client; handler: T;
-    timeout = 0i32): int32 {.jsfunc.} =
-  return client.timeouts.setTimeout(handler, timeout)
+proc setTimeout(client: Client; handler: JSValue; timeout = 0i32): int32
+    {.jsfunc.} =
+  return client.timeouts.setTimeout(ttTimeout, handler, timeout)
 
-proc setInterval[T: JSValue|string](client: Client; handler: T;
-    interval = 0i32): int32 {.jsfunc.} =
-  return client.timeouts.setInterval(handler, interval)
+proc setInterval(client: Client; handler: JSValue; interval = 0i32): int32
+    {.jsfunc.} =
+  return client.timeouts.setTimeout(ttInterval, handler, interval)
 
 proc clearTimeout(client: Client; id: int32) {.jsfunc.} =
   client.timeouts.clearTimeout(id)
 
 proc clearInterval(client: Client; id: int32) {.jsfunc.} =
-  client.timeouts.clearInterval(id)
+  client.clearTimeout(id)
 
 let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 

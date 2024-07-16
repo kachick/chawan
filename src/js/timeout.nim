@@ -2,20 +2,25 @@ import std/selectors
 import std/tables
 
 import io/dynstream
+import js/console
+import monoucha/fromjs
 import monoucha/javascript
+import types/opt
 
 type
-  TimeoutEntry = tuple
-    handler: (proc())
-    fdi: int
-    tofree: JSValue
+  TimeoutType* = enum
+    ttTimeout = "setTimeout handler"
+    ttInterval = "setInterval handler"
+
+  TimeoutEntry = ref object
+    t: TimeoutType
+    fd: int
+    val: JSValue
 
   TimeoutState* = object
     timeoutid: int32
     timeouts: Table[int32, TimeoutEntry]
-    intervals: Table[int32, TimeoutEntry]
-    timeout_fdis: Table[int, int32]
-    interval_fdis: Table[int, int32]
+    timeoutFds: Table[int, int32]
     selector: Selector[int] #TODO would be better with void...
     jsctx: JSContext
     err: DynStream #TODO shouldn't be needed
@@ -31,88 +36,54 @@ func newTimeoutState*(selector: Selector[int]; jsctx: JSContext; err: DynStream;
   )
 
 func empty*(state: TimeoutState): bool =
-  return state.timeouts.len == 0 and state.intervals.len == 0
-
-#TODO varargs
-proc setTimeout*[T: JSValue|string](state: var TimeoutState; handler: T;
-    timeout = 0i32): int32 =
-  let id = state.timeoutid
-  inc state.timeoutid
-  let fdi = state.selector.registerTimer(max(timeout, 1), true, 0)
-  state.timeout_fdis[fdi] = id
-  when T is string:
-    let evalJSFree = state.evalJSFree
-    state.timeouts[id] = ((proc() =
-      evalJSFree(handler, "setTimeout handler")
-    ), fdi, JS_NULL)
-  else:
-    let fun = JS_DupValue(state.jsctx, handler)
-    let jsctx = state.jsctx
-    let err = state.err
-    state.timeouts[id] = ((proc() =
-      let ret = JS_Call(jsctx, fun, JS_UNDEFINED, 0, nil)
-      if JS_IsException(ret):
-        jsctx.writeException(err)
-      JS_FreeValue(jsctx, ret)
-    ), fdi, fun)
-  return id
+  return state.timeouts.len == 0
 
 proc clearTimeout*(state: var TimeoutState; id: int32) =
   if id in state.timeouts:
-    let timeout = state.timeouts[id]
-    state.selector.unregister(timeout.fdi)
-    JS_FreeValue(state.jsctx, timeout.tofree)
-    state.timeout_fdis.del(timeout.fdi)
+    let entry = state.timeouts[id]
+    state.selector.unregister(entry.fd)
+    JS_FreeValue(state.jsctx, entry.val)
+    state.timeoutFds.del(entry.fd)
     state.timeouts.del(id)
 
-proc clearInterval*(state: var TimeoutState; id: int32) =
-  if id in state.intervals:
-    let interval = state.intervals[id]
-    state.selector.unregister(interval.fdi)
-    JS_FreeValue(state.jsctx, interval.tofree)
-    state.interval_fdis.del(interval.fdi)
-    state.intervals.del(id)
-
 #TODO varargs
-proc setInterval*[T: JSValue|string](state: var TimeoutState; handler: T;
-    interval = 0i32): int32 =
+proc setTimeout*(state: var TimeoutState; t: TimeoutType; handler: JSValue;
+    timeout = 0i32): int32 =
   let id = state.timeoutid
   inc state.timeoutid
-  let fdi = state.selector.registerTimer(max(interval, 1), false, 0)
-  state.interval_fdis[fdi] = id
-  when T is string:
-    let evalJSFree = state.evalJSFree
-    state.intervals[id] = ((proc() =
-      evalJSFree(handler, "setInterval handler")
-    ), fdi, JS_NULL)
-  else:
-    let fun = JS_DupValue(state.jsctx, handler)
-    let jsctx = state.jsctx
-    let err = state.err
-    state.intervals[id] = ((proc() =
-      let ret = JS_Call(jsctx, handler, JS_UNDEFINED, 0, nil)
-      if JS_IsException(ret):
-        jsctx.writeException(err)
-      JS_FreeValue(jsctx, ret)
-    ), fdi, fun)
+  let fd = state.selector.registerTimer(max(timeout, 1), t == ttTimeout, 0)
+  state.timeoutFds[fd] = id
+  state.timeouts[id] = TimeoutEntry(
+    t: t,
+    fd: fd,
+    val: JS_DupValue(state.jsctx, handler)
+  )
   return id
 
+proc runEntry(state: var TimeoutState; entry: TimeoutEntry; name: string) =
+  if JS_IsFunction(state.jsctx, entry.val):
+    let ret = JS_Call(state.jsctx, entry.val, JS_UNDEFINED, 0, nil)
+    if JS_IsException(ret):
+      state.jsctx.writeException(state.err)
+    JS_FreeValue(state.jsctx, ret)
+  else:
+    let s = fromJS[string](state.jsctx, entry.val)
+    if s.isSome:
+      state.evalJSFree(s.get, "setInterval handler")
+
 proc runTimeoutFd*(state: var TimeoutState; fd: int): bool =
-  if fd in state.interval_fdis:
-    state.intervals[state.interval_fdis[fd]].handler()
-    return true
-  elif fd in state.timeout_fdis:
-    let id = state.timeout_fdis[fd]
-    let timeout = state.timeouts[id]
-    timeout.handler()
+  if fd notin state.timeoutFds:
+    return false
+  let id = state.timeoutFds[fd]
+  let entry = state.timeouts[id]
+  state.runEntry(entry, $entry.t)
+  if entry.t == ttTimeout:
     state.clearTimeout(id)
-    return true
-  return false
+  return true
 
 proc clearAll*(state: var TimeoutState) =
   for entry in state.timeouts.values:
-    JS_FreeValue(state.jsctx, entry.tofree)
-  for entry in state.intervals.values:
-    JS_FreeValue(state.jsctx, entry.tofree)
+    state.selector.unregister(entry.fd)
+    JS_FreeValue(state.jsctx, entry.val)
   state.timeouts.clear()
-  state.intervals.clear()
+  state.timeoutFds.clear()
