@@ -25,7 +25,6 @@ import io/posixstream
 import io/promise
 import io/serversocket
 import io/socketstream
-import js/base64
 import js/console
 import js/domexception
 import js/encoding
@@ -359,20 +358,6 @@ proc input(client: Client): EmptyPromise =
     p = EmptyPromise()
     p.resolve()
   return p
-
-proc setTimeout(client: Client; handler: JSValue; timeout = 0i32): int32
-    {.jsfunc.} =
-  return client.timeouts.setTimeout(ttTimeout, handler, timeout)
-
-proc setInterval(client: Client; handler: JSValue; interval = 0i32): int32
-    {.jsfunc.} =
-  return client.timeouts.setTimeout(ttInterval, handler, interval)
-
-proc clearTimeout(client: Client; id: int32) {.jsfunc.} =
-  client.timeouts.clearTimeout(id)
-
-proc clearInterval(client: Client; id: int32) {.jsfunc.} =
-  client.clearTimeout(id)
 
 let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 
@@ -787,13 +772,6 @@ proc jsCollect(client: Client) {.jsfunc.} =
 
 proc sleep(client: Client; millis: int) {.jsfunc.} =
   sleep millis
-
-proc atob(client: Client; data: string): DOMResult[NarrowString] {.jsfunc.} =
-  return atob(data)
-
-proc btoa(ctx: JSContext; client: Client; data: JSValue): DOMResult[string]
-    {.jsfunc.} =
-  return btoa(ctx, data)
 
 func line(client: Client): LineEdit {.jsfget.} =
   return client.pager.lineedit
