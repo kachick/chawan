@@ -97,6 +97,8 @@ type
     defaultForeground: RGBColor
     ibuf*: string # buffer for chars when we can't process them
     sixelRegisterNum: int
+    sixelMaxWidth: int
+    sixelMaxHeight: int
     kittyId: int # counter for kitty image (*not* placement) ids.
     cursorx: int
     cursory: int
@@ -115,6 +117,9 @@ const XTPOPTITLE = CSI(23, "t")
 
 # report xterm text area size in pixels
 const GEOMPIXEL = CSI(14, "t")
+
+# report cell size
+const CELLSIZE = CSI(16, "t")
 
 # report window size in chars
 const GEOMCELL = CSI(18, "t")
@@ -570,6 +575,11 @@ proc applyConfigDimensions(term: Terminal) =
     term.attrs.ppl = int(term.config.display.pixels_per_line)
   term.attrs.width_px = term.attrs.ppc * term.attrs.width
   term.attrs.height_px = term.attrs.ppl * term.attrs.height
+  if term.imageMode == imSixel:
+    if term.sixelMaxWidth == 0:
+      term.sixelMaxWidth = term.attrs.width_px
+    if term.sixelMaxHeight == 0:
+      term.sixelMaxHeight = term.attrs.height_px
 
 proc applyConfig(term: Terminal) =
   # colors, formatting
@@ -637,8 +647,8 @@ proc positionImage(term: Terminal; image: CanvasImage; x, y, maxw, maxh: int):
   image.offy = -min(ypx, 0)
   # calculate maximum image size that fits on the screen relative to the image
   # origin (*not* offx/offy)
-  let maxwpx = maxw * term.attrs.ppc
-  let maxhpx = maxh * term.attrs.ppl
+  let maxwpx = min(maxw * term.attrs.ppc, term.sixelMaxWidth)
+  let maxhpx = min(maxh * term.attrs.ppl, term.sixelMaxHeight)
   image.dispw = min(int(image.bmp.width) + xpx, maxwpx) - xpx
   image.disph = min(int(image.bmp.height) + ypx, maxhpx) - ypx
   image.damaged = true
@@ -924,8 +934,12 @@ type
     colorMap: seq[tuple[n: int; rgb: RGBColor]]
     widthPx: int
     heightPx: int
+    ppc: int
+    ppl: int
     width: int
     height: int
+    sixelMaxWidth: int
+    sixelMaxHeight: int
     registers: int
 
 proc consumeIntUntil(term: Terminal; sentinel: char): int =
@@ -949,17 +963,20 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
     if term.config.display.image_mode.isNone:
       outs &= KITTYQUERY
       outs &= XTSMGRAPHICS(1, 1, 0) # color registers
+      outs &= XTSMGRAPHICS(2, 1, 0) # dimensions
     if term.config.display.color_mode.isNone:
       outs &= XTGETTCAP("524742")
     outs &=
       XTGETANSI &
       GEOMPIXEL &
+      CELLSIZE &
       GEOMCELL &
       DA1
     term.outfile.write(outs)
   else:
     const outs =
       GEOMPIXEL &
+      CELLSIZE &
       GEOMCELL &
       DA1
     term.outfile.write(outs)
@@ -1019,16 +1036,24 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
           result.success = true
           break # DA1 returned; done
         else: # 'S'
-          if params.len >= 3 and params[0] == 1 and params[1] == 0:
-            result.registers = params[2]
-      of '4', '8': # GEOMPIXEL, GEOMCELL
+          if params.len >= 4:
+            if params[0] == 2 and params[1] == 0:
+              result.sixelMaxWidth = params[2]
+              result.sixelMaxHeight = params[3]
+          if params.len >= 3:
+            if params[0] == 1 and params[1] == 0:
+              result.registers = params[2]
+      of '4', '6', '8': # GEOMPIXEL, CELLSIZE, GEOMCELL
         term.expect ';'
         let height = term.consume_int_till ';'
         let width = term.consume_int_till 't'
         if c == '4': # GEOMSIZE
           result.widthPx = width
           result.heightPx = height
-        if c == '8': # GEOMCELL
+        elif c == '6': # CELLSIZE
+          result.ppc = width
+          result.ppl = height
+        elif c == '8': # GEOMCELL
           result.width = width
           result.height = height
       else: fail
@@ -1125,11 +1150,15 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
     if r.success: # DA1 success
       if r.width != 0:
         term.attrs.width = r.width
-        if r.widthPx != 0:
+        if r.ppc != 0:
+          term.attrs.ppc = r.ppc
+        elif r.widthPx != 0:
           term.attrs.ppc = r.widthPx div r.width
       if r.height != 0:
         term.attrs.height = r.height
-        if r.heightPx != 0:
+        if r.ppl != 0:
+          term.attrs.ppl = r.ppl
+        elif r.heightPx != 0:
           term.attrs.ppl = r.heightPx div r.height
       if windowOnly:
         return
@@ -1140,6 +1169,8 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       if qaSixel in r.attrs:
         term.imageMode = imSixel
         term.sixelRegisterNum = clamp(r.registers, 16, 1024)
+        term.sixelMaxWidth = r.sixelMaxWidth
+        term.sixelMaxHeight = r.sixelMaxHeight
       if qaKittyImage in r.attrs:
         term.imageMode = imKitty
       # just assume the terminal doesn't choke on these.
