@@ -1,7 +1,9 @@
-import types/opt
+import std/options
 
 import monoucha/jsregex
 import monoucha/libregexp
+import types/opt
+import utils/charcategory
 
 func countBackslashes(buf: string; i: int): int =
   var j = 0
@@ -38,20 +40,29 @@ proc compileMatchRegex*(buf: string): Result[Regex, string] =
   buf2 &= "$"
   return compileRegex(buf2)
 
-proc compileSearchRegex*(str: string; defaultFlags: LREFlags):
+proc compileSearchRegex*(str: string; ignoreCase: Option[bool]):
     Result[Regex, string] =
   # Emulate vim's \c/\C: override defaultFlags if one is found, then remove it
   # from str.
   # Also, replace \< and \> with \b as (a bit sloppy) vi emulation.
-  var flags = defaultFlags
+  var flags = {LRE_FLAG_UNICODE}
+  if ignoreCase.isSome and ignoreCase.get:
+    flags.incl(LRE_FLAG_IGNORECASE)
   var s = newStringOfCap(str.len)
   var quot = false
+  var hasUpper = false
+  var hasC = false
   for c in str:
+    hasUpper = hasUpper or c in AsciiUpperAlpha
     if quot:
       quot = false
       case c
-      of 'c': flags.incl(LRE_FLAG_IGNORECASE)
-      of 'C': flags.excl(LRE_FLAG_IGNORECASE)
+      of 'c':
+        flags.incl(LRE_FLAG_IGNORECASE)
+        hasC = true
+      of 'C':
+        flags.excl(LRE_FLAG_IGNORECASE)
+        hasC = true
       of '<', '>': s &= "\\b"
       else: s &= '\\' & c
     elif c == '\\':
@@ -60,5 +71,7 @@ proc compileSearchRegex*(str: string; defaultFlags: LREFlags):
       s &= c
   if quot:
     s &= '\\'
+  if not hasC and not hasUpper and ignoreCase.isNone:
+    flags.incl(LRE_FLAG_IGNORECASE) # smart case
   flags.incl(LRE_FLAG_GLOBAL) # for easy backwards matching
   return compileRegex(s, flags)

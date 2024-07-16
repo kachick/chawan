@@ -240,7 +240,7 @@ cookie = false
 
 [search]
 wrap = true
-ignore-case = true
+ignore-case = "auto"
 
 [encoding]
 document-charset = ["utf-8", "sjis", "euc-jp", "latin2"]

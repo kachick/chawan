@@ -81,7 +81,7 @@ type
 
   SearchConfig = object
     wrap* {.jsgetset.}: bool
-    ignore_case* {.jsgetset.}: bool
+    ignore_case* {.jsgetset.}: Option[bool]
 
   EncodingConfig = object
     display_charset* {.jsgetset.}: Option[Charset]

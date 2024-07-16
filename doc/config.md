@@ -191,9 +191,11 @@ Following is a list of search options:
 
 <tr>
 <td>ignore-case</td>
-<td>boolean</td>
+<td>"auto" / boolean</td>
 <td>When set to true, document-wide searches are case-insensitive by
-default.<br>
+default. When set to "auto", searches are only case-sensitive when the search
+term includes a capital letter.<br>
+Defaults to "auto".<br>
 Note: this can also be overridden inline in the search bar (vim-style),
 with the escape sequences `\c` (ignore case) and `\C` (strict case). See
 [search mode](#search-mode) for details.)</td>
