@@ -65,7 +65,7 @@ jsDestructor(CustomEvent)
 jsDestructor(EventTarget)
 
 # Forward declaration hack
-var isDefaultPassive*: proc (eventTarget: EventTarget): bool
+var isDefaultPassive*: proc(eventTarget: EventTarget): bool {.nimcall.} = nil
 
 type
   EventInit = object of JSDict

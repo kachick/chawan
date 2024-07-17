@@ -63,7 +63,7 @@ func attrSelectorMatches(elem: Element; sel: Selector): bool =
 func selectorsMatch*[T: Element|StyledNode](elem: T; cxsel: ComplexSelector;
   felem: T = nil): bool
 
-func selectorsMatch*[T: Element|StyledNode](elem: T; slist: SelectorList;
+func selectorsMatch[T: Element|StyledNode](elem: T; slist: SelectorList;
     felem: T = nil): bool =
   for cxsel in slist:
     if elem.selectorsMatch(cxsel, felem):
@@ -237,23 +237,23 @@ func complexSelectorMatches[T: Element|StyledNode](elem: T;
 #TODO make that an explicit flag or something, also get rid of the Element case
 func selectorsMatch*[T: Element|StyledNode](elem: T; cxsel: ComplexSelector;
     felem: T = nil): bool =
-  var felem = if felem != nil:
+  let felem = if felem != nil:
     felem
   else:
     elem
   return elem.complexSelectorMatches(cxsel, felem)
 
-proc querySelectorAll(node: Node; q: string): seq[Element] =
+# Forward declaration hack
+doqsa = proc(node: Node; q: string): seq[Element] =
+  result = @[]
   let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
     if element.selectorsMatch(selectors):
       result.add(element)
-doqsa = (proc(node: Node, q: string): seq[Element] = querySelectorAll(node, q))
 
-proc querySelector(node: Node; q: string): Element =
+doqs = proc(node: Node; q: string): Element =
   let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
     if element.selectorsMatch(selectors):
       return element
   return nil
-doqs = (proc(node: Node, q: string): Element = querySelector(node, q))

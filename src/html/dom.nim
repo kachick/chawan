@@ -2406,7 +2406,7 @@ func findAutoFocus*(document: Document): Element =
   return nil
 
 # Forward declaration hack
-isDefaultPassive = func (eventTarget: EventTarget): bool =
+isDefaultPassive = func(eventTarget: EventTarget): bool =
   if eventTarget of Window:
     return true
   if not (eventTarget of Node):
@@ -2441,7 +2441,7 @@ func target0*(element: Element): string =
   return ""
 
 # HTMLHyperlinkElementUtils (for <a> and <area>)
-func href0[T: HTMLAnchorElement|HTMLAreaElement](element: T): string =
+func href0(element: HTMLElement): string =
   if not element.attrb(satHref):
     return ""
   let url = parseURL(element.attr(satHref), some(element.document.baseURL))
@@ -2459,26 +2459,26 @@ func href(base: HTMLBaseElement): string {.jsfget.} =
 
 # <a>
 func href*(anchor: HTMLAnchorElement): string {.jsfget.} =
-  anchor.href0
+  return anchor.href0
 
-proc href(anchor: HTMLAnchorElement; href: string) {.jsfset.} =
+proc setHref(anchor: HTMLAnchorElement; href: string) {.jsfset: "href".} =
   anchor.attr(satHref, href)
 
 func `$`(anchor: HTMLAnchorElement): string {.jsfunc.} =
-  anchor.href
+  return anchor.href
 
 proc setRelList(anchor: HTMLAnchorElement; s: string) {.jsfset: "relList".} =
   anchor.attr(satRel, s)
 
 # <area>
 func href(area: HTMLAreaElement): string {.jsfget.} =
-  area.href0
+  return area.href0
 
-proc href(area: HTMLAreaElement; href: string) {.jsfset.} =
+proc setHref(area: HTMLAreaElement; href: string) {.jsfset: "href".} =
   area.attr(satHref, href)
 
 func `$`(area: HTMLAreaElement): string {.jsfunc.} =
-  area.href
+  return area.href
 
 proc setRelList(area: HTMLAreaElement; s: string) {.jsfset: "relList".} =
   area.attr(satRel, s)
@@ -2502,6 +2502,7 @@ func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
   let control = label.control
   if control != nil:
     return control.form
+  return nil
 
 # <link>
 proc setRelList(link: HTMLLinkElement; s: string) {.jsfset: "relList".} =
@@ -2528,14 +2529,15 @@ func jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
 # <video>
-func getSrc*(this: HTMLVideoElement|HTMLAudioElement): string =
-  var src = this.attr(satSrc)
-  if src == "":
-    for el in this.elements(TAG_SOURCE):
-      src = el.attr(satSrc)
-      if src != "":
-        break
-  src
+func getSrc*(this: HTMLElement): string =
+  let src = this.attr(satSrc)
+  if src != "":
+    return src
+  for el in this.elements(TAG_SOURCE):
+    let src = el.attr(satSrc)
+    if src != "":
+      return src
+  return ""
 
 func newText*(document: Document; data: string): Text =
   return Text(
@@ -2565,10 +2567,7 @@ func newProcessingInstruction(document: Document; target, data: string):
   )
 
 func newDocumentFragment(document: Document): DocumentFragment =
-  return DocumentFragment(
-    internalDocument: document,
-    index: -1
-  )
+  return DocumentFragment(internalDocument: document, index: -1)
 
 func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
   let window = ctx.getGlobalOpaque(Window).get
@@ -2734,7 +2733,7 @@ func parseURL*(document: Document; s: string): Option[URL] =
   #TODO encodings
   return parseURL(s, some(document.baseURL))
 
-func media*[T: HTMLLinkElement|HTMLStyleElement](element: T): string =
+func media*(element: HTMLElement): string =
   return element.attr(satMedia)
 
 func title*(document: Document): string {.jsfget.} =
@@ -4172,14 +4171,14 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
 func isSameNode(node, other: Node): bool {.jsfunc.} =
   return node == other
 
-# Forward definition hack (these are set in selectors.nim)
-var doqsa*: proc (node: Node; q: string): seq[Element]
-var doqs*: proc (node: Node; q: string): Element
+# Forward declaration hack (these are set in selectors.nim)
+var doqsa*: proc (node: Node; q: string): seq[Element] {.nimcall.} = nil
+var doqs*: proc (node: Node; q: string): Element {.nimcall.} = nil
 
-proc querySelectorAll*(node: Node; q: string): seq[Element] {.jsfunc.} =
+proc querySelectorAll(node: Node; q: string): seq[Element] {.jsfunc.} =
   return doqsa(node, q)
 
-proc querySelector*(node: Node; q: string): Element {.jsfunc.} =
+proc querySelector(node: Node; q: string): Element {.jsfunc.} =
   return doqs(node, q)
 
 const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
