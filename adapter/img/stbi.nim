@@ -13,7 +13,7 @@ import utils/twtstr
 {.push header: "stb_image.h".}
 
 type stbi_io_callbacks {.importc.} = object
-  read: proc(user: pointer; data: ptr uint8; size: cint): cint {.cdecl.}
+  read: proc(user: pointer; data: ptr char; size: cint): cint {.cdecl.}
   skip: proc(user: pointer; n: cint) {.cdecl.}
   eof: proc(user: pointer): cint {.cdecl.}
 
@@ -30,7 +30,7 @@ proc stbi_image_free(retval_from_stbi_load: pointer) {.importc.}
 
 {.pop.}
 
-proc myRead(user: pointer; data: ptr uint8; size: cint): cint {.cdecl.} =
+proc myRead(user: pointer; data: ptr char; size: cint): cint {.cdecl.} =
   return cint(stdin.readBuffer(data, size))
 
 proc mySkip(user: pointer; n: cint) {.cdecl.} =
