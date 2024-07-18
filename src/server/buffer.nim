@@ -46,7 +46,6 @@ import monoucha/javascript
 import monoucha/jsregex
 import monoucha/libregexp
 import monoucha/quickjs
-import monoucha/tojs
 import types/blob
 import types/cell
 import types/color
@@ -859,44 +858,6 @@ proc rewind(buffer: Buffer; offset: int; unregister = true): bool =
   buffer.bytesRead = offset
   return true
 
-proc setHTML(buffer: Buffer) =
-  buffer.initDecoder()
-  let factory = newCAtomFactory()
-  buffer.factory = factory
-  let navigate = if buffer.config.scripting:
-    proc(url: URL) = buffer.navigate(url)
-  else:
-    nil
-  buffer.window = newWindow(
-    buffer.config.scripting,
-    buffer.config.images,
-    buffer.config.styling,
-    buffer.selector,
-    buffer.attrs,
-    factory,
-    navigate,
-    buffer.loader,
-    buffer.url
-  )
-  let confidence = if buffer.config.charsetOverride == CHARSET_UNKNOWN:
-    ccTentative
-  else:
-    ccCertain
-  buffer.htmlParser = newHTML5ParserWrapper(
-    buffer.window,
-    buffer.url,
-    buffer.factory,
-    confidence,
-    buffer.charset
-  )
-  assert buffer.htmlParser.builder.document != nil
-  const css = staticRead"res/ua.css"
-  const quirk = css & staticRead"res/quirk.css"
-  buffer.uastyle = css.parseStylesheet(factory)
-  buffer.quirkstyle = quirk.parseStylesheet(factory)
-  buffer.userstyle = parseStylesheet(buffer.config.userstyle, factory)
-  buffer.document = buffer.htmlParser.builder.document
-
 # As defined in std/selectors: this determines whether kqueue is being used.
 # On these platforms, we must not close the selector after fork, since kqueue
 # fds are not inherited after a fork.
@@ -1029,17 +990,16 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
 
 proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let window = buffer.window
-  if window == nil or not buffer.config.scripting:
-    return
   let ctx = window.jsctx
   let document = buffer.document
-  let event = newEvent(ctx, "DOMContentLoaded", document)
+  let adcl = window.toAtom(satDOMContentLoaded)
+  let event = newEvent(adcl, document)
   var called = false
   var els = document.eventListeners
   for el in els:
     if el.removed:
       continue
-    if el.ctype == "DOMContentLoaded":
+    if el.ctype == adcl:
       let e = ctx.invoke(el, event)
       if JS_IsException(e):
         ctx.writeException(buffer.estream)
@@ -1052,16 +1012,15 @@ proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
-  if window == nil or not buffer.config.scripting:
-    return
   let ctx = window.jsctx
-  let event = newEvent(ctx, "load", window)
+  let aload = window.toAtom(satLoad)
+  let event = newEvent(aload, window)
   var called = false
   var els = window.eventListeners
   for el in els:
     if el.removed:
       continue
-    if el.ctype == "load":
+    if el.ctype == aload:
       let e = ctx.invoke(el, event)
       if JS_IsException(e):
         ctx.writeException(buffer.estream)
@@ -1071,42 +1030,6 @@ proc dispatchLoadEvent(buffer: Buffer) =
         break
   if called:
     buffer.do_reshape()
-
-type DispatchEventResult = tuple
-  called: bool
-  canceled: bool
-
-proc dispatchEvent(buffer: Buffer; ctype, jsName: string; elem: Element):
-    DispatchEventResult =
-  var called = false
-  var canceled = false
-  let ctx = buffer.window.jsctx
-  let event = newEvent(ctx, ctype, elem)
-  var jsEvent = ctx.toJS(event)
-  let jsNameAtom = JS_NewAtomLen(ctx, cstring(jsName), csize_t(jsName.len))
-  for a in elem.branch:
-    event.currentTarget = a
-    var stop = false
-    var els = a.eventListeners
-    for el in els:
-      if el.ctype == ctype:
-        let e = ctx.invoke(el, event)
-        called = true
-        if JS_IsException(e):
-          ctx.writeException(buffer.estream)
-        JS_FreeValue(ctx, e)
-        if efStopImmediatePropagation in event.flags:
-          stop = true
-          break
-        if efStopPropagation in event.flags:
-          stop = true
-        if efCanceled in event.flags:
-          canceled = true
-    if stop:
-      break
-  JS_FreeValue(ctx, jsEvent)
-  JS_FreeAtom(ctx, jsNameAtom)
-  return (called, canceled)
 
 proc finishLoad(buffer: Buffer): EmptyPromise =
   if buffer.state != bsLoadingPage:
@@ -1122,7 +1045,8 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     ))
   buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
-  buffer.dispatchDOMContentLoadedEvent()
+  if buffer.config.scripting:
+    buffer.dispatchDOMContentLoadedEvent()
   buffer.selector.unregister(buffer.fd)
   buffer.loader.unregistered.add(buffer.fd)
   buffer.loader.removeCachedItem(buffer.cacheId)
@@ -1192,7 +1116,8 @@ proc onload(buffer: Buffer) =
         buffer.do_reshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
-        buffer.dispatchLoadEvent()
+        if buffer.config.scripting:
+          buffer.dispatchLoadEvent()
         if buffer.hasTask(bcGetTitle):
           buffer.resolveTask(bcGetTitle, buffer.document.title)
         if buffer.hasTask(bcLoad):
@@ -1641,8 +1566,9 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
   var canceled = false
   let clickable = buffer.getCursorClickable(cursorx, cursory)
   if buffer.config.scripting:
-    let elem = buffer.getCursorElement(cursorx, cursory)
-    (called, canceled) = buffer.dispatchEvent("click", "onclick", elem)
+    let element = buffer.getCursorElement(cursorx, cursory)
+    let event = newEvent(buffer.window.toAtom(satClick), element)
+    (called, canceled) = buffer.window.dispatchEvent(event, element)
     if called:
       buffer.do_reshape()
   if not canceled:
@@ -1912,6 +1838,11 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ssock: ServerSocket; pstream: SocketStream; selector: Selector[int]) =
   let emptySel = Selector[int]()
   emptySel[] = selector[]
+  let factory = newCAtomFactory()
+  let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
+    ccTentative
+  else:
+    ccCertain
   let buffer = Buffer(
     attrs: attrs,
     config: config,
@@ -1927,8 +1858,13 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     charsetStack: charsetStack,
     cacheId: -1,
     outputId: -1,
-    emptySel: emptySel
+    emptySel: emptySel,
+    factory: factory,
+    window: newWindow(config.scripting, config.images, config.styling, selector,
+      attrs, factory, loader, url)
   )
+  if buffer.config.scripting:
+    buffer.window.navigate = proc(url: URL) = buffer.navigate(url)
   buffer.charset = buffer.charsetStack.pop()
   var r = pstream.initPacketReader()
   r.sread(buffer.loader.key)
@@ -1943,7 +1879,21 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   loader.unregisterFun = proc(fd: int) =
     buffer.selector.unregister(fd)
   buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
-  buffer.setHTML()
+  const css = staticRead"res/ua.css"
+  const quirk = css & staticRead"res/quirk.css"
+  buffer.initDecoder()
+  buffer.uastyle = css.parseStylesheet(factory)
+  buffer.quirkstyle = quirk.parseStylesheet(factory)
+  buffer.userstyle = parseStylesheet(buffer.config.userstyle, factory)
+  buffer.htmlParser = newHTML5ParserWrapper(
+    buffer.window,
+    buffer.url,
+    buffer.factory,
+    confidence,
+    buffer.charset
+  )
+  assert buffer.htmlParser.builder.document != nil
+  buffer.document = buffer.htmlParser.builder.document
   buffer.runBuffer()
   buffer.cleanup()
   quit(0)

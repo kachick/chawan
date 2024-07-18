@@ -109,6 +109,9 @@ proc fetch[T: JSRequest|string](window: Window; input: T;
     return ok(promise)
   return ok(window.loader.fetch(input.request))
 
+# Forward declaration hack
+windowFetch = fetch
+
 proc setTimeout(window: Window; handler: JSValue; timeout = 0i32): int32
     {.jsfunc.} =
   return window.timeouts.setTimeout(ttTimeout, handler, timeout)
@@ -178,7 +181,7 @@ proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)
     let this = ctx.toJS(window)
     ctx.definePropertyC(this, "onload", JS_DupValue(ctx, val))
     #TODO I haven't checked but this might also be wrong
-    doAssert ctx.addEventListener(window, "load", val).isSome
+    doAssert ctx.addEventListener(window, window.toAtom(satLoad), val).isSome
     JS_FreeValue(ctx, this)
 
 proc addWindowModule*(ctx: JSContext) =
@@ -237,8 +240,8 @@ proc runJSJobs*(window: Window) =
     ctx.writeException(window.console.err)
 
 proc newWindow*(scripting, images, styling: bool; selector: Selector[int];
-    attrs: WindowAttributes; factory: CAtomFactory; navigate: proc(url: URL);
-    loader: FileLoader; url: URL): Window =
+    attrs: WindowAttributes; factory: CAtomFactory; loader: FileLoader;
+    url: URL): Window =
   let err = newDynFileStream(stderr)
   let window = Window(
     attrs: attrs,
@@ -251,7 +254,6 @@ proc newWindow*(scripting, images, styling: bool; selector: Selector[int];
       scripting: scripting,
       origin: url.origin
     ),
-    navigate: navigate,
     factory: factory
   )
   window.location = window.newLocation()

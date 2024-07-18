@@ -4,6 +4,11 @@ import std/sets
 import std/strutils
 
 import chame/tags
+import monoucha/fromjs
+import monoucha/javascript
+import monoucha/jserror
+import monoucha/tojs
+import types/opt
 
 # create a static enum compatible with chame/tags
 
@@ -11,6 +16,7 @@ macro makeStaticAtom =
   # declare inside the macro to avoid confusion with StaticAtom0
   type
     StaticAtom0 = enum
+      satAbort = "abort"
       satAcceptCharset = "accept-charset"
       satAction = "action"
       satAlign = "align"
@@ -23,14 +29,17 @@ macro makeStaticAtom =
       satChecked = "checked"
       satClass = "class"
       satClassList = "classList"
+      satClick = "click"
       satColor = "color"
       satCols = "cols"
       satColspan = "colspan"
       satCrossorigin = "crossorigin"
+      satDOMContentLoaded = "DOMContentLoaded"
       satDefer = "defer"
       satDirname = "dirname"
       satDisabled = "disabled"
       satEnctype = "enctype"
+      satError = "error"
       satEvent = "event"
       satFor = "for"
       satForm = "form"
@@ -43,16 +52,22 @@ macro makeStaticAtom =
       satIntegrity = "integrity"
       satIsmap = "ismap"
       satLanguage = "language"
-      satMax = "max",
+      satLoad = "load"
+      satLoadend = "loadend"
+      satLoadstart = "loadstart"
+      satMax = "max"
       satMedia = "media"
       satMethod = "method"
-      satMin = "min",
+      satMin = "min"
+      satMousewheel = "mousewheel"
       satMultiple = "multiple"
       satName = "name"
       satNomodule = "nomodule"
       satNovalidate = "novalidate"
       satOnclick = "onclick"
       satOnload = "onload"
+      satProgress = "progress"
+      satReadystatechange = "readystatechange"
       satReferrerpolicy = "referrerpolicy"
       satRel = "rel"
       satRequired = "required"
@@ -68,11 +83,15 @@ macro makeStaticAtom =
       satStylesheet = "stylesheet"
       satTarget = "target"
       satText = "text"
+      satTimeout = "timeout"
       satTitle = "title"
+      satTouchmove = "touchmove"
+      satTouchstart = "touchstart"
       satType = "type"
       satUsemap = "usemap"
       satValign = "valign"
       satValue = "value"
+      satWheel = "wheel"
       satWidth = "width"
   let decl = quote do:
     type StaticAtom* {.inject.} = enum
@@ -177,3 +196,22 @@ func toStaticAtom*(factory: CAtomFactory; atom: CAtom): StaticAtom =
   if i <= int(StaticAtom.high):
     return StaticAtom(i)
   return atUnknown
+
+var getFactory* {.compileTime.}: proc(ctx: JSContext): CAtomFactory {.nimcall,
+  noSideEffect.}
+
+proc toAtom*(ctx: JSContext; atom: StaticAtom): CAtom =
+  return ctx.getFactory().toAtom(atom)
+
+proc toStaticAtom*(ctx: JSContext; atom: CAtom): StaticAtom =
+  return ctx.getFactory().toStaticAtom(atom)
+
+proc fromJSCAtom*(ctx: JSContext; val: JSValue): JSResult[CAtom] =
+  let s = ?fromJS[string](ctx, val)
+  return ok(ctx.getFactory().toAtom(s))
+
+proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
+  return ctx.toJS(ctx.getFactory().toStr(atom))
+
+proc toJS*(ctx: JSContext; atom: StaticAtom): JSValue =
+  return ctx.toJS($atom)

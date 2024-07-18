@@ -35,6 +35,7 @@ import monoucha/jserror
 import monoucha/jsopaque
 import monoucha/jspropenumlist
 import monoucha/jsutils
+import monoucha/quickjs
 import monoucha/tojs
 import types/blob
 import types/color
@@ -767,11 +768,11 @@ type
     of rtUlong, rtUlongGz:
       u: uint32
     of rtFunction:
-      ctype: string
+      ctype: StaticAtom
     else: discard
 
-func attrType0(s: static string): StaticAtom =
-  return parseEnum[StaticAtom](s)
+func attrType0(s: static string): StaticAtom {.compileTime.} =
+  return strictParseEnum[StaticAtom](s).get
 
 template toset(ts: openArray[TagType]): set[TagType] =
   var tags: system.set[TagType]
@@ -840,14 +841,14 @@ func makeulgz(name: static string; ts: varargs[TagType]; default = 0u32):
     u: default
   )
 
-func makef(name: static string; ts: set[TagType]; ctype: string): ReflectEntry =
+func makef(name: static string; ts: set[TagType]; ctype: static string): ReflectEntry =
   const attrname = attrType0(name)
   ReflectEntry(
     attrname: attrname,
     funcname: name,
     t: rtFunction,
     tags: ts,
-    ctype: ctype
+    ctype: attrType0(ctype)
   )
 
 const ReflectTable0 = [
@@ -891,10 +892,34 @@ func baseURL*(document: Document): URL
 proc delAttr(element: Element; i: int; keep = false)
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 
+# For now, these are the same; on an API level however, getGlobal is guaranteed
+# to be non-null, while getWindow may return null in the future. (This is in
+# preparation for Worker support.)
+func getGlobal*(ctx: JSContext): Window =
+  let global = JS_GetGlobalObject(ctx)
+  let window = fromJS[Window](ctx, global).get
+  JS_FreeValue(ctx, global)
+  return window
+
+func getWindow*(ctx: JSContext): Window =
+  let global = JS_GetGlobalObject(ctx)
+  let window = fromJS[Window](ctx, global).get
+  JS_FreeValue(ctx, global)
+  return window
+
 func document*(node: Node): Document =
   if node of Document:
     return Document(node)
   return node.internalDocument
+
+proc toAtom*(window: Window; atom: StaticAtom): CAtom =
+  return window.factory.toAtom(atom)
+
+proc toAtom*(window: Window; s: string): CAtom =
+  return window.factory.toAtom(s)
+
+proc toStr*(window: Window; atom: CAtom): string =
+  return window.factory.toStr(atom)
 
 proc toAtom*(document: Document; s: string): CAtom =
   return document.factory.toAtom(s)
@@ -1028,6 +1053,12 @@ iterator ancestors*(node: Node): Element {.inline.} =
   while element != nil:
     yield element
     element = element.parentElement
+
+iterator nodeAncestors*(node: Node): Node {.inline.} =
+  var node = node.parentNode
+  while node != nil:
+    yield node
+    node = node.parentNode
 
 # Returns the node itself and its ancestors
 iterator branch*(node: Node): Node {.inline.} =
@@ -2160,7 +2191,7 @@ func serializesAsVoid(element: Element): bool =
   const Extra = {TAG_BASEFONT, TAG_BGSOUND, TAG_FRAME, TAG_KEYGEN, TAG_PARAM}
   return element.tagType in VoidElements + Extra
 
-func serializeFragment(node: Node): string
+func serializeFragment*(node: Node): string
 
 func serializeFragmentInner(child: Node; parentType: TagType): string =
   result = ""
@@ -2198,7 +2229,7 @@ func serializeFragmentInner(child: Node; parentType: TagType): string =
   elif child of DocumentType:
     result &= "<!DOCTYPE " & DocumentType(child).name & '>'
 
-func serializeFragment(node: Node): string =
+func serializeFragment*(node: Node): string =
   var node = node
   var parentType = TAG_UNKNOWN
   if node of Element:
@@ -2415,6 +2446,54 @@ isDefaultPassive = func(eventTarget: EventTarget): bool =
   return EventTarget(node.document) == eventTarget or
     EventTarget(node.document.html) == eventTarget or
     EventTarget(node.document.body) == eventTarget
+
+getFactory = proc(ctx: JSContext): CAtomFactory =
+  return ctx.getGlobal().factory
+
+type DispatchEventResult = tuple
+  called: bool
+  canceled: bool
+
+proc dispatchEvent0(window: Window; event: Event; currentTarget: EventTarget;
+    called, stop, canceled: var bool) =
+  let ctx = window.jsctx
+  event.currentTarget = currentTarget
+  var els = currentTarget.eventListeners # copy intentionally
+  for el in els:
+    if el.ctype == event.ctype:
+      let e = ctx.invoke(el, event)
+      called = true
+      if JS_IsException(e):
+        window.console.error(ctx.getExceptionMsg())
+      JS_FreeValue(ctx, e)
+      if efStopImmediatePropagation in event.flags:
+        stop = true
+        break
+      if efStopPropagation in event.flags:
+        stop = true
+      if efCanceled in event.flags:
+        canceled = true
+
+proc dispatchEvent*(window: Window; event: Event; target: EventTarget):
+    DispatchEventResult =
+  #TODO this is far from being compliant
+  var called = false
+  var canceled = false
+  let ctx = window.jsctx
+  var jsEvent = ctx.toJS(event)
+  var stop = false
+  window.dispatchEvent0(event, target, called, stop, canceled)
+  if not stop and target of Node:
+    for a in Node(target).nodeAncestors:
+      window.dispatchEvent0(event, a, called, stop, canceled)
+      if stop:
+        break
+  JS_FreeValue(ctx, jsEvent)
+  return (called, canceled)
+
+proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
+  let event = newEvent(window.toAtom(name), target)
+  discard window.dispatchEvent(event, target)
 
 proc parseColor(element: Element; s: string): ARGBColor =
   let cval = parseComponentValue(s)
@@ -2685,10 +2764,7 @@ func newDocument*(factory: CAtomFactory): Document =
   return document
 
 func newDocument(ctx: JSContext): Document {.jsctor.} =
-  let global = JS_GetGlobalObject(ctx)
-  let window = fromJS[Window](ctx, global).get
-  JS_FreeValue(ctx, global)
-  return newDocument(window.factory)
+  return newDocument(ctx.getGlobal().factory)
 
 func newDocumentType*(document: Document; name, publicId, systemId: string):
     DocumentType =
@@ -3013,8 +3089,8 @@ proc loadResource(window: Window; image: HTMLImageElement) =
       )
     window.loadingResourcePromises.add(p)
 
-proc reflectEvent(element: Element; target: EventTarget; name: StaticAtom;
-    ctype, value: string) =
+proc reflectEvent(element: Element; target: EventTarget; name, ctype: StaticAtom;
+    value: string) =
   let document = element.document
   let ctx = document.window.jsctx
   let urls = document.baseURL.serialize(excludepassword = true)
@@ -3031,7 +3107,7 @@ proc reflectEvent(element: Element; target: EventTarget; name: StaticAtom;
     # directly here, but a wrapper function that calls fun. Currently
     # you can run removeEventListener with element.onclick, that should
     # not work.
-    doAssert ctx.addEventListener(target, ctype, fun).isSome
+    doAssert ctx.addEventListener(target, document.toAtom(ctype), fun).isSome
   JS_FreeValue(ctx, fun)
 
 proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
@@ -3074,12 +3150,12 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
       element.cachedStyle = nil
     return
   if name == satOnclick and element.scriptingEnabled:
-    element.reflectEvent(element, name, "click", value.get(""))
+    element.reflectEvent(element, name, satClick, value.get(""))
     return
   case element.tagType
   of TAG_BODY:
     if name == satOnload and element.scriptingEnabled:
-      element.reflectEvent(element.document.window, name, "load", value.get(""))
+      element.reflectEvent(element.document.window, name, satLoad, value.get(""))
       return
   of TAG_INPUT:
     let input = HTMLInputElement(element)
@@ -4216,19 +4292,23 @@ proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
   case entry.t
-  of rtStr:
-    let x = toJS(ctx, element.attr(entry.attrname))
-    return x
-  of rtBool:
-    return toJS(ctx, element.attrb(entry.attrname))
-  of rtLong:
-    return toJS(ctx, element.attrl(entry.attrname).get(entry.i))
-  of rtUlong:
-    return toJS(ctx, element.attrul(entry.attrname).get(entry.u))
-  of rtUlongGz:
-    return toJS(ctx, element.attrulgz(entry.attrname).get(entry.u))
+  of rtStr: return ctx.toJS(element.attr(entry.attrname))
+  of rtBool: return ctx.toJS(element.attrb(entry.attrname))
+  of rtLong: return ctx.toJS(element.attrl(entry.attrname).get(entry.i))
+  of rtUlong: return ctx.toJS(element.attrul(entry.attrname).get(entry.u))
+  of rtUlongGz: return ctx.toJS(element.attrulgz(entry.attrname).get(entry.u))
   of rtFunction:
-    return JS_GetPropertyStr(ctx, this, cstring($entry.attrname))
+    let val = ctx.toJS(entry.attrname)
+    let atom = JS_ValueToAtom(ctx, val)
+    var res = JS_NULL
+    var desc: JSPropertyDescriptor
+    if JS_GetOwnProperty(ctx, addr desc, this, atom) > 0:
+      JS_FreeValue(ctx, desc.setter)
+      JS_FreeValue(ctx, desc.getter)
+      res = desc.value
+    JS_FreeValue(ctx, val)
+    JS_FreeAtom(ctx, atom)
+    return res
 
 proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
     {.cdecl.} =
@@ -4272,10 +4352,12 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
       let target = fromJS[EventTarget](ctx, this).get
       ctx.definePropertyC(this, $entry.attrname, JS_DupValue(ctx, val))
       #TODO I haven't checked but this might also be wrong
-      doAssert ctx.addEventListener(target, entry.ctype, val).isSome
+      let ctype = ctx.getGlobal().toAtom(entry.ctype)
+      doAssert ctx.addEventListener(target, ctype, val).isSome
   return JS_DupValue(ctx, val)
 
 func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
+  result = @[]
   for tag in tags:
     if tag in TagReflectMap:
       for i in TagReflectMap[tag]:
@@ -4285,7 +4367,6 @@ func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
           set: jsReflectSet,
           magic: i
         ))
-  return result
 
 func getElementReflectFunctions(): seq[TabGetSet] =
   result = @[]
@@ -4455,13 +4536,13 @@ proc insertAdjacentHTML(element: Element; position, text: string):
 
 proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
-  const extra_getset = getElementReflectFunctions()
+  const extraGetSet = getElementReflectFunctions()
   let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID,
-    has_extra_getset = true, extra_getset = extra_getset)
+    hasExtraGetSet = true, extraGetSet = extraGetSet)
   template register(t: typed; tags: set[TagType]) =
-    const extra_getset = getReflectFunctions(tags)
+    const extraGetSet = getReflectFunctions(tags)
     ctx.registerType(t, parent = htmlElementCID,
-      has_extra_getset = true, extra_getset = extra_getset)
+      hasExtraGetSet = true, extraGetSet = extra_getset)
   template register(t: typed; tag: TagType) =
     register(t, {tag})
   register(HTMLInputElement, TAG_INPUT)

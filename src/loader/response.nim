@@ -21,12 +21,12 @@ import utils/twtstr
 
 type
   ResponseType* = enum
-    TYPE_DEFAULT = "default"
-    TYPE_BASIC = "basic"
-    TYPE_CORS = "cors"
-    TYPE_ERROR = "error"
-    TYPE_OPAQUE = "opaque"
-    TYPE_OPAQUEREDIRECT = "opaqueredirect"
+    rtDefault = "default"
+    rtBasic = "basic"
+    rtCors = "cors"
+    rtError = "error"
+    rtOpaque = "opaque"
+    rtOpaquedirect = "opaqueredirect"
 
   #TODO fully implement headers guards
   HeadersGuard* = enum
@@ -35,6 +35,9 @@ type
     hgRequestNoCors = "request-no-cors"
     hgResponse = "response"
     hgNone = "none"
+
+  ResponseFlag* = enum
+    rfAborted
 
   Response* = ref object
     responseType* {.jsget: "type".}: ResponseType
@@ -52,6 +55,7 @@ type
     outputId*: int
     onRead*: proc(response: Response) {.nimcall.}
     opaque*: RootRef
+    flags*: set[ResponseFlag]
 
 jsDestructor(Response)
 
@@ -69,7 +73,7 @@ func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
   #TODO headers immutable
   return Response(
     res: 0,
-    responseType: TYPE_ERROR,
+    responseType: rtError,
     status: 0,
     headers: newHeaders(),
     headersGuard: hgImmutable,
@@ -79,8 +83,8 @@ func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
 func sok(response: Response): bool {.jsfget: "ok".} =
   return response.status in 200u16 .. 299u16
 
-func surl(response: Response): string {.jsfget: "url".} =
-  if response.responseType == TYPE_ERROR:
+func surl*(response: Response): string {.jsfget: "url".} =
+  if response.responseType == rtError or response.url == nil:
     return ""
   return $response.url
 
@@ -178,8 +182,7 @@ proc onReadBlob(response: Response) =
 proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
   if response.bodyUsed:
     let p = newPromise[JSResult[Blob]]()
-    let err = JSResult[Blob]
-      .err(newTypeError("Body has already been consumed"))
+    let err = JSResult[Blob].err(newTypeError("Body has already been consumed"))
     p.resolve(err)
     return p
   let opaque = BlobOpaque()

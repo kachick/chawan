@@ -1,3 +1,4 @@
+import std/strutils
 import std/tables
 
 import monoucha/fromjs
@@ -98,7 +99,7 @@ proc `[]=`*(headers: Headers; k: static string, v: string) =
   const k = k.toHeaderCase()
   headers.table[k] = @[v]
 
-func `[]`*(headers: Headers; k: static string): string =
+func `[]`*(headers: Headers; k: static string): var string =
   const k = k.toHeaderCase()
   return headers.table[k][0]
 
@@ -112,6 +113,52 @@ func getOrDefault*(headers: Headers; k: static string; default = ""): string =
     return p[][0]
   do:
     return default
+
+const TokenChars = {
+  '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'
+} + AsciiAlphaNumeric
+
+#TODO maybe assert these are valid on insertion?
+func isValidHeaderName*(s: string): bool =
+  return s.len > 0 and AllChars - TokenChars notin s
+
+func isValidHeaderValue*(s: string): bool =
+  return s.len == 0 or s[0] notin {' ', '\t'} and s[^1] notin {' ', '\t'} and
+    '\n' notin s
+
+func isForbiddenHeader*(name, value: string): bool =
+  const ForbiddenNames = [
+    "Accept-Charset",
+    "Accept-Encoding",
+    "Access-Control-Request-Headers",
+    "Access-Control-Request-Method",
+    "Connection",
+    "Content-Length",
+    "Cookie",
+    "Cookie2",
+    "Date",
+    "DNT",
+    "Expect",
+    "Host",
+    "Keep-Alive",
+    "Origin",
+    "Referer",
+    "Set-Cookie",
+    "TE",
+    "Trailer",
+    "Transfer-Encoding",
+    "Upgrade",
+    "Via",
+  ]
+  if name in ForbiddenNames:
+    return true
+  if name.startsWith("proxy-") or name.startsWith("sec-"):
+    return true
+  if name.equalsIgnoreCase("X-HTTP-Method") or
+      name.equalsIgnoreCase("X-HTTP-Method-Override") or
+      name.equalsIgnoreCase("X-Method-Override"):
+    return true # meh
+  return false
 
 proc addHeadersModule*(ctx: JSContext) =
   ctx.registerType(Headers)

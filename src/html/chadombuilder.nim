@@ -356,9 +356,7 @@ proc parseFromString(ctx: JSContext; parser: DOMParser; str, t: string):
     JSResult[Document] {.jsfunc.} =
   case t
   of "text/html":
-    let global = JS_GetGlobalObject(ctx)
-    let window = fromJS[Window](ctx, global).get
-    JS_FreeValue(ctx, global)
+    let window = ctx.getWindow()
     let url = if window.document != nil:
       window.document.url
     else:

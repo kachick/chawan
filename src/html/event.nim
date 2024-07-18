@@ -2,6 +2,7 @@ import std/math
 import std/options
 import std/times
 
+import html/catom
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
@@ -28,7 +29,7 @@ type
     efDispatch
 
   Event* = ref object of RootObj
-    ctype {.jsget: "type".}: string
+    ctype* {.jsget: "type".}: CAtom
     target* {.jsget.}: EventTarget
     currentTarget* {.jsget.}: EventTarget
     eventPhase {.jsget.}: uint16
@@ -50,7 +51,7 @@ type
   EventListenerCallback = JSValue
 
   EventListener* = ref object
-    ctype*: string
+    ctype*: CAtom
     callback*: EventListenerCallback
     capture: bool
     passive: Option[bool]
@@ -68,7 +69,7 @@ jsDestructor(EventTarget)
 var isDefaultPassive*: proc(eventTarget: EventTarget): bool {.nimcall.} = nil
 
 type
-  EventInit = object of JSDict
+  EventInit* = object of JSDict
     bubbles: bool
     cancelable: bool
     composed: bool
@@ -77,7 +78,7 @@ type
     detail: JSValue
 
 # Event
-proc innerEventCreationSteps(event: Event; eventInitDict: EventInit) =
+proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
   event.flags = {efInitialized}
   #TODO this is probably incorrect?
   # I think it measures the time since the first fork. not sure though
@@ -88,21 +89,20 @@ proc innerEventCreationSteps(event: Event; eventInitDict: EventInit) =
     event.flags.incl(efComposed)
 
 #TODO eventInitDict type
-proc newEvent(ctype: string; eventInitDict = EventInit()):
+proc newEvent(ctx: JSContext; ctype: CAtom; eventInitDict = EventInit()):
     JSResult[Event] {.jsctor.} =
-  let event = Event()
+  let event = Event(ctype: ctype)
   event.innerEventCreationSteps(eventInitDict)
-  event.ctype = ctype
   return ok(event)
 
-proc newEvent*(ctx: JSContext; ctype: string; target: EventTarget): Event =
+proc newEvent*(ctype: CAtom; target: EventTarget): Event =
   return Event(
     ctype: ctype,
     target: target,
     currentTarget: target
   )
 
-proc initialize(this: Event; ctype: string; bubbles, cancelable: bool) =
+proc initialize(this: Event; ctype: CAtom; bubbles, cancelable: bool) =
   this.flags.incl(efInitialized)
   this.isTrusted = false
   this.target = nil
@@ -110,7 +110,7 @@ proc initialize(this: Event; ctype: string; bubbles, cancelable: bool) =
   this.bubbles = bubbles
   this.cancelable = cancelable
 
-proc initEvent(this: Event; ctype: string; bubbles, cancelable: bool)
+proc initEvent(this: Event; ctype: CAtom; bubbles, cancelable: bool)
     {.jsfunc.} =
   if efDispatch notin this.flags:
     this.initialize(ctype, bubbles, cancelable)
@@ -158,7 +158,7 @@ func composed(this: Event): bool {.jsfget.} =
   return efComposed in this.flags
 
 # CustomEvent
-proc newCustomEvent(ctype: string; eventInitDict = CustomEventInit()):
+proc newCustomEvent(ctype: CAtom; eventInitDict = CustomEventInit()):
     JSResult[CustomEvent] {.jsctor.} =
   let event = CustomEvent()
   event.innerEventCreationSteps(eventInitDict)
@@ -169,7 +169,7 @@ proc newCustomEvent(ctype: string; eventInitDict = CustomEventInit()):
 proc finalize(rt: JSRuntime; this: CustomEvent) {.jsfin.} =
   JS_FreeValueRT(rt, this.detail)
 
-proc initCustomEvent(this: CustomEvent; ctype: string;
+proc initCustomEvent(this: CustomEvent; ctype: CAtom;
     bubbles, cancelable: bool; detail: JSValue) {.jsfunc.} =
   if efDispatch notin this.flags:
     this.initialize(ctype, bubbles, cancelable)
@@ -179,15 +179,16 @@ proc initCustomEvent(this: CustomEvent; ctype: string;
 proc newEventTarget(): EventTarget {.jsctor.} =
   return EventTarget()
 
-proc defaultPassiveValue(ctype: string; eventTarget: EventTarget): bool =
-  if ctype in ["touchstart", "touchmove", "wheel", "mousewheel"]:
+proc defaultPassiveValue(ctx: JSContext; ctype: CAtom;
+    eventTarget: EventTarget): bool =
+  const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]
+  if ctx.toStaticAtom(ctype) in check:
     return true
   return eventTarget.isDefaultPassive()
 
-proc findEventListener(eventTarget: EventTarget; ctype: string;
+proc findEventListener(eventTarget: EventTarget; ctype: CAtom;
     callback: EventListenerCallback; capture: bool): int =
-  for i in 0 ..< eventTarget.eventListeners.len:
-    let it = eventTarget.eventListeners[i]
+  for i, it in eventTarget.eventListeners:
     if it.ctype == ctype and it.callback == callback and it.capture == capture:
       return i
   return -1
@@ -218,12 +219,13 @@ proc invoke*(ctx: JSContext; listener: EventListener; event: Event):
   return ret
 
 # shared
-proc addAnEventListener(target: EventTarget; listener: EventListener) =
+proc addAnEventListener(ctx: JSContext; target: EventTarget;
+    listener: EventListener) =
   #TODO signals
   if JS_IsUndefined(listener.callback):
     return
   if listener.passive.isNone:
-    listener.passive = some(defaultPassiveValue(listener.ctype, target))
+    listener.passive = some(ctx.defaultPassiveValue(listener.ctype, target))
   if target.findEventListener(listener.ctype, listener.callback,
       listener.capture) == -1: # dedup
     target.eventListeners.add(listener)
@@ -267,7 +269,7 @@ proc flattenMore(ctx: JSContext; options: JSValue):
       passive = some(x.get)
   return (capture, once, passive)
 
-proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: string;
+proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
     callback: EventListenerCallback; options = JS_UNDEFINED): Err[JSError]
     {.jsfunc.} =
   if not JS_IsObject(callback) and not JS_IsNull(callback):
@@ -280,11 +282,11 @@ proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: string;
     once: once,
     callback: JS_DupValue(ctx, callback)
   )
-  eventTarget.addAnEventListener(listener)
+  ctx.addAnEventListener(eventTarget, listener)
   ok()
 
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
-    ctype: string; callback: EventListenerCallback;
+    ctype: CAtom; callback: EventListenerCallback;
     options = JS_UNDEFINED) {.jsfunc.} =
   let capture = flatten(ctx, options)
   let i = eventTarget.findEventListener(ctype, callback, capture)

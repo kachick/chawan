@@ -612,6 +612,33 @@ proc getContentTypeAttr*(contentType, attrname: string): string =
       s &= c
   return s
 
+proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
+  var i = contentType.find(';')
+  if i == -1:
+    contentType &= ';' & attrname & '=' & value
+    return
+  i = contentType.find(attrname, i)
+  if i == -1:
+    contentType &= ';' & attrname & '=' & value
+    return
+  i = contentType.skipBlanks(i + attrname.len)
+  if i >= contentType.len or contentType[i] != '=':
+    contentType &= ';' & attrname & '=' & value
+    return
+  i = contentType.skipBlanks(i + 1)
+  var q = false
+  var j = i
+  while j < contentType.len:
+    let c = contentType[j]
+    if q:
+      q = false
+    elif c == '\\':
+      q = true
+    elif c in AsciiWhitespace + {';'}:
+      break
+    inc j
+  contentType[i..<j] = value
+
 func atob(c: char): uint8 {.inline.} =
   # see RFC 4648 table
   if c in AsciiUpperAlpha:

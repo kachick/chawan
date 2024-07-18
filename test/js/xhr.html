@@ -1,0 +1,17 @@
+<!doctype html>
+<title>onclick setter/getter</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const x = new XMLHttpRequest();
+assert(x.onreadystatechange === null);
+function myFunction() {
+	console.log("change");
+}
+x.onreadystatechange = myFunction;
+assert(myFunction === x.onreadystatechange);
+assert(x.readyState === XMLHttpRequest.UNSENT);
+x.open("GET", "");
+document.getElementById("x").textContent = "Success";
+x.send();
+</script>
