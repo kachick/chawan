@@ -87,6 +87,91 @@ result in error messages randomly appearing on your screen.
 T}@T{
 T}
 .TE
+.SS Buffer
+Buffer options are to be placed in the \f[CR][buffer]\f[R] section.
+.PP
+Following is a list of buffer options:
+.PP
+.TS
+tab(@);
+lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+T{
+Name
+T}@T{
+Value
+T}@T{
+Function
+T}@T{
+T}
+_
+T{
+styling
+T}@T{
+boolean
+T}@T{
+Enable/disable author style sheets.
+Note that disabling this does not affect user styles set in
+\f[CR][css]\f[R].
+Defaults to true (i.e.\ enabled).
+T}@T{
+T}
+T{
+scripting
+T}@T{
+boolean
+T}@T{
+Enable/disable JavaScript in \f[I]all\f[R] buffers.
+Defaults to false.
+For security reasons, users are encouraged to selectively enable
+JavaScript with \f[CR][[siteconf]]\f[R] instead of using this setting.
+T}@T{
+T}
+T{
+images
+T}@T{
+boolean
+T}@T{
+Enable/disable experimental image support.
+Defaults to false.
+T}@T{
+T}
+T{
+cookie
+T}@T{
+boolean
+T}@T{
+Enable/disable cookies on sites.
+Defaults to false.
+Note that in Chawan, each website gets a separate cookie jar, so some
+websites relying on cross\-site cookies may not work as expected.
+You may use the \f[CR][[siteconf]]\f[R] \[lq]cookie\-jar\[rq] and
+\[lq]third\-party\-cookie\[rq] settings to adjust this behavior for
+specific sites.
+T}@T{
+T}
+T{
+referer\-from
+T}@T{
+boolean
+T}@T{
+Enable/disable the \[lq]Referer\[rq] header.
+Defaults to false.
+For security reasons, users are encouraged to leave this option
+disabled, only enabling it for specific sites in
+\f[CR][[siteconf]]\f[R].
+T}@T{
+T}
+T{
+autofocus
+T}@T{
+boolean
+T}@T{
+When set to true, elements with an \[lq]autofocus\[rq] attribute are
+focused on automatically after the buffer is loaded.
+Defaults to false
+T}@T{
+T}
+.TE
 .SS Search
 Search options are to be placed in the \f[CR][search]\f[R] section.
 .PP
@@ -115,10 +200,13 @@ T}
 T{
 ignore\-case
 T}@T{
-boolean
+\[lq]auto\[rq] / boolean
 T}@T{
 When set to true, document\-wide searches are case\-insensitive by
 default.
+When set to \[lq]auto\[rq], searches are only case\-sensitive when the
+search term includes a capital letter.
+Defaults to \[lq]auto\[rq].
 Note: this can also be overridden inline in the search bar (vim\-style),
 with the escape sequences \f[CR]c\f[R] (ignore case) and \f[CR]C\f[R]
 (strict case).
@@ -438,6 +526,23 @@ Disable specified formatting modes.
 T}@T{
 T}
 T{
+image\-mode
+T}@T{
+\[lq]auto\[rq] / \[lq]none\[rq] / \[lq]sixel\[rq] / \[lq]kitty\[rq]
+T}@T{
+Specifies the image output mode.
+\[lq]sixel\[rq] uses sixels for output, \[lq]kitty\[rq] uses the Kitty
+image display protocol, \[lq]none\[rq] disables image display
+completely.
+\[lq]auto\[rq] tries to detect sixel or kitty support, and falls back to
+\[lq]none\[rq] when neither are available.
+Defaults to \[lq]auto\[rq].
+However, images are still disabled by default, unless you also enable
+\f[CR]buffer.images\f[R] which allows the browser to actually download
+images.
+T}@T{
+T}
+T{
 alt\-screen
 T}@T{
 \[lq]auto\[rq] / boolean
@@ -752,6 +857,7 @@ originating from this domain.
 Simplified example: if you click a link on a.com that refers to b.com,
 and referer\-from is true, b.com is sent \[lq]a.com\[rq] as the Referer
 header.
+Overrides \f[CR]buffer.referer\-from\f[R].
 Defaults to false.
 T}@T{
 T}
@@ -761,6 +867,25 @@ T}@T{
 boolean
 T}@T{
 Enable/disable JavaScript execution on this site.
+Overrides \f[CR]buffer.scripting\f[R].
+T}@T{
+T}
+T{
+styling
+T}@T{
+boolean
+T}@T{
+Enable/disable author styles (CSS) on this site.
+Overrides \f[CR]buffer.styling\f[R].
+T}@T{
+T}
+T{
+images
+T}@T{
+boolean
+T}@T{
+Enable/disable image display on this site.
+Overrides \f[CR]buffer.images\f[R].
 T}@T{
 T}
 T{
@@ -822,9 +947,9 @@ autofocus
 T}@T{
 boolean
 T}@T{
-Defaults to false.
-When set to true, elements with an \[ga]autofocus\[cq] attribute are
+When set to true, elements with an \[lq]autofocus\[rq] attribute are
 focused on automatically after the buffer is loaded.
+Overrides buffer.autofocus.
 T}@T{
 T}
 .TE
