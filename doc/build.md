@@ -53,7 +53,8 @@ also override them by setting an environment variable with the same name.
 ## Phony targets
 
 * `all`: build all required executables
-* `clean`: remove OBJDIR, OUTDIR, and the QuickJS library
+* `clean`: remove OBJDIR (i.e. object files, but not the built executables)
+* `distclean`: remove OBJDIR and OUTDIR (i.e. both object files and executables)
 * `manpage`: rebuild man pages; note that this is not part of `all`.
   Manual pages are included in the repository, so this only needs to be called
   when you modify the documentation.
