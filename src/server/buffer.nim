@@ -1567,10 +1567,11 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
   let clickable = buffer.getCursorClickable(cursorx, cursory)
   if buffer.config.scripting:
     let element = buffer.getCursorElement(cursorx, cursory)
-    let event = newEvent(buffer.window.toAtom(satClick), element)
-    (called, canceled) = buffer.window.dispatchEvent(event, element)
-    if called:
-      buffer.do_reshape()
+    if element != nil:
+      let event = newEvent(buffer.window.toAtom(satClick), element)
+      (called, canceled) = buffer.window.dispatchEvent(event, element)
+      if called:
+        buffer.do_reshape()
   if not canceled:
     if clickable != nil:
       var res = buffer.click(clickable)

@@ -2479,8 +2479,6 @@ proc dispatchEvent*(window: Window; event: Event; target: EventTarget):
   #TODO this is far from being compliant
   var called = false
   var canceled = false
-  let ctx = window.jsctx
-  var jsEvent = ctx.toJS(event)
   var stop = false
   window.dispatchEvent0(event, target, called, stop, canceled)
   if not stop and target of Node:
@@ -2488,7 +2486,6 @@ proc dispatchEvent*(window: Window; event: Event; target: EventTarget):
       window.dispatchEvent0(event, a, called, stop, canceled)
       if stop:
         break
-  JS_FreeValue(ctx, jsEvent)
   return (called, canceled)
 
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
