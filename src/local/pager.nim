@@ -1970,13 +1970,8 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
     inc item.state
     # continue
   of ccsBeforeHeaders:
-    let response = Response(
-      res: item.res,
-      outputId: item.outputId,
-      status: item.status,
-      url: container.request.url,
-      body: stream
-    )
+    let response = newResponse(item.res, container.request, stream,
+      item.outputId, item.status)
     var r = stream.initPacketReader()
     r.sread(response.headers)
     # done

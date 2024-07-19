@@ -59,13 +59,15 @@ type
 
 jsDestructor(Response)
 
-proc newResponse*(res: int; request: Request; stream: SocketStream): Response =
+proc newResponse*(res: int; request: Request; stream: SocketStream;
+    outputId: int; status: uint16): Response =
   return Response(
     res: res,
     url: request.url,
     body: stream,
     bodyRead: EmptyPromise(),
-    outputId: -1
+    outputId: outputId,
+    status: status
   )
 
 func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =

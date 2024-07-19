@@ -72,7 +72,14 @@ type
     # (FreeBSD only) fd for the socket directory so we can connectat() on it
     sockDirFd*: int
 
-  ConnectData = object
+  ConnectDataState = enum
+    cdsBeforeResult, cdsBeforeStatus, cdsBeforeHeaders
+
+  ConnectData = ref object
+    state: ConnectDataState
+    status: uint16
+    res: int
+    outputId: int
     promise: Promise[JSResult[Response]]
     stream*: SocketStream
     request: Request
@@ -1018,17 +1025,32 @@ proc onConnected*(loader: FileLoader; fd: int) =
   let stream = connectData.stream
   let promise = connectData.promise
   let request = connectData.request
-  # delete before resolving the promise
-  loader.connecting.del(fd)
   var r = stream.initPacketReader()
-  var res: int
-  r.sread(res) # packet 1
-  if res == 0:
-    let response = newResponse(res, request, stream)
-    r.sread(response.outputId) # packet 1
-    r = stream.initPacketReader()
-    r.sread(response.status) # packet 2
-    r = stream.initPacketReader()
+  case connectData.state
+  of cdsBeforeResult:
+    var res: int
+    r.sread(res) # packet 1
+    if res == 0:
+      r.sread(connectData.outputId) # packet 1
+      inc connectData.state
+    else:
+      var msg: string
+      # msg is discarded.
+      #TODO maybe print if called from trusted code (i.e. global == client)?
+      r.sread(msg) # packet 1
+      loader.unregisterFun(fd)
+      loader.unregistered.add(fd)
+      stream.sclose()
+      # delete before resolving the promise
+      loader.connecting.del(fd)
+      let err = newTypeError("NetworkError when attempting to fetch resource")
+      promise.resolve(JSResult[Response].err(err))
+  of cdsBeforeStatus:
+    r.sread(connectData.status) # packet 2
+    inc connectData.state
+  of cdsBeforeHeaders:
+    let response = newResponse(connectData.res, request, stream,
+      connectData.outputId, connectData.status)
     r.sread(response.headers) # packet 3
     # Only a stream of the response body may arrive after this point.
     response.body = stream
@@ -1041,17 +1063,9 @@ proc onConnected*(loader: FileLoader; fd: int) =
       loader.resume(outputId)
     loader.ongoing[fd] = response
     stream.setBlocking(false)
+    # delete before resolving the promise
+    loader.connecting.del(fd)
     promise.resolve(JSResult[Response].ok(response))
-  else:
-    var msg: string
-    # msg is discarded.
-    #TODO maybe print if called from trusted code (i.e. global == client)?
-    r.sread(msg) # packet 1
-    loader.unregisterFun(fd)
-    loader.unregistered.add(fd)
-    stream.sclose()
-    let err = newTypeError("NetworkError when attempting to fetch resource")
-    promise.resolve(JSResult[Response].err(err))
 
 proc onRead*(loader: FileLoader; fd: int) =
   let response = loader.ongoing.getOrDefault(fd)
