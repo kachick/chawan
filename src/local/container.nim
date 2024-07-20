@@ -135,6 +135,7 @@ type
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
     process* {.jsget.}: int
+    clonedFrom*: int
     loadinfo*: string
     lines: SimpleFlexibleGrid
     lineshift: int
@@ -479,6 +480,7 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     loadinfo: "Connecting to " & request.url.host & "...",
     cacheId: cacheId,
     process: -1,
+    clonedFrom: -1,
     mainConfig: mainConfig,
     flags: flags,
     luctx: luctx,
@@ -515,6 +517,7 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     nc[] = container[]
     nc.url = url
     nc.process = pid
+    nc.clonedFrom = container.process
     nc.flags.incl(cfCloned)
     nc.retry = @[]
     nc.parent = nil

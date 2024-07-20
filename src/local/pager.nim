@@ -341,10 +341,10 @@ proc genClientKey(pager: Pager): ClientKey =
   pager.devRandom.recvDataLoop(key)
   return key
 
-proc addLoaderClient*(pager: Pager; pid: int; config: LoaderClientConfig):
-    ClientKey =
+proc addLoaderClient*(pager: Pager; pid: int; config: LoaderClientConfig;
+    clonedFrom = -1): ClientKey =
   var key = pager.genClientKey()
-  while unlikely(not pager.loader.addClient(key, pid, config)):
+  while unlikely(not pager.loader.addClient(key, pid, config, clonedFrom)):
     key = pager.genClientKey()
   return key
 

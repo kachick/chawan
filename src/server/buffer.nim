@@ -906,7 +906,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       buffer.selector.close()
     when defined(freebsd) or defined(openbsd):
       # Hack necessary because newSelector calls sysctl, but Capsicum really
-      # dislikes that and we don't want to request systctl capabilities
+      # dislikes that and we don't want to request sysctl capabilities
       # from pledge either.
       #
       # To make this work we
@@ -984,7 +984,6 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     let c = ps.sreadChar()
     assert c == char(0)
     ps.sclose()
-    #TODO share cached images with new buffer
     buffer.loader.resume(ids)
     return pid
 

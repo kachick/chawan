@@ -524,14 +524,22 @@ proc addClient(ctx: LoaderContext; stream: SocketStream;
   var key: ClientKey
   var pid: int
   var config: LoaderClientConfig
+  var clonedFrom: int
   r.sread(key)
   r.sread(pid)
   r.sread(config)
+  r.sread(clonedFrom)
   stream.withPacketWriter w:
     if pid in ctx.clientData or key == default(ClientKey):
       w.swrite(false)
     else:
-      ctx.clientData[pid] = ClientData(pid: pid, key: key, config: config)
+      let client = ClientData(pid: pid, key: key, config: config)
+      ctx.clientData[pid] = client
+      if clonedFrom != -1:
+        let client2 = ctx.clientData[clonedFrom]
+        for item in client2.cacheMap:
+          inc item.refc
+        client.cacheMap = client2.cacheMap
       w.swrite(true)
   stream.sclose()
 
@@ -1138,13 +1146,14 @@ proc removeCachedItem*(loader: FileLoader; cacheId: int) =
     stream.sclose()
 
 proc addClient*(loader: FileLoader; key: ClientKey; pid: int;
-    config: LoaderClientConfig): bool =
+    config: LoaderClientConfig; clonedFrom: int): bool =
   let stream = loader.connect()
   stream.withLoaderPacketWriter loader, w:
     w.swrite(lcAddClient)
     w.swrite(key)
     w.swrite(pid)
     w.swrite(config)
+    w.swrite(clonedFrom)
   var r = stream.initPacketReader()
   r.sread(result)
   stream.sclose()
