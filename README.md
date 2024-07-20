@@ -109,14 +109,17 @@ Here's some:
 * The browser engine (HTML parsing, rendering, etc.) has been developed
   from scratch in the memory-safe Nim programming language. Some of these
   modules are now also available as separate libraries.
-* Uses QuickJS for JavaScript execution and regex matching.
+* Uses [QuickJS](https://bellard.org/quickjs) for JavaScript execution and regex
+  matching.
 * Each buffer (page) is isolated in a separate process. File loading is done
   through dedicated loader processes.
 * termcap for basic terminal capability querying, and terminal queries where
   possible.
-* The default image decoder currently uses the `stb_image` library. Image codecs
-  are handled as protocols, so users will be able to add their own codecs (once
-  I document how it works...)
+* The default image decoder (PNG, JPEG, GIF, BMP) uses the
+  [stb_image](https://github.com/nothings/stb) library, and WebP images are
+  decoded using the [jebp](https://github.com/matanui159/jebp) library. Image
+  codecs are handled as protocols, so users will be able to add their own codecs
+  (once I document how it works...)
 
 For further details, please refer to the [architecture](doc/architecture.md)
 document.
