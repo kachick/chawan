@@ -73,8 +73,6 @@ layout engine:
 images:
 - more efficient sixel display (store encoded images)
 - proper sixel color register allocation, dithering
-- fix race condition where images decoded after buffer load won't display until
-  reshape
 - incremental decoding, interlaced images, animation
 man:
 - add a DOM -> man page converter so that we do not depend on pandoc

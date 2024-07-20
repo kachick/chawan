@@ -3023,11 +3023,11 @@ proc loadResource(window: Window; image: HTMLImageElement) =
     let p = window.loader.fetch(newRequest(url)).then(
       proc(res: JSResult[Response]): EmptyPromise =
         if res.isNone:
-          return
+          return newResolvedPromise()
         let response = res.get
         let contentType = response.getContentType("image/x-unknown")
         if contentType.until('/') != "image":
-          return
+          return newResolvedPromise()
         let cacheId = window.loader.addCacheFile(response.outputId,
           window.loader.clientPid)
         let request = newRequest(
@@ -3053,7 +3053,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
               break
         cachedURL.loading = false
         cachedURL.expiry = expiry
-        return r.then(proc(res: JSResult[Response]): EmptyPromise =
+        return r.then(proc(res: JSResult[Response]) =
           if res.isNone:
             return
           let response = res.get
@@ -3082,6 +3082,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
           cachedURL.bmp = bmp
           for share in cachedURL.shared:
             share.bitmap = bmp
+          image.invalid = true
         )
       )
     window.loadingResourcePromises.add(p)
