@@ -2055,11 +2055,11 @@ func findAncestor*(node: Node; tagTypes: set[TagType]): Element =
       return element
   return nil
 
-func getElementById(node: Node; id: string): Element {.jsfunc.} =
+func getElementById(document: Document; id: string): Element {.jsfunc.} =
   if id.len == 0:
     return nil
-  let id = node.document.toAtom(id)
-  for child in node.elements:
+  let id = document.toAtom(id)
+  for child in document.elements:
     if child.id == id:
       return child
   return nil
