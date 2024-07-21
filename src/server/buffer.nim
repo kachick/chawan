@@ -989,44 +989,15 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
 
 proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let window = buffer.window
-  let ctx = window.jsctx
-  let document = buffer.document
-  let adcl = window.toAtom(satDOMContentLoaded)
-  let event = newEvent(adcl, document)
-  var called = false
-  var els = document.eventListeners
-  for el in els:
-    if el.removed:
-      continue
-    if el.ctype == adcl:
-      let e = ctx.invoke(el, event)
-      if JS_IsException(e):
-        ctx.writeException(buffer.estream)
-      JS_FreeValue(ctx, e)
-      called = true
-      if efStopImmediatePropagation in event.flags:
-        break
+  let event = newEvent(window.toAtom(satDOMContentLoaded), buffer.document)
+  let (called, _) = window.dispatchEvent(event, buffer.document)
   if called:
     buffer.do_reshape()
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
-  let ctx = window.jsctx
-  let aload = window.toAtom(satLoad)
-  let event = newEvent(aload, window)
-  var called = false
-  var els = window.eventListeners
-  for el in els:
-    if el.removed:
-      continue
-    if el.ctype == aload:
-      let e = ctx.invoke(el, event)
-      if JS_IsException(e):
-        ctx.writeException(buffer.estream)
-      JS_FreeValue(ctx, e)
-      called = true
-      if efStopImmediatePropagation in event.flags:
-        break
+  let event = newEvent(window.toAtom(satLoad), window)
+  let (called, _) = window.dispatchEvent(event, window)
   if called:
     buffer.do_reshape()
 

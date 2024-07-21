@@ -2460,6 +2460,8 @@ proc dispatchEvent0(window: Window; event: Event; currentTarget: EventTarget;
   event.currentTarget = currentTarget
   var els = currentTarget.eventListeners # copy intentionally
   for el in els:
+    if JS_IsUndefined(el.callback):
+      continue # removed, presumably by a previous handler
     if el.ctype == event.ctype:
       let e = ctx.invoke(el, event)
       called = true

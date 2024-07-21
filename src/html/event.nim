@@ -52,14 +52,12 @@ type
 
   EventListener* = ref object
     ctype*: CAtom
+    # if callback is undefined, the listener has been removed
     callback*: EventListenerCallback
     capture: bool
     passive: Option[bool]
     once: bool
     #TODO AbortSignal
-    #TODO do we really need `removed'? maybe we could just check if
-    # callback is undefined.
-    removed*: bool
 
 jsDestructor(Event)
 jsDestructor(CustomEvent)
@@ -233,7 +231,6 @@ proc addAnEventListener(ctx: JSContext; target: EventTarget;
 
 proc removeAnEventListener(eventTarget: EventTarget; ctx: JSContext; i: int) =
   let listener = eventTarget.eventListeners[i]
-  listener.removed = true
   JS_FreeValue(ctx, listener.callback)
   listener.callback = JS_UNDEFINED
   eventTarget.eventListeners.delete(i)
