@@ -326,7 +326,7 @@ proc dispatch*(ctx: JSContext; target: EventTarget; event: Event): bool =
   event.flags.excl(efDispatch)
   return canceled
 
-proc dispatchEvent*(ctx: JSContext; this: EventTarget; event: Event):
+proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event):
     DOMResult[bool] {.jsfunc.} =
   if efDispatch in event.flags:
     return errDOMException("Event's dispatch flag is already set",

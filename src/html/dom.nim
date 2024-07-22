@@ -2467,7 +2467,7 @@ windowConsoleError = proc(ctx: JSContext; ss: varargs[string]) =
 
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
   let event = newEvent(window.toAtom(name), target)
-  discard window.jsctx.dispatchEvent(target, event)
+  discard window.jsctx.dispatch(target, event)
 
 proc parseColor(element: Element; s: string): ARGBColor =
   let cval = parseComponentValue(s)
