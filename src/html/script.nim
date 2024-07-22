@@ -7,10 +7,10 @@ type
     pmParserInserted, pmNotParserInserted
 
   ScriptType* = enum
-    NO_SCRIPTTYPE, CLASSIC, MODULE, IMPORTMAP
+    stNone, stClassic, stModule, stImportMap
 
   ScriptResultType* = enum
-    RESULT_NULL, RESULT_SCRIPT, RESULT_IMPORT_MAP_PARSE, RESULT_FETCHING
+    srtNull, srtScript, srtImportMapParse, srtFetching
 
   RequestDestination* = enum
     rdNone = ""
@@ -64,13 +64,11 @@ type
 
   ScriptResult* = ref object
     case t*: ScriptResultType
-    of RESULT_NULL:
+    of srtNull, srtFetching:
       discard
-    of RESULT_SCRIPT:
+    of srtScript:
       script*: Script
-    of RESULT_FETCHING:
-      discard
-    of RESULT_IMPORT_MAP_PARSE:
+    of srtImportMapParse:
       discard #TODO
 
   ModuleMapEntry = object
@@ -93,3 +91,8 @@ func fetchDestinationFromModuleType*(default: RequestDestination;
   if moduleType == "css":
     return rdStyle
   return default
+
+var windowConsoleError*: proc(ctx: JSContext; ss: varargs[string]) {.nimcall.}
+
+proc logException*(ctx: JSContext) =
+  windowConsoleError(ctx, ctx.getExceptionMsg())

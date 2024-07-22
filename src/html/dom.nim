@@ -187,6 +187,7 @@ type
     renderBlockingElements: seq[Element]
 
     invalidCollections: HashSet[pointer] # pointers to Collection objects
+    invalid*: bool # whether the document must be rendered again
 
     cachedAll: HTMLAllCollection
     cachedSheets: seq[CSSStylesheet]
@@ -2437,62 +2438,36 @@ func findAutoFocus*(document: Document): Element =
   return nil
 
 # Forward declaration hack
-isDefaultPassive = func(eventTarget: EventTarget): bool =
-  if eventTarget of Window:
+isDefaultPassive = func(target: EventTarget): bool =
+  if target of Window:
     return true
-  if not (eventTarget of Node):
+  if not (target of Node):
     return false
-  let node = Node(eventTarget)
-  return EventTarget(node.document) == eventTarget or
-    EventTarget(node.document.html) == eventTarget or
-    EventTarget(node.document.body) == eventTarget
+  let node = Node(target)
+  return EventTarget(node.document) == target or
+    EventTarget(node.document.html) == target or
+    EventTarget(node.document.body) == target
+
+getParent = proc(ctx: JSContext; eventTarget: EventTarget; event: Event):
+    EventTarget =
+  if eventTarget of Node:
+    if eventTarget of Document:
+      if event.ctype == ctx.toAtom(satLoad):
+        return nil
+      # if no browsing context, then window will be nil anyway
+      return Document(eventTarget).window
+    return Node(eventTarget).parentNode
+  return nil
 
 getFactory = proc(ctx: JSContext): CAtomFactory =
   return ctx.getGlobal().factory
 
-type DispatchEventResult = tuple
-  called: bool
-  canceled: bool
-
-proc dispatchEvent0(window: Window; event: Event; currentTarget: EventTarget;
-    called, stop, canceled: var bool) =
-  let ctx = window.jsctx
-  event.currentTarget = currentTarget
-  var els = currentTarget.eventListeners # copy intentionally
-  for el in els:
-    if JS_IsUndefined(el.callback):
-      continue # removed, presumably by a previous handler
-    if el.ctype == event.ctype:
-      let e = ctx.invoke(el, event)
-      called = true
-      if JS_IsException(e):
-        window.console.error(ctx.getExceptionMsg())
-      JS_FreeValue(ctx, e)
-      if efStopImmediatePropagation in event.flags:
-        stop = true
-        break
-      if efStopPropagation in event.flags:
-        stop = true
-      if efCanceled in event.flags:
-        canceled = true
-
-proc dispatchEvent*(window: Window; event: Event; target: EventTarget):
-    DispatchEventResult =
-  #TODO this is far from being compliant
-  var called = false
-  var canceled = false
-  var stop = false
-  window.dispatchEvent0(event, target, called, stop, canceled)
-  if not stop and target of Node:
-    for a in Node(target).nodeAncestors:
-      window.dispatchEvent0(event, a, called, stop, canceled)
-      if stop:
-        break
-  return (called, canceled)
+windowConsoleError = proc(ctx: JSContext; ss: varargs[string]) =
+  ctx.getGlobal().console.error(ss)
 
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
   let event = newEvent(window.toAtom(name), target)
-  discard window.dispatchEvent(event, target)
+  discard window.jsctx.dispatchEvent(target, event)
 
 proc parseColor(element: Element; s: string): ARGBColor =
   let cval = parseComponentValue(s)
@@ -2841,6 +2816,11 @@ proc invalidateCollections(node: Node) =
   for id in node.liveCollections:
     node.document.invalidCollections.incl(id)
 
+proc setInvalid*(element: Element) =
+  element.invalid = true
+  if element.document != nil:
+    element.document.invalid = true
+
 proc delAttr(element: Element; i: int; keep = false) =
   let map = element.attributesInternal
   let name = element.attrs[i].qualifiedName
@@ -2866,7 +2846,7 @@ proc delAttr(element: Element; i: int; keep = false) =
       map.attrlist.del(j) # ordering does not matter
   element.reflectAttr(name, none(string))
   element.invalidateCollections()
-  element.invalid = true
+  element.setInvalid()
 
 proc newCSSStyleDeclaration(element: Element; value: string):
     CSSStyleDeclaration =
@@ -3084,7 +3064,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
           cachedURL.bmp = bmp
           for share in cachedURL.shared:
             share.bitmap = bmp
-          image.invalid = true
+          image.setInvalid()
         )
       )
     window.loadingResourcePromises.add(p)
@@ -3224,7 +3204,7 @@ proc attr*(element: Element; name: CAtom; value: string) =
   if i >= 0:
     element.attrs[i].value = value
     element.invalidateCollections()
-    element.invalid = true
+    element.setInvalid()
   else:
     element.attrs.insert(AttrData(
       qualifiedName: name,
@@ -3255,7 +3235,7 @@ proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
     element.attrs[i].qualifiedName = qualifiedName
     element.attrs[i].value = value
     element.invalidateCollections()
-    element.invalid = true
+    element.setInvalid()
   else:
     element.attrs.insert(AttrData(
       prefix: prefixAtom,
@@ -3399,7 +3379,9 @@ proc remove*(node: Node; suppressObservers: bool) =
     parent.childList[i] = parent.childList[i + 1]
     parent.childList[i].index = i
   parent.childList.setLen(parent.childList.len - 1)
-  node.parentNode.invalidateCollections()
+  parent.invalidateCollections()
+  if parent of Element:
+    Element(parent).setInvalid()
   node.parentNode = nil
   node.index = -1
   if node.document != nil and (node of HTMLStyleElement or
@@ -3438,7 +3420,7 @@ proc resetElement*(element: Element) =
       input.file = nil
     else:
       input.value = input.attr(satValue)
-    input.invalid = true
+    input.setInvalid()
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
     if not select.attrb(satMultiple):
@@ -3464,7 +3446,7 @@ proc resetElement*(element: Element) =
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
     textarea.value = textarea.childTextContent()
-    textarea.invalid = true
+    textarea.setInvalid()
   else: discard
 
 proc setForm*(element: FormAssociatedElement; form: HTMLFormElement) =
@@ -3632,7 +3614,7 @@ proc insert*(parent, node, before: Node; suppressObservers = false) =
     #TODO live ranges
     discard
   if parent of Element:
-    Element(parent).invalid = true
+    Element(parent).setInvalid()
   for node in nodes:
     insertNode(parent, node, before)
 
@@ -3744,14 +3726,14 @@ proc textContent*(node: Node; data: Option[string]) {.jsfset.} =
 proc reset*(form: HTMLFormElement) =
   for control in form.controls:
     control.resetElement()
-    control.invalid = true
+    control.setInvalid()
 
 proc renderBlocking*(element: Element): bool =
   if "render" in element.attr(satBlocking).split(AsciiWhitespace):
     return true
   if element of HTMLScriptElement:
     let element = HTMLScriptElement(element)
-    if element.ctype == CLASSIC and element.parserDocument != nil and
+    if element.ctype == stClassic and element.parserDocument != nil and
         not element.attrb(satAsync) and not element.attrb(satDefer):
       return true
   return false
@@ -3786,14 +3768,14 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
     onComplete: OnCompleteProc) =
   let window = element.document.window
   if not element.scriptingEnabled:
-    element.onComplete(ScriptResult(t: RESULT_NULL))
+    element.onComplete(ScriptResult(t: srtNull))
     return
   let request = createPotentialCORSRequest(url, rdScript, cors)
   request.client = some(window.settings)
   #TODO make this non-blocking somehow
   let response = window.loader.doRequest(request.request)
   if response.res != 0:
-    element.onComplete(ScriptResult(t: RESULT_NULL))
+    element.onComplete(ScriptResult(t: srtNull))
     return
   window.loader.resume(response.outputId)
   let s = response.body.recvAll()
@@ -3801,7 +3783,7 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
   let source = s.decodeAll(cs)
   response.body.sclose()
   let script = window.jsctx.createClassicScript(source, url, options, false)
-  element.onComplete(ScriptResult(t: RESULT_SCRIPT, script: script))
+  element.onComplete(ScriptResult(t: srtScript, script: script))
 
 #TODO settings object
 proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
@@ -3815,7 +3797,7 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
     options: ScriptOptions; onComplete: OnCompleteProc) =
   let window = element.document.window
   if not element.scriptingEnabled:
-    element.onComplete(ScriptResult(t: RESULT_NULL))
+    element.onComplete(ScriptResult(t: srtNull))
     return
   window.importMapsAllowed = false
   element.fetchSingleModule(
@@ -3825,7 +3807,7 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
     parseURL("about:client").get,
     isTopLevel = true,
     onComplete = proc(element: HTMLScriptElement; res: ScriptResult) =
-      if res.t == RESULT_NULL:
+      if res.t == srtNull:
         element.onComplete(res)
       else:
         element.fetchDescendantsAndLink(res.script, rdScript, onComplete)
@@ -3846,7 +3828,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   let settings = element.document.window.settings
   let i = settings.moduleMap.find(url, moduleType)
   if i != -1:
-    if settings.moduleMap[i].value.t == RESULT_FETCHING:
+    if settings.moduleMap[i].value.t == srtFetching:
       #TODO await value
       assert false
     element.onComplete(settings.moduleMap[i].value)
@@ -3878,14 +3860,14 @@ proc execute*(element: HTMLScriptElement) =
   #assert element.scriptResult != nil
   if element.scriptResult == nil:
     return
-  if element.scriptResult.t == RESULT_NULL:
+  if element.scriptResult.t == srtNull:
     #TODO fire error event
     return
-  let needsInc = element.external or element.ctype == MODULE
+  let needsInc = element.external or element.ctype == stModule
   if needsInc:
     inc document.ignoreDestructiveWrites
   case element.ctype
-  of CLASSIC:
+  of stClassic:
     let oldCurrentScript = document.currentScript
     #TODO not if shadow root
     document.currentScript = element
@@ -3929,11 +3911,11 @@ proc prepare*(element: HTMLScriptElement) =
   else:
     "text/javascript"
   if typeString.isJavaScriptType():
-    element.ctype = CLASSIC
+    element.ctype = stClassic
   elif typeString == "module":
-    element.ctype = MODULE
+    element.ctype = stModule
   elif typeString == "importmap":
-    element.ctype = IMPORTMAP
+    element.ctype = stImportMap
   else:
     return
   if parserDocument != nil:
@@ -3946,10 +3928,10 @@ proc prepare*(element: HTMLScriptElement) =
     return
   if not element.scriptingEnabled:
     return
-  if element.attrb(satNomodule) and element.ctype == CLASSIC:
+  if element.attrb(satNomodule) and element.ctype == stClassic:
     return
   #TODO content security policy
-  if element.ctype == CLASSIC and element.attrb(satEvent) and
+  if element.ctype == stClassic and element.attrb(satEvent) and
       element.attrb(satFor):
     let f = element.attr(satFor).strip(chars = AsciiWhitespace)
     let event = element.attr(satEvent).strip(chars = AsciiWhitespace)
@@ -3973,7 +3955,7 @@ proc prepare*(element: HTMLScriptElement) =
   )
   #TODO settings object
   if element.attrb(satSrc):
-    if element.ctype == IMPORTMAP:
+    if element.ctype == stImportMap:
       #TODO fire error event
       return
     let src = element.attr(satSrc)
@@ -3990,22 +3972,22 @@ proc prepare*(element: HTMLScriptElement) =
     element.delayingTheLoadEvent = true
     if element in element.document.renderBlockingElements:
       options.renderBlocking = true
-    if element.ctype == CLASSIC:
+    if element.ctype == stClassic:
       element.fetchClassicScript(url.get, options, classicCORS, encoding,
         markAsReady)
     else:
       element.fetchExternalModuleGraph(url.get, options, markAsReady)
   else:
     let baseURL = element.document.baseURL
-    if element.ctype == CLASSIC:
+    if element.ctype == stClassic:
       let ctx = element.document.window.jsctx
       let script = ctx.createClassicScript(sourceText, baseURL, options)
-      element.markAsReady(ScriptResult(t: RESULT_SCRIPT, script: script))
+      element.markAsReady(ScriptResult(t: srtScript, script: script))
     else:
-      #TODO MODULE, IMPORTMAP
-      element.markAsReady(ScriptResult(t: RESULT_NULL))
-  if element.ctype == CLASSIC and element.attrb(satSrc) or
-      element.ctype == MODULE:
+      #TODO stModule, stImportMap
+      element.markAsReady(ScriptResult(t: srtNull))
+  if element.ctype == stClassic and element.attrb(satSrc) or
+      element.ctype == stModule:
     let prepdoc = element.preparationTimeDocument
     if element.attrb(satAsync):
       prepdoc.scriptsToExecSoon.add(element)
@@ -4026,7 +4008,7 @@ proc prepare*(element: HTMLScriptElement) =
             script.execute()
             prepdoc.scriptsToExecInOrder.shrink(1)
       )
-    elif element.ctype == MODULE or element.attrb(satDefer):
+    elif element.ctype == stModule or element.attrb(satDefer):
       element.parserDocument.scriptsToExecOnLoad.addFirst(element)
       element.onReady = (proc() =
         element.readyForParserExec = true
@@ -4038,7 +4020,7 @@ proc prepare*(element: HTMLScriptElement) =
         element.readyForParserExec = true
       )
   else:
-    #TODO if CLASSIC, parserDocument != nil, parserDocument has a style sheet
+    #TODO if stClassic, parserDocument != nil, parserDocument has a style sheet
     # that is blocking scripts, either the parser is an XML parser or a HTML
     # parser with a script level <= 1
     element.execute()

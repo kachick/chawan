@@ -3,6 +3,8 @@ import std/options
 import std/times
 
 import html/catom
+import html/script
+import js/domexception
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
@@ -64,7 +66,10 @@ jsDestructor(CustomEvent)
 jsDestructor(EventTarget)
 
 # Forward declaration hack
-var isDefaultPassive*: proc(eventTarget: EventTarget): bool {.nimcall.} = nil
+var isDefaultPassive*: proc(target: EventTarget): bool {.nimcall,
+  noSideEffect.} = nil
+var getParent*: proc(ctx: JSContext; target: EventTarget, event: Event):
+  EventTarget {.nimcall.}
 
 type
   EventInit* = object of JSDict
@@ -192,8 +197,7 @@ proc findEventListener(eventTarget: EventTarget; ctype: CAtom;
   return -1
 
 # EventListener
-proc invoke*(ctx: JSContext; listener: EventListener; event: Event):
-    JSValue =
+proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   #TODO make this standards compliant
   if JS_IsNull(listener.callback):
     return JS_UNDEFINED
@@ -289,6 +293,48 @@ proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
   let i = eventTarget.findEventListener(ctype, callback, capture)
   if i != -1:
     eventTarget.removeAnEventListener(ctx, i)
+
+proc dispatchEvent0(ctx: JSContext; event: Event; currentTarget: EventTarget;
+    stop, canceled: var bool) =
+  event.currentTarget = currentTarget
+  var els = currentTarget.eventListeners # copy intentionally
+  for el in els:
+    if JS_IsUndefined(el.callback):
+      continue # removed, presumably by a previous handler
+    if el.ctype == event.ctype:
+      let e = ctx.invoke(el, event)
+      if JS_IsException(e):
+        ctx.logException()
+      JS_FreeValue(ctx, e)
+      if efStopImmediatePropagation in event.flags:
+        stop = true
+        break
+      if efStopPropagation in event.flags:
+        stop = true
+      if efCanceled in event.flags:
+        canceled = true
+
+proc dispatch*(ctx: JSContext; target: EventTarget; event: Event): bool =
+  #TODO this is far from being compliant
+  var canceled = false
+  var stop = false
+  event.flags.incl(efDispatch)
+  var target = target
+  while target != nil and not stop:
+    ctx.dispatchEvent0(event, target, stop, canceled)
+    target = ctx.getParent(target, event)
+  event.flags.excl(efDispatch)
+  return canceled
+
+proc dispatchEvent*(ctx: JSContext; this: EventTarget; event: Event):
+    DOMResult[bool] {.jsfunc.} =
+  if efDispatch in event.flags:
+    return errDOMException("Event's dispatch flag is already set",
+      "InvalidStateError")
+  if efInitialized notin event.flags:
+    return errDOMException("Event is not initialized", "InvalidStateError")
+  event.isTrusted = false
+  return ok(ctx.dispatch(this, event))
 
 proc addEventModule*(ctx: JSContext) =
   let eventCID = ctx.registerType(Event)

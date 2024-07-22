@@ -719,6 +719,11 @@ proc do_reshape(buffer: Buffer) =
     buffer.images)
   buffer.prevStyled = styledRoot
 
+proc maybeReshape(buffer: Buffer) =
+  if buffer.document != nil and buffer.document.invalid:
+    buffer.do_reshape()
+    buffer.document.invalid = false
+
 proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
   if buffer.ishtml:
     if buffer.htmlParser.parseBuffer(data.toOpenArray()) == PRES_STOP:
@@ -736,7 +741,7 @@ proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
         Text(lastChild).data &= data
       else:
         plaintext.insert(buffer.document.createTextNode($data), nil)
-      plaintext.invalid = true
+      plaintext.setInvalid()
   true
 
 func canSwitch(buffer: Buffer): bool {.inline.} =
@@ -990,16 +995,14 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
 proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satDOMContentLoaded), buffer.document)
-  let (called, _) = window.dispatchEvent(event, buffer.document)
-  if called:
-    buffer.do_reshape()
+  discard window.jsctx.dispatch(buffer.document, event)
+  buffer.maybeReshape()
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satLoad), window)
-  let (called, _) = window.dispatchEvent(event, window)
-  if called:
-    buffer.do_reshape()
+  discard window.jsctx.dispatch(window, event)
+  buffer.maybeReshape()
 
 proc finishLoad(buffer: Buffer): EmptyPromise =
   if buffer.state != bsLoadingPage:
@@ -1320,20 +1323,20 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
       case input.inputType
       of itFile:
         input.file = newWebFile(s, fd)
-        input.invalid = true
+        input.setInvalid()
         buffer.do_reshape()
         res.repaint = true
         res.open = buffer.implicitSubmit(input)
       else:
         input.value = s
-        input.invalid = true
+        input.setInvalid()
         buffer.do_reshape()
         res.repaint = true
         res.open = buffer.implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(buffer.document.focus)
       textarea.value = s
-      textarea.invalid = true
+      textarea.setInvalid()
       buffer.do_reshape()
       res.repaint = true
     else: discard
@@ -1473,15 +1476,15 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
     )
   of itCheckbox:
     input.setChecked(not input.checked)
-    input.invalid = true
+    input.setInvalid()
     buffer.do_reshape()
     return ClickResult(repaint: true)
   of itRadio:
     for radio in input.radiogroup:
       radio.setChecked(false)
-      radio.invalid = true
+      radio.setInvalid()
     input.setChecked(true)
-    input.invalid = true
+    input.setInvalid()
     buffer.do_reshape()
     return ClickResult(repaint: true)
   of itReset:
@@ -1531,24 +1534,27 @@ proc click(buffer: Buffer; clickable: Element): ClickResult =
     return ClickResult(repaint: buffer.restoreFocus())
 
 proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
-  if buffer.lines.len <= cursory: return
-  var called = false
+  if buffer.lines.len <= cursory: return ClickResult()
+  var repaint = false
   var canceled = false
   let clickable = buffer.getCursorClickable(cursorx, cursory)
   if buffer.config.scripting:
     let element = buffer.getCursorElement(cursorx, cursory)
     if element != nil:
-      let event = newEvent(buffer.window.toAtom(satClick), element)
-      (called, canceled) = buffer.window.dispatchEvent(event, element)
-      if called:
+      let window = buffer.window
+      let event = newEvent(window.toAtom(satClick), element)
+      canceled = window.jsctx.dispatch(element, event)
+      if buffer.document.invalid:
         buffer.do_reshape()
+        buffer.document.invalid = false
+        repaint = true
   if not canceled:
     if clickable != nil:
       var res = buffer.click(clickable)
-      if called: # override repaint
+      if repaint: # override
         res.repaint = true
       return res
-  return ClickResult(repaint: called)
+  return ClickResult(repaint: repaint)
 
 proc select*(buffer: Buffer; selected: seq[int]): ClickResult {.proxy.} =
   if buffer.document.focus != nil and
@@ -1795,7 +1801,7 @@ proc runBuffer(buffer: Buffer) =
         let r = buffer.window.timeouts.runTimeoutFd(event.fd)
         assert r
         buffer.window.runJSJobs()
-        buffer.do_reshape()
+        buffer.maybeReshape()
     buffer.loader.unregistered.setLen(0)
 
 proc cleanup(buffer: Buffer) =

@@ -197,8 +197,7 @@ func toStaticAtom*(factory: CAtomFactory; atom: CAtom): StaticAtom =
     return StaticAtom(i)
   return atUnknown
 
-var getFactory* {.compileTime.}: proc(ctx: JSContext): CAtomFactory {.nimcall,
-  noSideEffect.}
+var getFactory*: proc(ctx: JSContext): CAtomFactory {.nimcall, noSideEffect.}
 
 proc toAtom*(ctx: JSContext; atom: StaticAtom): CAtom =
   return ctx.getFactory().toAtom(atom)

@@ -164,10 +164,10 @@ proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     total: length,
     lengthComputable: length != 0
   ))
-  discard window.dispatchEvent(event, target)
+  discard window.jsctx.dispatch(target, event)
 
 # Forward declaration hack
-var windowFetch* {.compileTime.}: proc(window: Window; input: JSRequest;
+var windowFetch*: proc(window: Window; input: JSRequest;
   init = none(RequestInit)): JSResult[FetchPromise] {.nimcall.} = nil
 
 proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
