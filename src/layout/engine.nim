@@ -1039,7 +1039,7 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; computed: CSSComputedValues):
 
 # Calculate and resolve available width & height for floating boxes.
 proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
-    preserveHeight: bool; computed: CSSComputedValues): ResolvedSizes =
+    computed: CSSComputedValues): ResolvedSizes =
   let padding = resolvePadding(space.w, lctx, computed)
   let paddingSum = padding.sum()
   var sizes = ResolvedSizes(
@@ -1048,8 +1048,7 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
     space: space,
     minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed)
   )
-  if not preserveHeight: # Note: preserveHeight is only true for flex.
-    sizes.space.h = maxContent()
+  sizes.space.h = maxContent()
   for dim in DimensionType:
     let length = computed[CvalSizeMap[dim]].length
     if length.canpx(space[dim]):
@@ -1062,6 +1061,39 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
       sizes.space[dim] = fitContent(clamp(u, span.start, span.send))
   return sizes
 
+proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
+    dim: DimensionType; computed: CSSComputedValues): ResolvedSizes =
+  let padding = resolvePadding(space.w, lctx, computed)
+  let paddingSum = padding.sum()
+  var sizes = ResolvedSizes(
+    margin: resolveMargins(space.w, lctx, computed),
+    padding: padding,
+    space: space,
+    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed)
+  )
+  if dim != dtHorizontal:
+    sizes.space.h = maxContent()
+  let length = computed[CvalSizeMap[dim]].length
+  if length.canpx(space[dim]):
+    let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
+    let span = sizes.minMaxSizes[dim]
+    sizes.space[dim] = stretch(clamp(u, span.start, span.send))
+  elif sizes.space[dim].isDefinite():
+    let u = sizes.space[dim].u - sizes.margin[dim].sum() - paddingSum[dim]
+    let span = sizes.minMaxSizes[dim]
+    sizes.space[dim] = fitContent(clamp(u, span.start, span.send))
+  let odim = dim.opposite()
+  let olength = computed[CvalSizeMap[odim]].length
+  if olength.canpx(space[odim]):
+    let u = olength.spx(lctx, space[odim], computed, paddingSum[odim])
+    let span = sizes.minMaxSizes[odim]
+    sizes.space[odim] = stretch(clamp(u, span.start, span.send))
+  elif sizes.space[odim].isDefinite():
+    let u = sizes.space[odim].u - sizes.margin[odim].sum() - paddingSum[odim]
+    let span = sizes.minMaxSizes[odim]
+    sizes.space[odim] = stretch(clamp(u, span.start, span.send))
+  return sizes
+
 # Calculate and resolve available width, height, padding, margins, etc.
 # space is the width/height of the containing box.
 proc resolveSizes(lctx: LayoutContext; space: AvailableSpace;
@@ -1069,7 +1101,7 @@ proc resolveSizes(lctx: LayoutContext; space: AvailableSpace;
   if computed{"position"} == PositionAbsolute:
     return lctx.resolveAbsoluteSizes(computed)
   elif computed{"float"} != FloatNone:
-    return lctx.resolveFloatSizes(space, preserveHeight = false, computed)
+    return lctx.resolveFloatSizes(space, computed)
   else:
     return lctx.resolveBlockSizes(space, computed)
 
@@ -1334,8 +1366,7 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
 proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     box: BlockBox) =
   let lctx = ictx.lctx
-  let sizes = lctx.resolveFloatSizes(ictx.space, preserveHeight = false,
-    box.computed)
+  let sizes = lctx.resolveFloatSizes(ictx.space, box.computed)
   box.state = BlockBoxLayoutState(
     margin: sizes.margin,
     positioned: sizes.positioned
@@ -2071,6 +2102,15 @@ type
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
+# This is practically the min-content size. For height, we just take the
+# output height of the previous pass; for width, we take the shortest word's
+# width (xminwidth).
+func minFlexItemSize(state: BlockBoxLayoutState; dim: DimensionType):
+    LayoutUnit =
+  case dim
+  of dtHorizontal: return state.xminwidth
+  of dtVertical: return state.size.h
+
 proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox) =
   for dim in DimensionType:
     mctx.maxSize[dim] = max(mctx.maxSize[dim], child.state.size[dim])
@@ -2103,8 +2143,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
           (unit * it.weights[wt]).toLayoutUnit()
         # check for min/max violation
         var minu = it.sizes.minMaxSizes[dim].start
-        if dim == dtHorizontal:
-          minu = max(it.child.state.xminwidth, minu)
+        minu = max(it.child.state.minFlexItemSize(dim), minu)
         if minu > u:
           # min violation
           if wt == fwtShrink: # freeze
@@ -2166,25 +2205,20 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
   while i < box.nested.len:
     let child = box.nested[i]
-    var childSizes = lctx.resolveFloatSizes(sizes.space, preserveHeight = true,
-      child.computed)
+    var childSizes = lctx.resolveFlexItemSizes(sizes.space, dim, child.computed)
     let flexBasis = child.computed{"flex-basis"}
-    if not flexBasis.auto:
+    lctx.layoutFlexChild(child, childSizes)
+    if not flexBasis.auto and childSizes.space[dim].isDefinite:
+      # we can't skip this pass; the first pass is needed to calculate the
+      # minimum height.
+      let minu = child.state.minFlexItemSize(dim)
       childSizes.space[dim] = stretch(flexBasis.spx(lctx, sizes.space[dim],
         child.computed, childSizes.padding[dim].sum()))
-    lctx.layoutFlexChild(child, childSizes)
-    if not flexBasis.auto and childSizes.space.w.isDefinite and
-        child.state.xminwidth > childSizes.space.w.u:
-      # first pass gave us a box that is smaller than the minimum acceptable
-      # width whatever reason; this may have happened because the initial flex
-      # basis was e.g. 0.  Try to resize it to something more usable.
-      # Note: this is a hack; we need it because we cheat with size resolution
-      # by using the algorithm that was in fact designed for floats, and without
-      # this hack layouts with a flex-base of 0 break down horribly.
-      # (And we need flex-base because using auto wherever the two-value `flex'
-      # shorthand is used breaks down even more horribly.)
-      #TODO implement the standard size resolution properly
-      childSizes.space.w = stretch(child.state.xminwidth)
+      if minu > childSizes.space[dim].u:
+        # First pass gave us a box that is smaller than the minimum acceptable
+        # width whatever reason; this may have happened because the initial flex
+        # basis was e.g. 0. Try to resize it to something more usable.
+        childSizes.space[dim] = stretch(minu)
       lctx.layoutFlexChild(child, childSizes)
     if canWrap and (sizes.space[dim].t == scMinContent or
         sizes.space[dim].isDefinite and
