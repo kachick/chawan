@@ -654,8 +654,8 @@ proc positionImage(term: Terminal; image: CanvasImage; x, y, maxw, maxh: int):
   if term.imageMode == imSixel:
     #TODO a better solution would be to split up the image here so that it
     # still gets fully displayed on the screen, or at least downscale it...
-    width = min(width, term.sixelMaxWidth)
-    height = min(height, term.sixelMaxHeight)
+    width = min(width - image.offx, term.sixelMaxWidth) + image.offx
+    height = min(height - image.offy, term.sixelMaxHeight) + image.offy
   image.dispw = min(width + xpx, maxwpx) - xpx
   image.disph = min(height + ypx, maxhpx) - ypx
   image.damaged = true
