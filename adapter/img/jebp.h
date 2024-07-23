@@ -2165,7 +2165,7 @@ static void jebp__sum_pred_dct(jebp_ubyte *pred, jebp_int stride,
         uint16x8_t v_pred16 =
             vaddw_u8(v_dct.val[y / 2], vreinterpret_u8_u32(v_pred32));
         uint8x8_t v_pred8 = vqmovun_s16(vreinterpretq_s16_u16(v_pred16));
-        v_pred32 = vreinterpret_u8_u32(v_pred8);
+        v_pred32 = vreinterpret_u32_u8(v_pred8);
         vst1_lane_u32(rowlo, v_pred32, 0);
         vst1_lane_u32(rowhi, v_pred32, 1);
     }
