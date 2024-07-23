@@ -647,13 +647,17 @@ proc positionImage(term: Terminal; image: CanvasImage; x, y, maxw, maxh: int):
   image.offy = -min(ypx, 0)
   # calculate maximum image size that fits on the screen relative to the image
   # origin (*not* offx/offy)
-  var maxwpx = maxw * term.attrs.ppc
-  var maxhpx = maxh * term.attrs.ppl
+  let maxwpx = maxw * term.attrs.ppc
+  let maxhpx = maxh * term.attrs.ppl
+  var width = int(image.bmp.width)
+  var height = int(image.bmp.height)
   if term.imageMode == imSixel:
-    maxwpx = min(maxwpx, term.sixelMaxWidth)
-    maxhpx = min(maxhpx, term.sixelMaxHeight)
-  image.dispw = min(int(image.bmp.width) + xpx, maxwpx) - xpx
-  image.disph = min(int(image.bmp.height) + ypx, maxhpx) - ypx
+    #TODO a better solution would be to split up the image here so that it
+    # still gets fully displayed on the screen, or at least downscale it...
+    width = min(width, term.sixelMaxWidth)
+    height = min(height, term.sixelMaxHeight)
+  image.dispw = min(width + xpx, maxwpx) - xpx
+  image.disph = min(height + ypx, maxhpx) - ypx
   image.damaged = true
   return image.dispw > image.offx and image.disph > image.offy
 
