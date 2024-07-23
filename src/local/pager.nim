@@ -936,6 +936,10 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
     container.sourcepair = nil
+  if container.replaceRef != nil:
+    container.replaceRef.replace = nil
+    container.replaceRef.replaceBackup = nil
+    container.replaceRef = nil
   if container.parent != nil:
     let parent = container.parent
     let n = parent.children.find(container)
@@ -1225,8 +1229,10 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
       pager.replace(replace, container)
       if replaceBackup == nil:
         container.replace = replace
+        replace.replaceRef = container
       else:
         container.replaceBackup = replaceBackup
+        replaceBackup.replaceRef = container
       container.copyCursorPos(replace)
     else:
       pager.addContainer(container)

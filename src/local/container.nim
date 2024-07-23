@@ -142,6 +142,9 @@ type
     numLines*: int
     replace*: Container
     replaceBackup*: Container # for redirection; when set, we get discarded
+    # if we are referenced by another container, replaceRef is set so that we
+    # can clear ourselves on discard
+    replaceRef*: Container
     code*: int # note: this is not the status code, but the ConnectErrorCode.
     errorMessage*: string
     retry*: seq[URL]
