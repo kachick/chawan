@@ -81,6 +81,53 @@ elif SandboxMode == stLibSeccomp:
   import std/posix
   import bindings/libseccomp
 
+  when defined(android):
+    let PR_SET_VMA {.importc, header: "<sys/prctl.h>", nodecl.}: cint
+    let PR_SET_VMA_ANON_NAME {.importc, header: "<sys/prctl.h>", nodecl.}: cint
+
+    proc allowBionic(ctx: scmp_filter_ctx) =
+      # Things needed for bionic libc. Tested with Termux.
+      const androidAllowList = [
+        cstring"rt_sigprocmask",
+        "epoll_pwait",
+        "futex",
+        "madvise"
+      ]
+      for it in androidAllowList:
+        let syscall = seccomp_syscall_resolve_name(it)
+        doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall, 0) == 0
+      # bionic likes to set this very much. In fact, it was added to
+      # the kernel by Android devs.
+      block allowAnonVMAName:
+        let syscall = seccomp_syscall_resolve_name("prctl")
+        let arg0 = scmp_arg_cmp(
+          arg: 0, # op
+          op: SCMP_CMP_EQ, # equals
+          datum_a: uint64(PR_SET_VMA)
+        )
+        let arg1 = scmp_arg_cmp(
+          arg: 1, # attr
+          op: SCMP_CMP_EQ, # equals
+          datum_a: uint64(PR_SET_VMA_ANON_NAME)
+        )
+        doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall, 2, arg0,
+          arg1) == 0
+      # We have to be careful with this one; PROT_EXEC will happily set
+      # memory as executable, which is certainly not what we want.
+      # Now, bionic seems to be calling this from mutate(), ergo we
+      # should be fine just allowing PROT_READ and PROT_READ | PROT_WRITE.
+      block allowMprotect:
+        let syscall = seccomp_syscall_resolve_name("mprotect")
+        let arg2 = scmp_arg_cmp(
+          arg: 2, # attr
+          op: SCMP_CMP_LE, # less or equals
+          datum_a: 3 # PROT_READ | PROT_WRITE
+        )
+        # Note that libseccomp can't really express multiple comparisons.
+        # However, we are lucky, and we only have to "excessively" allow
+        # PROT_WRITE (w/o PROT_READ) and PROT_NONE, which does no harm.
+        doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall, 1, arg2) == 0
+
   proc enterBufferSandbox*(sockPath: string) =
     onSignal SIGSYS:
       discard sig
@@ -137,6 +184,8 @@ elif SandboxMode == stLibSeccomp:
         datum_a: 1 # PF_LOCAL == PF_UNIX == AF_UNIX
       )
       doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall, 1, arg0) == 0
+    when defined(android):
+      ctx.allowBionic()
     doAssert seccomp_load(ctx) == 0
     seccomp_release(ctx)
 
@@ -155,9 +204,6 @@ elif SandboxMode == stLibSeccomp:
       "poll", # curl needs poll
       "getpid", # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
       "fstat", # glibc fread seems to call it
-      # maybe it will need epoll too in the future
-      "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait",
-      "ppoll", # or ppoll
       # we either have to use CURLOPT_NOSIGNAL or allow signals.
       # do the latter, otherwise the default name resolver will never time out.
       "signal", "sigaction", "rt_sigaction",
@@ -165,6 +211,8 @@ elif SandboxMode == stLibSeccomp:
     for it in allowList:
       doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW,
         seccomp_syscall_resolve_name(it), 0) == 0
+    when defined(android):
+      ctx.allowBionic()
     doAssert seccomp_load(ctx) == 0
     seccomp_release(ctx)
 else:

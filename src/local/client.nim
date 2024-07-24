@@ -359,7 +359,8 @@ proc input(client: Client): EmptyPromise =
     p.resolve()
   return p
 
-let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
+when not defined(android):
+  let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 
 proc showConsole(client: Client) {.jsfunc.} =
   let container = client.consoleWrapper.container
@@ -546,7 +547,8 @@ proc handleError(client: Client; fd: int) =
 proc inputLoop(client: Client) =
   let selector = client.selector
   selector.registerHandle(int(client.pager.term.istream.fd), {Read}, 0)
-  let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
+  when not defined(android):
+    let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
   while true:
     let events = client.selector.select(-1)
     for event in events:
@@ -556,9 +558,10 @@ proc inputLoop(client: Client) =
         client.handleWrite(event.fd)
       if Error in event.events:
         client.handleError(event.fd)
-      if Signal in event.events:
-        assert event.fd == sigwinch
-        client.pager.windowChange()
+      when not defined(android):
+        if Signal in event.events:
+          assert event.fd == sigwinch
+          client.pager.windowChange()
       if selectors.Event.Timer in event.events:
         let r = client.timeouts.runTimeoutFd(event.fd)
         assert r

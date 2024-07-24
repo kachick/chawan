@@ -13,6 +13,7 @@ display:
 - dark mode (basically max Y)
 - override bgcolor ourselves when terminal fails to report it
 config:
+- important: fix crash on missing /tmp dir with default config
 - important: config editor
 - completely replace siteconf; the new solution should:
 	* not be based on table arrays
