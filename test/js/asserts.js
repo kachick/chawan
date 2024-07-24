@@ -8,7 +8,7 @@ function assert_throws(expr, error) {
 	try {
 		eval(expr);
 	} catch (e) {
-		if (e instanceof error)
+		if (e instanceof Error)
 			return;
 	}
 	throw new TypeError("Assertion failed");

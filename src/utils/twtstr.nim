@@ -147,7 +147,7 @@ func stripAndCollapse*(s: string): string =
     else:
       result &= ' '
 
-func until*(s: string; c: set[char]; starti = 0): string =
+func until*(s: openArray[char]; c: set[char]; starti = 0): string =
   result = ""
   for i in starti ..< s.len:
     if s[i] in c:
@@ -364,13 +364,9 @@ proc percentEncode*(append: var string; c: char; set: set[char];
     append.pushHex(c)
 
 proc percentEncode*(append: var string; s: string; set: set[char];
-    spaceAsPlus = false) {.inline.} =
+    spaceAsPlus = false) =
   for c in s:
     append.percentEncode(c, set, spaceAsPlus)
-
-func percentEncode*(c: char; set: set[char]; spaceAsPlus = false): string
-    {.inline.} =
-  result.percentEncode(c, set, spaceAsPlus)
 
 func percentEncode*(s: string; set: set[char]; spaceAsPlus = false): string =
   result.percentEncode(s, set, spaceAsPlus)
@@ -413,14 +409,11 @@ func dqEscape*(s: string): string =
 func join*(ss: openArray[string]; sep: char): string =
   if ss.len == 0:
     return ""
-  var n = ss.high - 1
-  for i in 0..high(ss):
-    n += ss[i].len
-  result = newStringOfCap(n)
-  result &= ss[0]
-  for i in 1..high(ss):
-    result &= sep
-    result &= ss[i]
+  var s = ss[0]
+  for i in 1 ..< ss.len:
+    s &= sep
+    s &= ss[i]
+  return s
 
 proc passRealloc*(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
@@ -512,21 +505,16 @@ proc expandPath*(path: string): string =
         return $p.pw_dir / path.substr(usr.len)
     return path
 
-func deleteChars*(s: string; todel: set[char]): string =
-  let i = s.find(todel)
-  if i == -1:
-    return s
-  var rs = s.substr(0, i - 1)
-  for j in i + 1 ..< s.len:
-    if s[j] in todel:
-      continue
-    rs &= s[j]
-  return rs
+func deleteChars*(s: openArray[char]; todel: set[char]): string =
+  result = newStringOfCap(s.len)
+  for c in s:
+    if c notin todel:
+      result &= c
 
 func replaceControls*(s: string): string =
   result = newStringOfCap(s.len)
   for c in s:
-    if c in Controls - {' '}:
+    if c in Controls:
       result &= '^'
       result &= c.getControlLetter()
     else:
