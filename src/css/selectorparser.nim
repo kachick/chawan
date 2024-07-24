@@ -10,14 +10,34 @@ type
     stType, stId, stAttr, stClass, stUniversal, stPseudoClass, stPseudoElement
 
   PseudoElem* = enum
-    peNone, peBefore, peAfter,
+    peNone = "-cha-none"
+    peBefore = "before"
+    peAfter = "after"
     # internal
-    peInputText, peTextareaText, peImage, peNewline, peVideo, peAudio, peCanvas
+    peInputText = "-cha-input-text"
+    peTextareaText = "-cha-textarea-text"
+    peImage = "-cha-image"
+    peNewline = "-cha-newline"
+    peVideo = "-cha-video"
+    peAudio = "-cha-audio"
+    peCanvas = "-cha-canvas"
 
   PseudoClass* = enum
-    pcFirstChild, pcLastChild, pcOnlyChild, pcHover, pcRoot, pcNthChild,
-    pcNthLastChild, pcChecked, pcFocus, pcIs, pcNot, pcWhere, pcLang, pcLink,
-    pcVisited
+    pcFirstChild = "first-child"
+    pcLastChild = "last-child"
+    pcOnlyChild = "only-child"
+    pcHover = "hover"
+    pcRoot = "root"
+    pcNthChild = "nth-child"
+    pcNthLastChild = "nth-last-child"
+    pcChecked = "checked"
+    pcFocus = "focus"
+    pcIs = "is"
+    pcNot = "not"
+    pcWhere = "where"
+    pcLang = "lang"
+    pcLink = "link"
+    pcVisited = "visited"
 
   CombinatorType* = enum
     ctNone, ctDescendant, ctChild, ctNextSibling, ctSubsequentSibling
@@ -102,10 +122,6 @@ func len*(sels: CompoundSelector): int {.inline.} =
 proc add*(sels: var CompoundSelector; sel: Selector) {.inline.} =
   sels.sels.add(sel)
 
-# For debugging
-func tostr(ftype: enum): string =
-  return ($ftype).split('_')[1..^1].join('-').toLowerAscii()
-
 func `$`*(cxsel: ComplexSelector): string
 
 func `$`*(sel: Selector): string =
@@ -146,7 +162,7 @@ func `$`*(sel: Selector): string =
   of stUniversal:
     return "*"
   of stPseudoClass:
-    result = ':' & sel.pseudo.t.tostr()
+    result = ':' & $sel.pseudo.t
     case sel.pseudo.t
     of pcIs, pcNot, pcWhere:
       result &= '('
@@ -166,7 +182,7 @@ func `$`*(sel: Selector): string =
       result &= ')'
     else: discard
   of stPseudoElement:
-    return "::" & sel.elem.tostr()
+    return "::" & $sel.elem
 
 func `$`*(sels: CompoundSelector): string =
   for sel in sels:
