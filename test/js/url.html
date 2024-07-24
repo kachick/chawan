@@ -41,6 +41,8 @@ assert_equals(new URL("abcd?efgh#ijkl", "https://example.com/") + "", "https://e
 	const x = new URL("efgh:/test");
 	x.protocol = "abcd";
 	assert_equals(x.protocol, "abcd:");
+	x.protocol = " efgh";
+	assert_equals(x.protocol, "abcd:");
 }
 {
 	const x = new URL("http:/test");
@@ -48,6 +50,18 @@ assert_equals(new URL("abcd?efgh#ijkl", "https://example.com/") + "", "https://e
 	assert_equals(x.protocol, "http:");
 	x.protocol = "https";
 	assert_equals(x.protocol, "https:");
+}
+{
+	const x = new URL("https://user:password@example.org:1234/path?search#hash");
+	assert_equals(x.protocol, "https:");
+	assert_equals(x.username, "user");
+	assert_equals(x.password, "password");
+	assert_equals(x.hostname, "example.org");
+	assert_equals(x.port, "1234");
+	assert_equals(x.host, "example.org:1234");
+	assert_equals(x.pathname, "/path");
+	assert_equals(x.search, "?search");
+	assert_equals(x.hash, "#hash");
 }
 document.getElementById("x").textContent = "Success";
 </script>

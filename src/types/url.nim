@@ -193,13 +193,11 @@ func parseIpv4Number(s: string): uint32 =
       R = 8
   if input == "":
     return 0
-  var output = 0u32
   case R
-  of 8: output = parseOctUInt32(input, allowSign = false).get(uint32.high)
-  of 10: output = parseUInt32(input, allowSign = false).get(uint32.high)
-  of 16: output = parseHexUInt32(input, allowSign = false).get(uint32.high)
-  else: discard
-  return output
+  of 8: return parseOctUInt32(input, allowSign = false).get(uint32.high)
+  of 10: return parseUInt32(input, allowSign = false).get(uint32.high)
+  of 16: return parseHexUInt32(input, allowSign = false).get(uint32.high)
+  else: return 0
 
 func parseIpv4(input: string): Option[uint32] =
   var numbers: seq[uint32] = @[]
@@ -415,7 +413,7 @@ func parseHost(input: string; special: bool): Host =
       return Host(t: htIpv4, ipv4: ipv4.get)
   return Host(t: htDomain, domain: asciiDomain)
 
-proc shortenPath(url: URL) {.inline.} =
+proc shortenPath(url: URL) =
   assert not url.path.opaque
   if url.scheme == "file" and url.path.ss.len == 1 and
       url.path.ss[0].len == 2 and url.path.ss[0][0] in AsciiAlpha and
@@ -523,9 +521,7 @@ proc parseScheme(input: openArray[char]; pointer: var int; isSpecial: var bool;
   var i = pointer
   while i < input.len:
     let c = input[i]
-    if c in {'\t', '\n'}:
-      discard
-    elif c in AsciiAlphaNumeric + {'+', '-', '.'}:
+    if c in AsciiAlphaNumeric + {'+', '-', '.'}:
       buffer &= c.toLowerAscii()
     elif c == ':':
       if override:
@@ -540,7 +536,7 @@ proc parseScheme(input: openArray[char]; pointer: var int; isSpecial: var bool;
       if override:
         if isSpecial and SpecialSchemes[url.scheme] == url.port:
           url.port = none(uint16)
-        return usNoScheme
+        return usDone
       pointer = i + 1
       if url.scheme == "file":
         return usFile
@@ -564,8 +560,8 @@ proc parseScheme(input: openArray[char]; pointer: var int; isSpecial: var bool;
   return usNoScheme
 
 proc parseSchemeStart(input: openArray[char]; pointer: var int;
-    isSpecial: var bool; base: Option[URL]; url: URL;
-    override: bool): URLState =
+    isSpecial: var bool; base: Option[URL]; url: URL; override: bool):
+    URLState =
   var state = usNoScheme
   if pointer < input.len and (let c = input[pointer]; c in AsciiAlpha):
     # continue to scheme state
@@ -575,9 +571,7 @@ proc parseSchemeStart(input: openArray[char]; pointer: var int;
   if state == usNoScheme:
     pointer = 0 # start over
   if override:
-    return state
-  while pointer < input.len and input[pointer] in {'\t', '\n'}:
-    inc pointer
+    return usDone
   if state == usNoScheme:
     if base.isNone:
       return usFail
@@ -862,8 +856,8 @@ proc parseQuery(input: openArray[char]; pointer: var int; isSpecial: bool;
     return usFragment
   return usDone
 
-proc basicParseURL0(input: openArray[char]; base = none(URL); url = URL();
-    stateOverride = none(URLState)): Option[URL] =
+proc basicParseURL0(input: openArray[char]; base: Option[URL]; url: URL;
+    stateOverride: Option[URLState]): Option[URL] =
   var pointer = 0
   var isSpecial = url.scheme in SpecialSchemes
   let input = input.deleteChars({'\n', '\t'})
@@ -871,8 +865,6 @@ proc basicParseURL0(input: openArray[char]; base = none(URL); url = URL();
   var state = stateOverride.get(usSchemeStart)
   if state == usSchemeStart:
     state = input.parseSchemeStart(pointer, isSpecial, base, url, override)
-    if override:
-      return none(URL)
   if state == usAuthority:
     state = input.parseAuthority(pointer, isSpecial, url)
   if state in {usHost, usHostname}:
@@ -897,20 +889,21 @@ proc basicParseURL0(input: openArray[char]; base = none(URL); url = URL();
   return some(url)
 
 #TODO encoding
-proc basicParseURL*(input: string; base = none(URL); url = URL();
+proc basicParseURL(input: string; base = none(URL); url: URL = nil;
     stateOverride = none(URLState)): Option[URL] =
+  if url != nil:
+    return input.basicParseURL0(base, url, stateOverride)
+  let url = URL()
   const NoStrip = AllChars - C0Controls - {' '}
   let starti0 = input.find(NoStrip)
   let starti = if starti0 == -1: 0 else: starti0
   let endi0 = input.rfind(NoStrip)
-  let endi = if endi0 == -1: input.len else: endi0 + 1
-  return input.toOpenArray(starti, endi - 1).basicParseURL0(base, url,
+  let endi = if endi0 == -1: input.high else: endi0
+  return input.toOpenArray(starti, endi).basicParseURL0(base, url,
     stateOverride)
 
 func anchor*(url: URL): string =
-  if url.fragment.isSome:
-    return url.fragment.get
-  return ""
+  return url.fragment.get("")
 
 proc parseURL*(input: string; base = none(URL); override = none(URLState)):
     Option[URL] =
@@ -1250,12 +1243,12 @@ proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
   discard basicParseURL(s & ':', url = url,
     stateOverride = some(usSchemeStart))
 
-proc username(url: URL; username: string) {.jsfset.} =
+proc setUsername(url: URL; username: string) {.jsfset: "username".} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.username = username.percentEncode(UserInfoPercentEncodeSet)
 
-proc password(url: URL; password: string) {.jsfset.} =
+proc setPassword(url: URL; password: string) {.jsfset: "password".} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.password = password.percentEncode(UserInfoPercentEncodeSet)
