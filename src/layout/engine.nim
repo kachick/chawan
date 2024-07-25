@@ -151,6 +151,10 @@ func applySizeConstraint(u: LayoutUnit; availableSize: SizeConstraint):
 func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
   return box.state.margin[dim].sum() + box.state.size[dim]
 
+# In CSS, "min" beats "max".
+func minClamp(x: LayoutUnit; span: Span): LayoutUnit =
+  return max(min(x, span.send), span.start)
+
 type
   BlockContext = object
     lctx: LayoutContext
@@ -592,6 +596,9 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
 func xminwidth(atom: InlineAtom): LayoutUnit =
   if atom.t == iatInlineBlock:
     return atom.innerbox.state.xminwidth
+  elif atom.t == iatImage:
+    # We calculate this in addInlineImage instead.
+    return 0
   return atom.size.w
 
 func shouldWrap(ictx: InlineContext; w: LayoutUnit;
@@ -1053,12 +1060,10 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
     let length = computed[CvalSizeMap[dim]].length
     if length.canpx(space[dim]):
       let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
-      let span = sizes.minMaxSizes[dim]
-      sizes.space[dim] = stretch(clamp(u, span.start, span.send))
+      sizes.space[dim] = stretch(minClamp(u, sizes.minMaxSizes[dim]))
     elif sizes.space[dim].isDefinite():
       let u = sizes.space[dim].u - sizes.margin[dim].sum() - paddingSum[dim]
-      let span = sizes.minMaxSizes[dim]
-      sizes.space[dim] = fitContent(clamp(u, span.start, span.send))
+      sizes.space[dim] = fitContent(minClamp(u, sizes.minMaxSizes[dim]))
   return sizes
 
 proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
@@ -1076,22 +1081,18 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
   let length = computed[CvalSizeMap[dim]].length
   if length.canpx(space[dim]):
     let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
-    let span = sizes.minMaxSizes[dim]
-    sizes.space[dim] = stretch(clamp(u, span.start, span.send))
+    sizes.space[dim] = stretch(minClamp(u, sizes.minMaxSizes[dim]))
   elif sizes.space[dim].isDefinite():
     let u = sizes.space[dim].u - sizes.margin[dim].sum() - paddingSum[dim]
-    let span = sizes.minMaxSizes[dim]
-    sizes.space[dim] = fitContent(clamp(u, span.start, span.send))
+    sizes.space[dim] = fitContent(minClamp(u, sizes.minMaxSizes[dim]))
   let odim = dim.opposite()
   let olength = computed[CvalSizeMap[odim]].length
   if olength.canpx(space[odim]):
     let u = olength.spx(lctx, space[odim], computed, paddingSum[odim])
-    let span = sizes.minMaxSizes[odim]
-    sizes.space[odim] = stretch(clamp(u, span.start, span.send))
+    sizes.space[odim] = stretch(minClamp(u, sizes.minMaxSizes[odim]))
   elif sizes.space[odim].isDefinite():
     let u = sizes.space[odim].u - sizes.margin[odim].sum() - paddingSum[odim]
-    let span = sizes.minMaxSizes[odim]
-    sizes.space[odim] = stretch(clamp(u, span.start, span.send))
+    sizes.space[odim] = stretch(minClamp(u, sizes.minMaxSizes[odim]))
   return sizes
 
 # Calculate and resolve available width, height, padding, margins, etc.
@@ -1130,8 +1131,7 @@ proc applySize(box: BlockBox; sizes: ResolvedSizes;
   # Make the box as small/large as the content's width or specified width.
   box.state.size[dim] = maxChildSize.applySizeConstraint(space[dim])
   # Then, clamp it to minWidth and maxWidth (if applicable).
-  let span = sizes.minMaxSizes[dim]
-  box.state.size[dim] = clamp(box.state.size[dim], span.start, span.send)
+  box.state.size[dim] = minClamp(box.state.size[dim], sizes.minMaxSizes[dim])
 
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit; space: AvailableSpace) =
@@ -1414,32 +1414,62 @@ proc addInlineImage(ictx: var InlineContext; state: var InlineState;
   )
   let computed = state.fragment.computed
   let lctx = ictx.lctx
-  let hasWidth = computed{"width"}.canpx(ictx.space.w)
-  let hasHeight = computed{"height"}.canpx(ictx.space.h)
+  var hasWidth = computed{"width"}.canpx(ictx.space.w)
+  var hasHeight = computed{"height"}.canpx(ictx.space.h)
+  let osize = atom.size
   if hasWidth:
-    let w = computed{"width"}.spx(lctx, ictx.space.w, computed, padding)
-    if not hasHeight:
-      # maintain aspect ratio
-      atom.size.h = atom.size.h div atom.size.w * w
-    atom.size.w = w
+    atom.size.w = computed{"width"}.spx(lctx, ictx.space.w, computed, padding)
   if hasHeight:
-    let h = computed{"height"}.spx(lctx, ictx.space.h, computed, padding)
-    if not hasWidth:
-      # maintain aspect ratio
-      atom.size.w = atom.size.w div atom.size.h * h
-    atom.size.h = h
+    atom.size.h = computed{"height"}.spx(lctx, ictx.space.h, computed, padding)
+  if computed{"max-width"}.canpx(ictx.space.w):
+    let w = computed{"max-width"}.spx(lctx, ictx.space.w, computed, padding)
+    if atom.size.w > w:
+      atom.size.w = w
+      hasWidth = true
+  if computed{"min-width"}.canpx(ictx.space.w):
+    let w = computed{"min-width"}.spx(lctx, ictx.space.w, computed, padding)
+    if atom.size.w < w:
+      atom.size.w = w
+      hasWidth = true
+  if computed{"max-height"}.canpx(ictx.space.h):
+    let h = computed{"max-height"}.spx(lctx, ictx.space.h, computed, padding)
+    if atom.size.h > h:
+      atom.size.h = h
+      hasHeight = true
+  if computed{"min-height"}.canpx(ictx.space.h):
+    let h = computed{"min-height"}.spx(lctx, ictx.space.h, computed, padding)
+    if atom.size.h < h:
+      atom.size.h = h
+      hasHeight = true
   if not hasWidth and not hasHeight:
     if ictx.space.w.isDefinite() and atom.size.w > ictx.space.w.u:
-      atom.size.h = atom.size.h div atom.size.w * ictx.space.w.u
       atom.size.w = ictx.space.w.u
+      if osize.w > 0:
+        atom.size.h = osize.h div osize.w * atom.size.w
     if ictx.space.h.isDefinite() and atom.size.h > ictx.space.h.u:
-      atom.size.w = atom.size.w div atom.size.h * ictx.space.h.u
       atom.size.h = ictx.space.h.u
+      if osize.w > 0:
+        atom.size.w = osize.w div osize.h * atom.size.h
+  elif not hasHeight:
+    if osize.w > 0:
+      atom.size.h = osize.h div osize.w * atom.size.w
+  elif not hasWidth:
+    if osize.h > 0:
+      atom.size.w = osize.w div osize.h * atom.size.h
   let iastate = InlineAtomState(
     vertalign: state.fragment.computed{"vertical-align"},
     baseline: atom.size.h
   )
   discard ictx.addAtom(state, iastate, atom)
+  if atom.size.h > 0:
+    # Setting the atom size as xminwidth might result in a circular dependency
+    # between table cell sizing and image sizing when we don't have a definite
+    # parent size yet. e.g. <img width=100% ...> with an indefinite containing
+    # size (i.e. the first table cell pass) would resolve to an xminwidth of
+    # image.width, stretching out the table to an uncomfortably large size.
+    if ictx.space.w.isDefinite() or computed{"width"}.unit != cuPerc and
+        computed{"min-width"}.unit != cuPerc:
+      ictx.root.state.xminwidth = max(ictx.root.state.xminwidth, atom.size.w)
 
 func calcLineHeight(computed: CSSComputedValues; lctx: LayoutContext):
     LayoutUnit =

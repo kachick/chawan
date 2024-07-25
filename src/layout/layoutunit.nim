@@ -47,7 +47,6 @@ func `$`*(a: LayoutUnit): string =
 
 func min*(a, b: LayoutUnit): LayoutUnit {.borrow.}
 func max*(a, b: LayoutUnit): LayoutUnit {.borrow.}
-func clamp*(x, a, b: LayoutUnit): LayoutUnit {.borrow.}
 
 func round*(a: LayoutUnit; prec: int): LayoutUnit =
   return (a div prec).toInt * prec
