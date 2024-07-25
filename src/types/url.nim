@@ -50,7 +50,7 @@ type
 
   URLSearchParams* = ref object
     list*: seq[tuple[name, value: string]]
-    url: Option[URL]
+    url: URL
 
   URL* = ref object
     scheme*: string
@@ -62,7 +62,7 @@ type
     query*: Option[string]
     fragment: Option[string]
     blob: Option[BlobURLEntry]
-    searchParams* {.jsget.}: URLSearchParams
+    searchParamsInternal: URLSearchParams
 
   OriginType* = enum
     otOpaque, otTuple
@@ -1048,10 +1048,7 @@ func toJSON(url: URL): string {.jsfget.} =
 # from a to b
 proc cloneInto(a, b: URL) =
   b[] = a[]
-  if a.searchParams != nil: #TODO ideally this would never be false
-    b.searchParams = URLSearchParams()
-    b.searchParams[] = a.searchParams[]
-    b.searchParams.url = some(b)
+  b.searchParamsInternal = nil
 
 proc newURL*(url: URL): URL =
   result = URL()
@@ -1099,9 +1096,6 @@ proc serializeFormURLEncoded*(kvs: seq[(string, string)]; spaceAsPlus = true):
     result &= '='
     result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
 
-proc initURLSearchParams(params: URLSearchParams; init: string) =
-  params.list = parseFromURLEncoded(init)
-
 proc newURLSearchParams[
       T: seq[(string, string)]|
       Table[string, string]|
@@ -1118,19 +1112,26 @@ proc newURLSearchParams[
       init.substr(1)
     else:
       init
-    result.initURLSearchParams(init)
+    result.list = parseFromURLEncoded(init)
+
+proc searchParams(url: URL): URLSearchParams {.jsfget.} =
+  if url.searchParamsInternal == nil:
+    let params = newURLSearchParams(url.query.get(""))
+    params.url = url
+    url.searchParamsInternal = params
+  return url.searchParamsInternal
 
 proc `$`*(params: URLSearchParams): string {.jsfunc.} =
   return serializeFormURLEncoded(params.list)
 
 proc update(params: URLSearchParams) =
-  if params.url.isNone:
+  if params.url == nil:
     return
   let serializedQuery = $params
   if serializedQuery == "":
-    params.url.get.query = none(string)
+    params.url.query = none(string)
   else:
-    params.url.get.query = some(serializedQuery)
+    params.url.query = some(serializedQuery)
 
 proc append*(params: URLSearchParams; name, value: string) {.jsfunc.} =
   params.list.add((name, value))
@@ -1174,11 +1175,7 @@ proc parseAPIURL(s: string; base: Option[string]): JSResult[URL] =
 
 proc newURL*(s: string; base: Option[string] = none(string)):
     JSResult[URL] {.jsctor.} =
-  let url = ?parseAPIURL(s, base)
-  url.searchParams = newURLSearchParams()
-  url.searchParams.url = some(url)
-  url.searchParams.initURLSearchParams(url.query.get(""))
-  return ok(url)
+  return parseAPIURL(s, base)
 
 proc origin*(url: URL): Origin =
   case url.scheme
@@ -1302,12 +1299,14 @@ proc search*(url: URL): string {.jsfget.} =
 proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
   if s == "":
     url.query = none(string)
-    url.searchParams.list.setLen(0)
+    if url.searchParamsInternal != nil:
+      url.searchParamsInternal.list.setLen(0)
     return
   let s = if s[0] == '?': s.substr(1) else: s
   url.query = some("")
   discard basicParseURL(s, url = url, stateOverride = some(usQuery))
-  url.searchParams.list = parseFromURLEncoded(s)
+  if url.searchParamsInternal != nil:
+    url.searchParamsInternal.list = parseFromURLEncoded(s)
 
 proc hash*(url: URL): string {.jsfget.} =
   if url.fragment.get("") == "":
