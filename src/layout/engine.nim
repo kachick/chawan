@@ -1572,19 +1572,16 @@ proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
 
 proc positionAbsolute(lctx: LayoutContext; box: BlockBox;
     margin: RelativeRect) =
-  let last = lctx.positioned[^1]
-  let parentWidth = applySizeConstraint(lctx.attrs.width_px, last.w)
-  let parentHeight = applySizeConstraint(lctx.attrs.height_px, last.h)
   if not box.computed{"left"}.auto:
     box.state.offset.x = box.state.positioned.left + margin.left
   elif not box.computed{"right"}.auto:
-    box.state.offset.x = parentWidth - box.state.positioned.right -
-      box.state.size.w - margin.right
+    box.state.offset.x = -box.state.positioned.right - box.state.size.w -
+      margin.right
   if not box.computed{"top"}.auto:
     box.state.offset.y = box.state.positioned.top + margin.top
   elif not box.computed{"bottom"}.auto:
-    box.state.offset.y = parentHeight - box.state.positioned.bottom -
-      box.state.size.h - margin.bottom
+    box.state.offset.y = -box.state.positioned.bottom - box.state.size.h -
+      margin.bottom
 
 proc positionRelative(parent, box: BlockBox) =
   if not box.computed{"left"}.auto:
