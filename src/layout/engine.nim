@@ -1717,7 +1717,7 @@ proc growRowspan(pctx: var TableContext; ctx: var RowContext;
     inc i
     inc growi
 
-proc preBuildTableRow(pctx: var TableContext; row, parent: BlockBox;
+proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
     rowi, numrows: int): RowContext =
   var ctx = RowContext(box: row, cells: newSeq[CellWrapper](row.nested.len))
   var n = 0
@@ -1889,7 +1889,7 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
 proc preLayoutTableRows(tctx: var TableContext; rows: seq[BlockBox];
     table: BlockBox) =
   for i, row in rows:
-    let rctx = tctx.preBuildTableRow(row, table, i, rows.len)
+    let rctx = tctx.preLayoutTableRow(row, table, i, rows.len)
     tctx.rows.add(rctx)
     tctx.maxwidth = max(rctx.width, tctx.maxwidth)
 
@@ -2073,11 +2073,14 @@ proc layoutTableWrapper(bctx: BlockContext; box: BlockBox;
   var tctx = TableContext(lctx: bctx.lctx, space: sizes.space)
   tctx.layoutTable(table, sizes)
   box.state.size = table.state.size
+  box.state.baseline = table.state.size.h
+  box.state.firstBaseline = table.state.size.h
   if box.nested.len > 1:
     # do it here, so that caption's box can stretch to our width
     let caption = box.nested[1]
     #TODO also count caption width in table width
     tctx.layoutCaption(box, caption)
+  #TODO overflow
 
 proc postAlignChild(box, child: BlockBox; width: LayoutUnit) =
   case box.computed{"text-align"}
@@ -2604,6 +2607,8 @@ type InnerBlockContext = object
   lctx: LayoutContext
   anonRow: BlockBox
   anonTableWrapper: BlockBox
+  inlineAnonRow: BlockBox
+  inlineAnonTableWrapper: BlockBox
   quoteLevel: int
   listItemCounter: int
   listItemReset: bool
@@ -2613,8 +2618,11 @@ type InnerBlockContext = object
   # if inline is not nil, then inline.children.len > 0
   inline: RootInlineFragment
 
+proc flushTable(ctx: var InnerBlockContext)
+
 proc flushInlineGroup(ctx: var InnerBlockContext) =
   if ctx.inline != nil:
+    ctx.flushTable()
     let computed = ctx.outer.computed.inheritProperties()
     computed{"display"} = DisplayBlock
     let box = BlockBox(computed: computed, inline: ctx.inline)
@@ -2622,8 +2630,8 @@ proc flushInlineGroup(ctx: var InnerBlockContext) =
     ctx.inline = nil
 
 # Don't build empty anonymous inline blocks between block boxes
-func canBuildAnonymousInline(ctx: InnerBlockContext;
-    computed: CSSComputedValues; str: string): bool =
+func canBuildAnonInline(ctx: InnerBlockContext; computed: CSSComputedValues;
+    str: string): bool =
   return ctx.inline != nil and ctx.inline.fragment.children.len > 0 or
     computed.whitespacepre or not str.onlyWhitespace()
 
@@ -2642,6 +2650,7 @@ proc buildTableCaption(parent: var InnerBlockContext; styledNode: StyledNode;
   computed: CSSComputedValues): BlockBox
 proc newInnerBlockContext(styledNode: StyledNode; box: BlockBox;
   lctx: LayoutContext; parent: ptr InnerBlockContext): InnerBlockContext
+proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment)
 
 func toTableWrapper(display: CSSDisplay): CSSDisplay =
   if display == DisplayTable:
@@ -2649,31 +2658,79 @@ func toTableWrapper(display: CSSDisplay): CSSDisplay =
   assert display == DisplayInlineTable
   return DisplayInlineTableWrapper
 
-proc createAnonTable(ctx: var InnerBlockContext; computed: CSSComputedValues) =
-  if ctx.anonTableWrapper == nil:
+proc createAnonTable(ctx: var InnerBlockContext; computed: CSSComputedValues):
+    BlockBox =
+  let inline = ctx.inlineStack.len > 0
+  if not inline and ctx.anonTableWrapper == nil or
+      inline and ctx.inlineAnonTableWrapper == nil:
     let inherited = computed.inheritProperties()
     let (outerComputed, innerComputed) = inherited.splitTable()
-    #TODO this should be DisplayInlineTableWrapper inside inline contexts
-    outerComputed{"display"} = DisplayTableWrapper
+    outerComputed{"display"} = if inline:
+      DisplayInlineTableWrapper
+    else:
+      DisplayTableWrapper
     let innerTable = BlockBox(computed: innerComputed)
-    ctx.anonTableWrapper = BlockBox(
+    let box = BlockBox(
       computed: outerComputed,
       nested: @[innerTable]
     )
+    if inline:
+      ctx.inlineAnonTableWrapper = box
+    else:
+      ctx.anonTableWrapper = box
+    return box
+  if inline:
+    return ctx.inlineAnonTableWrapper
+  return ctx.anonTableWrapper
+
+proc createAnonRow(ctx: var InnerBlockContext): BlockBox =
+  let inline = ctx.inlineStack.len > 0
+  if not inline and ctx.anonRow == nil or
+      inline and ctx.inlineAnonRow == nil:
+    let wrapperVals = ctx.outer.computed.inheritProperties()
+    wrapperVals{"display"} = DisplayTableRow
+    let box = BlockBox(computed: wrapperVals)
+    if inline:
+      ctx.inlineAnonRow = box
+    else:
+      ctx.anonRow = box
+    return box
+  if inline:
+    return ctx.inlineAnonRow
+  return ctx.anonRow
 
 proc flushTableRow(ctx: var InnerBlockContext) =
   if ctx.anonRow != nil:
     if ctx.outer.computed{"display"} in ProperTableRowParent:
       ctx.outer.nested.add(ctx.anonRow)
     else:
-      ctx.createAnonTable(ctx.outer.computed)
-      ctx.anonTableWrapper.nested[0].nested.add(ctx.anonRow)
+      let anonTableWrapper = ctx.createAnonTable(ctx.outer.computed)
+      anonTableWrapper.nested[0].nested.add(ctx.anonRow)
     ctx.anonRow = nil
 
 proc flushTable(ctx: var InnerBlockContext) =
   ctx.flushTableRow()
   if ctx.anonTableWrapper != nil:
     ctx.outer.nested.add(ctx.anonTableWrapper)
+    ctx.anonTableWrapper = nil
+
+proc flushInlineTableRow(ctx: var InnerBlockContext) =
+  if ctx.inlineAnonRow != nil:
+    # There is no way an inline anonymous row could be a child of an inline
+    # table, since inline tables still act like blocks inside.
+    let anonTableWrapper = ctx.createAnonTable(ctx.outer.computed)
+    anonTableWrapper.nested[0].nested.add(ctx.inlineAnonRow)
+    ctx.inlineAnonRow = nil
+
+proc flushInlineTable(ctx: var InnerBlockContext) =
+  ctx.flushInlineTableRow()
+  if ctx.inlineAnonTableWrapper != nil:
+    ctx.pushInline(InlineFragment(
+      t: iftBox,
+      computed: ctx.inlineAnonTableWrapper.computed.inheritProperties(),
+      box: ctx.inlineAnonTableWrapper
+    ))
+    ctx.inlineAnonTableWrapper = nil
 
 proc iflush(ctx: var InnerBlockContext) =
   ctx.inlineStackFragments.setLen(0)
@@ -2686,7 +2743,6 @@ proc flushInherit(ctx: var InnerBlockContext) =
 
 proc flush(ctx: var InnerBlockContext) =
   ctx.flushInlineGroup()
-  ctx.flushTableRow()
   ctx.flushTable()
   ctx.flushInherit()
 
@@ -2758,13 +2814,12 @@ proc pushInlineText(ctx: var InnerBlockContext; computed: CSSComputedValues;
 
 proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
-  let wrapper = InlineFragment(
+  ctx.pushInline(InlineFragment(
     t: iftBox,
     computed: computed.inheritProperties(),
     node: styledNode,
     box: ctx.buildSomeBlock(styledNode, computed)
-  )
-  ctx.pushInline(wrapper)
+  ))
 
 proc pushListItem(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
@@ -2795,41 +2850,48 @@ proc pushListItem(ctx: var InnerBlockContext; styledNode: StyledNode;
 
 proc pushTableRow(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
-  ctx.iflush()
-  ctx.flushInlineGroup()
-  ctx.flushTableRow()
   let child = ctx.buildTableRow(styledNode, computed)
-  if ctx.outer.computed{"display"} in ProperTableRowParent:
+  if ctx.inlineStack.len == 0:
+    ctx.iflush()
+    ctx.flushInlineGroup()
+    ctx.flushTableRow()
+  else:
+    ctx.flushInlineTableRow()
+  if ctx.inlineStack.len == 0 and
+      ctx.outer.computed{"display"} in ProperTableRowParent:
     ctx.outer.nested.add(child)
   else:
-    ctx.createAnonTable(ctx.outer.computed)
-    ctx.anonTableWrapper.nested[0].nested.add(child)
+    let anonTableWrapper = ctx.createAnonTable(ctx.outer.computed)
+    anonTableWrapper.nested[0].nested.add(child)
 
 proc pushTableRowGroup(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
-  ctx.iflush()
-  ctx.flushInlineGroup()
-  ctx.flushTableRow()
   let child = ctx.buildTableRowGroup(styledNode, computed)
-  if ctx.outer.computed{"display"} in {DisplayTable, DisplayInlineTable}:
+  if ctx.inlineStack.len == 0:
+    ctx.iflush()
+    ctx.flushInlineGroup()
+    ctx.flushTableRow()
+  else:
+    ctx.flushInlineTableRow()
+  if ctx.inlineStack.len == 0 and
+      ctx.outer.computed{"display"} in {DisplayTable, DisplayInlineTable}:
     ctx.outer.nested.add(child)
   else:
-    ctx.createAnonTable(ctx.outer.computed)
-    ctx.anonTableWrapper.nested[0].nested.add(child)
+    ctx.flushTableRow()
+    let anonTableWrapper = ctx.createAnonTable(ctx.outer.computed)
+    anonTableWrapper.nested[0].nested.add(child)
 
 proc pushTableCell(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
-  ctx.iflush()
-  ctx.flushInlineGroup()
   let child = ctx.buildTableCell(styledNode, computed)
-  if ctx.outer.computed{"display"} == DisplayTableRow:
+  if ctx.inlineStack.len == 0 and
+      ctx.outer.computed{"display"} == DisplayTableRow:
+    ctx.iflush()
+    ctx.flushInlineGroup()
     ctx.outer.nested.add(child)
   else:
-    if ctx.anonRow == nil:
-      let wrapperVals = ctx.outer.computed.inheritProperties()
-      wrapperVals{"display"} = DisplayTableRow
-      ctx.anonRow = BlockBox(computed: wrapperVals)
-    ctx.anonRow.nested.add(child)
+    let anonRow = ctx.createAnonRow()
+    anonRow.nested.add(child)
 
 proc pushTableCaption(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
@@ -2840,10 +2902,10 @@ proc pushTableCaption(ctx: var InnerBlockContext; styledNode: StyledNode;
   if ctx.outer.computed{"display"} in {DisplayTable, DisplayInlineTable}:
     ctx.outer.nested.add(child)
   else:
-    ctx.createAnonTable(ctx.outer.computed)
+    let anonTableWrapper = ctx.createAnonTable(ctx.outer.computed)
     # only add first caption
-    if ctx.anonTableWrapper.nested.len == 1:
-      ctx.anonTableWrapper.nested.add(child)
+    if anonTableWrapper.nested.len == 1:
+      anonTableWrapper.nested.add(child)
 
 proc buildFromElem(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
@@ -2941,10 +3003,13 @@ proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode;
     of stElement:
       ctx.buildFromElem(child, child.computed)
     of stText:
+      ctx.flushInlineTable()
       ctx.pushInlineText(computed, styledNode, child)
     of stReplacement:
+      ctx.flushInlineTable()
       ctx.buildReplacement(child, styledNode, computed)
   ctx.reconstructInlineParents()
+  ctx.flushInlineTable()
   let fragment = ctx.inlineStackFragments.pop()
   fragment.splitType.incl(stSplitEnd)
   ctx.inlineStack.setLen(ctx.inlineStack.high)
@@ -2974,7 +3039,7 @@ proc buildInnerBlock(ctx: var InnerBlockContext) =
     of stElement:
       ctx.buildFromElem(child, child.computed)
     of stText:
-      if ctx.canBuildAnonymousInline(ctx.outer.computed, child.textData):
+      if ctx.canBuildAnonInline(ctx.outer.computed, child.textData):
         ctx.pushInlineText(inlineComputed, ctx.styledNode, child)
     of stReplacement:
       ctx.buildReplacement(child, ctx.styledNode, inlineComputed)
@@ -2983,7 +3048,6 @@ proc buildInnerBlock(ctx: var InnerBlockContext) =
 proc buildBlock(ctx: var InnerBlockContext) =
   ctx.buildInnerBlock()
   # Flush anonymous tables here, to avoid setting inline layout with tables.
-  ctx.flushTableRow()
   ctx.flushTable()
   ctx.flushInherit() # (flush here, because why not)
   # Avoid unnecessary anonymous block boxes. This also helps set our layout to
@@ -3013,7 +3077,7 @@ proc buildInnerFlex(ctx: var InnerBlockContext) =
         child.computed
       ctx.buildFromElem(child, computed)
     of stText:
-      if ctx.canBuildAnonymousInline(ctx.outer.computed, child.textData):
+      if ctx.canBuildAnonInline(ctx.outer.computed, child.textData):
         ctx.pushInlineText(inlineComputed, ctx.styledNode, child)
     of stReplacement:
       ctx.buildReplacement(child, ctx.styledNode, inlineComputed)
@@ -3022,7 +3086,6 @@ proc buildInnerFlex(ctx: var InnerBlockContext) =
 proc buildFlex(ctx: var InnerBlockContext) =
   ctx.buildInnerFlex()
   # Flush anonymous tables here, to avoid setting inline layout with tables.
-  ctx.flushTableRow()
   ctx.flushTable()
   # (flush here, because why not)
   ctx.flushInherit()
@@ -3042,12 +3105,25 @@ proc buildTableCell(parent: var InnerBlockContext; styledNode: StyledNode;
 
 proc buildTableRowChildWrappers(box: BlockBox) =
   var wrapperVals: CSSComputedValues = nil
-  for child in box.nested.mitems:
+  for child in box.nested:
     if child.computed{"display"} != DisplayTableCell:
-      if wrapperVals == nil:
-        wrapperVals = box.computed.inheritProperties()
-        wrapperVals{"display"} = DisplayTableCell
-      child = BlockBox(computed: wrapperVals, nested: @[child])
+      wrapperVals = box.computed.inheritProperties()
+      wrapperVals{"display"} = DisplayTableCell
+      break
+  if wrapperVals != nil:
+    # fixup row: put wrappers around runs of misparented children
+    var nested = newSeqOfCap[BlockBox](box.nested.len)
+    var wrapper: BlockBox = nil
+    for child in box.nested:
+      if child.computed{"display"} != DisplayTableCell:
+        if wrapper == nil:
+          wrapper = BlockBox(computed: wrapperVals)
+          nested.add(wrapper)
+        wrapper.nested.add(child)
+      else:
+        wrapper = nil
+        nested.add(child)
+    box.nested = nested
 
 proc buildTableRow(parent: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues): BlockBox =
@@ -3059,13 +3135,30 @@ proc buildTableRow(parent: var InnerBlockContext; styledNode: StyledNode;
   return box
 
 proc buildTableRowGroupChildWrappers(box: BlockBox) =
-  let wrapperVals = box.computed.inheritProperties()
-  wrapperVals{"display"} = DisplayTableRow
-  for child in box.nested.mitems:
+  var wrapperVals: CSSComputedValues = nil
+  for child in box.nested:
     if child.computed{"display"} != DisplayTableRow:
-      let wrapper = BlockBox(computed: wrapperVals, nested: @[child])
+      wrapperVals = box.computed.inheritProperties()
+      wrapperVals{"display"} = DisplayTableRow
+      break
+  if wrapperVals != nil:
+    # fixup row group: put wrappers around runs of misparented children
+    var wrapper: BlockBox = nil
+    var nested = newSeqOfCap[BlockBox](box.nested.len)
+    for child in box.nested:
+      if child.computed{"display"} != DisplayTableRow:
+        if wrapper == nil:
+          wrapper = BlockBox(computed: wrapperVals, nested: @[child])
+        wrapper.nested.add(child)
+        nested.add(wrapper)
+      else:
+        if wrapper != nil:
+          wrapper.buildTableRowChildWrappers()
+          wrapper = nil
+        nested.add(child)
+    if wrapper != nil:
       wrapper.buildTableRowChildWrappers()
-      child = wrapper
+    box.nested = nested
 
 proc buildTableRowGroup(parent: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues): BlockBox =
@@ -3089,16 +3182,23 @@ proc buildTableChildWrappers(box: BlockBox; computed: CSSComputedValues) =
   let wrapperVals = box.computed.inheritProperties()
   wrapperVals{"display"} = DisplayTableRow
   var caption: BlockBox = nil
+  var wrapper: BlockBox = nil
   for child in box.nested:
     if child.computed{"display"} in ProperTableChild:
+      if wrapper != nil:
+        wrapper.buildTableRowChildWrappers()
+        wrapper = nil
       innerTable.nested.add(child)
     elif child.computed{"display"} == DisplayTableCaption:
       if caption == nil:
         caption = child
     else:
-      let wrapper = BlockBox(computed: wrapperVals, nested: @[child])
-      wrapper.buildTableRowChildWrappers()
+      if wrapper == nil:
+        wrapper = BlockBox(computed: wrapperVals)
+      wrapper.nested.add(child)
       innerTable.nested.add(wrapper)
+  if wrapper != nil:
+    wrapper.buildTableRowChildWrappers()
   box.nested = @[innerTable]
   if caption != nil:
     box.nested.add(caption)

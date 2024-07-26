@@ -1,0 +1,11 @@
+test 1 test 2 test 3
+test 3.5
+test 4 [48;2;255;0;0mtest 5[49m test 6
+test 7 test 8 test 9
+test 9.5
+[48;2;255;0;0mthing          thing3[49m
+[48;2;255;0;0mthing2               [49m
+[48;2;255;0;0mthing2.5 thing3      [49m
+[48;2;255;0;0mthing4               [49m
+[48;2;0;0;255mtest           [49m
+
