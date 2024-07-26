@@ -155,6 +155,19 @@ func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
 func minClamp(x: LayoutUnit; span: Span): LayoutUnit =
   return max(min(x, span.send), span.start)
 
+#TODO these are not really static-like, just unimplemented
+const PositionStaticLike = {
+  PositionStatic, PositionFixed, PositionSticky
+}
+
+proc pushPositioned(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
+  if box.computed{"position"} notin PositionStaticLike:
+    lctx.positioned.add(sizes.space)
+
+proc popPositioned(lctx: LayoutContext; box: BlockBox) =
+  if box.computed{"position"} notin PositionStaticLike:
+    lctx.positioned.setLen(lctx.positioned.len - 1)
+
 type
   BlockContext = object
     lctx: LayoutContext
@@ -1074,7 +1087,8 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
     space: space,
-    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed)
+    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed),
+    positioned: resolvePositioned(space, lctx, computed)
   )
   if dim != dtHorizontal:
     sizes.space.h = maxContent()
@@ -1570,30 +1584,29 @@ proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
     bctx.layoutRootInline0(ictx, root, space, computed, offset, bfcOffset)
   ictx.root.state.overflow.finalize(ictx.root.state.size)
 
-proc positionAbsolute(lctx: LayoutContext; box: BlockBox;
-    margin: RelativeRect) =
+proc positionAbsolute(box: BlockBox) =
   if not box.computed{"left"}.auto:
-    box.state.offset.x = box.state.positioned.left + margin.left
+    box.state.offset.x = box.state.positioned.left + box.state.margin.left
   elif not box.computed{"right"}.auto:
     box.state.offset.x = -box.state.positioned.right - box.state.size.w -
-      margin.right
+      box.state.margin.right
   if not box.computed{"top"}.auto:
-    box.state.offset.y = box.state.positioned.top + margin.top
+    box.state.offset.y = box.state.positioned.top + box.state.margin.top
   elif not box.computed{"bottom"}.auto:
     box.state.offset.y = -box.state.positioned.bottom - box.state.size.h -
-      margin.bottom
+      box.state.margin.bottom
 
-proc positionRelative(parent, box: BlockBox) =
+proc positionRelative(lctx: LayoutContext; parent, box: BlockBox) =
   if not box.computed{"left"}.auto:
-    box.state.offset.x += box.state.positioned.left
+    box.state.offset.x += box.computed{"left"}.px(lctx, parent.state.size.w)
   elif not box.computed{"right"}.auto:
-    box.state.offset.x += parent.state.size.w - box.state.positioned.right -
-      box.state.size.w
+    box.state.offset.x += parent.state.size.w - box.state.size.w -
+      box.computed{"right"}.px(lctx, parent.state.size.w)
   if not box.computed{"top"}.auto:
-    box.state.offset.y += box.state.positioned.top
+    box.state.offset.y += box.computed{"top"}.px(lctx, parent.state.size.h)
   elif not box.computed{"bottom"}.auto:
-    box.state.offset.y += parent.state.size.h - box.state.positioned.bottom -
-      box.state.size.h
+    box.state.offset.y += parent.state.size.h - box.state.size.h -
+      box.computed{"bottom"}.px(lctx, parent.state.size.h)
 
 # Note: caption is not included here
 const RowGroupBox = {
@@ -2119,6 +2132,7 @@ type
     lctx: LayoutContext
     totalMaxSize: Size
     box: BlockBox
+    relativeChildren: seq[BlockBox]
 
   FlexMainContext = object
     totalSize: Size
@@ -2209,9 +2223,12 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     # margins are added here, since they belong to the flex item.
     it.child.state.offset[odim] += offset[odim] +
       it.child.state.margin[odim].start
-    fctx.box.applyOverflowDimensions(it.child)
     offset[dim] += it.child.state.size[dim]
     offset[dim] += it.child.state.margin[dim].send
+    if it.child.computed{"position"} == PositionRelative:
+      fctx.relativeChildren.add(it.child)
+    else:
+      fctx.box.applyOverflowDimensions(it.child)
   fctx.totalMaxSize[dim] = max(fctx.totalMaxSize[dim], offset[dim])
   fctx.mains.add(mctx)
   mctx = FlexMainContext()
@@ -2220,7 +2237,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   assert box.inline == nil
   let lctx = bctx.lctx
-  var i = 0
+  lctx.pushPositioned(box, sizes)
   var fctx = FlexContext(
     lctx: lctx,
     box: box,
@@ -2230,8 +2247,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let flexDir = box.computed{"flex-direction"}
   let canWrap = box.computed{"flex-wrap"} != FlexWrapNowrap
   let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
-  while i < box.nested.len:
-    let child = box.nested[i]
+  for child in box.nested:
     var childSizes = lctx.resolveFlexItemSizes(sizes.space, dim, child.computed)
     let flexBasis = child.computed{"flex-basis"}
     lctx.layoutFlexChild(child, childSizes)
@@ -2247,6 +2263,11 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
         # basis was e.g. 0. Try to resize it to something more usable.
         childSizes.space[dim] = stretch(minu)
       lctx.layoutFlexChild(child, childSizes)
+    if child.computed{"position"} == PositionAbsolute:
+      # Absolutely positioned flex children do not participate in flex layout.
+      # I suspect this is a bit too simplistic, but seems to work?
+      child.positionAbsolute()
+      continue
     if canWrap and (sizes.space[dim].t == scMinContent or
         sizes.space[dim].isDefinite and
         mctx.totalSize[dim] + child.state.size[dim] > sizes.space[dim].u):
@@ -2262,12 +2283,15 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       weights: [grow, shrink],
       sizes: childSizes
     ))
-    inc i # need to increment index here for needsGrow
   if mctx.pending.len > 0:
     fctx.flushMain(mctx, sizes, dim)
   box.applySize(sizes, fctx.totalMaxSize[dim], sizes.space, dim)
   box.applySize(sizes, fctx.offset[dim.opposite], sizes.space, dim.opposite)
+  for child in fctx.relativeChildren:
+    lctx.positionRelative(box, child)
+    box.applyOverflowDimensions(child)
   box.state.overflow.finalize(box.state.size)
+  lctx.popPositioned(box)
 
 # Build an outer block box inside an existing block formatting context.
 proc layoutBlockChild(bctx: var BlockContext; box: BlockBox;
@@ -2512,20 +2536,16 @@ proc repositionChildren(state: BlockState; box: BlockBox; lctx: LayoutContext) =
       box.postAlignChild(child, box.state.size.w)
     case child.computed{"position"}
     of PositionRelative:
-      box.positionRelative(child)
+      lctx.positionRelative(box, child)
     of PositionAbsolute:
-      lctx.positionAbsolute(child, child.state.margin)
+      child.positionAbsolute()
     else: discard #TODO
     # Set overflow here, after the child has been positioned.
     box.applyOverflowDimensions(child)
 
 proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let lctx = bctx.lctx
-  let positioned = box.computed{"position"} notin {
-    PositionStatic, PositionFixed, PositionSticky
-  }
-  if positioned:
-    lctx.positioned.add(sizes.space)
+  lctx.pushPositioned(box, sizes)
   var state = BlockState(
     offset: offset(x = sizes.padding.left, y = sizes.padding.top),
     space: sizes.space,
@@ -2540,14 +2560,13 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   if box.nested.len > 0:
     let lastNested = box.nested[^1]
     box.state.baseline = lastNested.state.offset.y + lastNested.state.baseline
-  # Apply width, then move the inline offset of children that still need
-  # further relative positioning.
+  # Apply width, and height. For height, temporarily remove padding we have
+  # applied before so that percentage resolution works correctly.
+  # then move the inline offset of children that still need
   box.applyWidth(sizes, state.maxChildWidth, state.space)
+  box.applyHeight(sizes, state.offset.y - sizes.padding.top)
+  # Reposition here, as `position: relative' percentages can now be resolved.
   state.repositionChildren(box, lctx)
-  # Set the inner height to the last y offset minus the starting offset
-  # (that is, top padding).
-  let innerHeight = state.offset.y - sizes.padding.top
-  box.applyHeight(sizes, innerHeight)
   # Add padding; we cannot do this further up without influencing positioning.
   box.applyPadding(sizes.padding)
   # Pass down relevant data from state.
@@ -2562,8 +2581,7 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.state.overflow.finalize(box.state.size)
   # Reset parentBps to the previous node.
   bctx.parentBps = state.prevParentBps
-  if positioned:
-    lctx.positioned.setLen(lctx.positioned.len - 1)
+  lctx.popPositioned(box)
 
 # 1st pass: build tree
 
