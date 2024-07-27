@@ -914,6 +914,12 @@ proc parseURL*(input: string; base = none(URL); override = none(URLState)):
     url.get.blob = some(BlobURLEntry())
   return url
 
+proc parseJSURL*(s: string; base = none(URL)): JSResult[URL] =
+  let url = parseURL(s, base)
+  if url.isNone:
+    return errTypeError(s & " is not a valid URL")
+  return ok(url.get)
+
 func serializeip(ipv4: uint32): string =
   var n = ipv4
   for i in 1..4:
@@ -1168,10 +1174,7 @@ proc parseAPIURL(s: string; base: Option[string]): JSResult[URL] =
     x
   else:
     none(URL)
-  let url = parseURL(s, baseURL)
-  if url.isNone:
-    return errTypeError(s & " is not a valid URL")
-  return ok(url.get)
+  return parseJSURL(s, baseURL)
 
 proc newURL*(s: string; base: Option[string] = none(string)):
     JSResult[URL] {.jsctor.} =

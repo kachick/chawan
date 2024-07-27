@@ -98,12 +98,12 @@ proc addNavigatorModule*(ctx: JSContext) =
   ctx.registerType(MimeTypeArray)
   ctx.registerType(Screen)
 
-proc fetch[T: JSRequest|string](window: Window; input: T;
-    init = none(RequestInit)): JSResult[FetchPromise] {.jsfunc.} =
+proc fetch(window: Window; input: JSValue; init = none(RequestInit)):
+    JSResult[FetchPromise] {.jsfunc.} =
   let input = ?newRequest(window.jsctx, input, init)
   #TODO cors requests?
   if not window.settings.origin.isSameOrigin(input.request.url.origin):
-    let promise = FetchPromise()
+    let promise = newPromise[JSResult[Response]]()
     let err = newTypeError("NetworkError when attempting to fetch resource")
     promise.resolve(JSResult[Response].err(err))
     return ok(promise)

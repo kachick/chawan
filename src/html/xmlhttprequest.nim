@@ -152,7 +152,7 @@ proc setRequestHeader(this: XMLHttpRequest; name, value: string):
   ?this.checkSendFlag()
   if not name.isValidHeaderName() or not value.isValidHeaderValue():
     return errDOMException("Invalid header name or value", "SyntaxError")
-  if isForbiddenHeader(name, value):
+  if isForbiddenRequestHeader(name, value):
     return ok()
   this.headers.table[name.toHeaderCase()] = @[value]
   ok()
@@ -167,7 +167,7 @@ proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
   discard window.jsctx.dispatch(target, event)
 
 # Forward declaration hack
-var windowFetch*: proc(window: Window; input: JSRequest;
+var windowFetch*: proc(window: Window; input: JSValue;
   init = none(RequestInit)): JSResult[FetchPromise] {.nimcall.} = nil
 
 proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
@@ -236,7 +236,9 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): DOMResult[void]
   let window = ctx.getWindow()
   if xhrfSync notin this.flags: # async
     window.fireProgressEvent(this, satLoadstart, 0, 0)
-    let p = window.windowFetch(jsRequest)
+    let v = ctx.toJS(jsRequest)
+    let p = window.windowFetch(v)
+    JS_FreeValue(ctx, v)
     if p.isSome:
       p.get.then(proc(res: JSResult[Response]) =
         if res.isNone:

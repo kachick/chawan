@@ -2465,6 +2465,9 @@ getFactory = proc(ctx: JSContext): CAtomFactory =
 windowConsoleError = proc(ctx: JSContext; ss: varargs[string]) =
   ctx.getGlobal().console.error(ss)
 
+getAPIBaseURLImpl = func(ctx: JSContext): URL =
+  return ctx.getGlobal().document.baseURL
+
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
   let event = newEvent(window.toAtom(name), target)
   discard window.jsctx.dispatch(target, event)

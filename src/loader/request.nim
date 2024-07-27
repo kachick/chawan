@@ -1,5 +1,4 @@
 import std/options
-import std/strutils
 import std/tables
 
 import html/script
@@ -169,7 +168,6 @@ type
     referrer: Option[string]
     referrerPolicy: Option[ReferrerPolicy]
     credentials: Option[CredentialsMode]
-    proxyUrl: URL
     mode: Option[RequestMode]
     window: Option[JSValue]
 
@@ -194,33 +192,36 @@ proc fromJSBodyInit(ctx: JSContext; val: JSValue): JSResult[BodyInit] =
       return ok(BodyInit(t: bitString, str: x.get))
   return errTypeError("Invalid body init type")
 
-func newRequest*[T: string|JSRequest](ctx: JSContext; resource: T;
-    init = none(RequestInit)): JSResult[JSRequest] {.jsctor.} =
+var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.noSideEffect, nimcall.}
+
+proc newRequest*(ctx: JSContext; resource: JSValue; init = none(RequestInit)):
+    JSResult[JSRequest] {.jsctor.} =
   defer:
     if init.isSome and init.get.window.isSome:
       JS_FreeValue(ctx, init.get.window.get)
-  when T is string:
-    let url = ?newURL(resource)
-    if url.username != "" or url.password != "":
-      return errTypeError("Input URL contains a username or password")
-    var httpMethod = hmGet
-    var headers = newHeaders()
-    let referrer: URL = nil
-    var credentials = cmSameOrigin
-    var body = RequestBody()
-    var proxyUrl: URL #TODO?
-    let fallbackMode = opt(rmCors)
-    var window = RequestWindow(t: rwtClient)
+  let headers = newHeaders(hgRequest)
+  var fallbackMode = opt(rmCors)
+  var window = RequestWindow(t: rwtClient)
+  var body = RequestBody()
+  var credentials = cmSameOrigin
+  var httpMethod = hmGet
+  var referrer: URL = nil
+  var url: URL = nil
+  if JS_IsString(resource):
+    let s = ?fromJS[string](ctx, resource)
+    url = ?parseJSURL(s, option(ctx.getAPIBaseURLImpl()))
   else:
-    let url = resource.url
-    var httpMethod = resource.request.httpMethod
-    var headers = resource.headers.clone()
-    let referrer = resource.request.referrer
-    var credentials = resource.credentialsMode
-    var body = resource.request.body
-    var proxyUrl = resource.request.proxy #TODO?
-    let fallbackMode = none(RequestMode)
-    var window = resource.window
+    let resource = ?fromJS[JSRequest](ctx, resource)
+    url = resource.url
+    httpMethod = resource.request.httpMethod
+    headers.table = resource.headers.table
+    referrer = resource.request.referrer
+    credentials = resource.credentialsMode
+    body = resource.request.body
+    fallbackMode = opt(RequestMode)
+    window = resource.window
+  if url.username != "" or url.password != "":
+    return errTypeError("Input URL contains a username or password")
   var mode = fallbackMode.get(rmNoCors)
   let destination = rdNone
   #TODO origin, window
@@ -246,20 +247,19 @@ func newRequest*[T: string|JSRequest](ctx: JSContext; resource: T;
       if httpMethod in {hmGet, hmHead}:
         return errTypeError("HEAD or GET Request cannot have a body.")
     if init.headers.isSome:
-      headers.fill(init.headers.get)
+      ?headers.fill(init.headers.get)
     if init.credentials.isSome:
       credentials = init.credentials.get
     if init.mode.isSome:
       mode = init.mode.get
-    #TODO find a standard compatible way to implement this
-    proxyUrl = init.proxyUrl
+  if mode == rmNoCors:
+    headers.guard = hgRequestNoCors
   return ok(JSRequest(
     request: newRequest(
       url,
       httpMethod,
       headers,
       body,
-      proxy = proxyUrl,
       referrer = referrer
     ),
     mode: mode,

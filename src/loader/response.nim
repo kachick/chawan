@@ -28,14 +28,6 @@ type
     rtOpaque = "opaque"
     rtOpaquedirect = "opaqueredirect"
 
-  #TODO fully implement headers guards
-  HeadersGuard* = enum
-    hgImmutable = "immutable"
-    hgRequest = "request"
-    hgRequestNoCors = "request-no-cors"
-    hgResponse = "response"
-    hgNone = "none"
-
   ResponseFlag* = enum
     rfAborted
 
@@ -46,7 +38,6 @@ type
     bodyUsed* {.jsget.}: bool
     status* {.jsget.}: uint16
     headers* {.jsget.}: Headers
-    headersGuard: HeadersGuard
     url*: URL #TODO should be urllist?
     unregisterFun*: proc()
     resumeFun*: proc(outputId: int)
@@ -72,13 +63,11 @@ proc newResponse*(res: int; request: Request; stream: SocketStream;
 
 func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
   #TODO use "create" function
-  #TODO headers immutable
   return Response(
     res: 0,
     responseType: rtError,
     status: 0,
-    headers: newHeaders(),
-    headersGuard: hgImmutable,
+    headers: newHeaders(hgImmutable),
     bodyUsed: true
   )
 
