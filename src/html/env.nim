@@ -170,6 +170,9 @@ proc btoa(ctx: JSContext; window: Window; data: JSValue): DOMResult[string]
     {.jsfunc.} =
   return btoa(ctx, data)
 
+proc alert(window: Window; s: string) {.jsfunc.} =
+  window.console.error(s)
+
 proc getComputedStyle(window: Window; element: Element;
     pseudoElt = none(Element)): JSResult[CSSStyleDeclaration] {.jsfunc.} =
   #TODO implement this properly
