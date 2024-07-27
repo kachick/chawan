@@ -225,7 +225,11 @@ proc saveToBitmap*(response: Response; bmp: Bitmap): EmptyPromise =
   let size = bmp.width * bmp.height
   bmp.px = cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](size))
   response.opaque = opaque
-  response.onRead = onReadBitmap
+  if size > 0:
+    response.onRead = onReadBitmap
+  else:
+    response.unregisterFun()
+    response.body.sclose()
   response.bodyUsed = true
   response.resume()
   return response.bodyRead
