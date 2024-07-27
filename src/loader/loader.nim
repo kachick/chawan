@@ -80,6 +80,7 @@ type
     status: uint16
     res: int
     outputId: int
+    redirectNum: int
     promise: Promise[JSResult[Response]]
     stream*: SocketStream
     request: Request
@@ -940,16 +941,21 @@ proc startRequest*(loader: FileLoader; request: Request;
     w.swrite(config)
   return stream
 
-proc fetch*(loader: FileLoader; input: Request): FetchPromise =
+proc fetch0(loader: FileLoader; input: Request; promise: FetchPromise;
+    redirectNum: int) =
   let stream = loader.startRequest(input)
   let fd = int(stream.fd)
   loader.registerFun(fd)
-  let promise = FetchPromise()
   loader.connecting[fd] = ConnectData(
     promise: promise,
     request: input,
-    stream: stream
+    stream: stream,
+    redirectNum: redirectNum
   )
+
+proc fetch*(loader: FileLoader; input: Request): FetchPromise =
+  let promise = FetchPromise()
+  loader.fetch0(input, promise, 0)
   return promise
 
 proc reconnect*(loader: FileLoader; data: ConnectData) =
@@ -1071,9 +1077,20 @@ proc onConnected*(loader: FileLoader; fd: int) =
       loader.resume(outputId)
     loader.ongoing[fd] = response
     stream.setBlocking(false)
+    let redirect = response.getRedirect(request)
     # delete before resolving the promise
     loader.connecting.del(fd)
-    promise.resolve(JSResult[Response].ok(response))
+    if redirect != nil:
+      response.unregisterFun()
+      stream.sclose()
+      let redirectNum = connectData.redirectNum + 1
+      if redirectNum < 5: #TODO use config.network.max_redirect?
+        loader.fetch0(redirect, promise, redirectNum)
+      else:
+        let err = newTypeError("NetworkError when attempting to fetch resource")
+        promise.resolve(JSResult[Response].err(err))
+    else:
+      promise.resolve(JSResult[Response].ok(response))
 
 proc onRead*(loader: FileLoader; fd: int) =
   let response = loader.ongoing.getOrDefault(fd)
