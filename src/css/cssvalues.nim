@@ -829,26 +829,27 @@ func cssLength(val: float64; unit: string): Opt[CSSLength] =
 const CSSLengthAuto* = CSSLength(auto: true)
 
 func parseDimensionValues*(s: string): Option[CSSLength] =
-  if s == "": return
-  var i = 0
-  while s[i] in AsciiWhitespace: inc i
-  if i >= s.len or s[i] notin AsciiDigit: return
-  var n: float64
+  var i = s.skipBlanks(0)
+  if i >= s.len or s[i] notin AsciiDigit:
+    return none(CSSLength)
+  var n = 0f64
   while s[i] in AsciiDigit:
     n *= 10
     n += float64(decValue(s[i]))
     inc i
-    if i >= s.len: return some(CSSLength(num: n, unit: cuPx))
+    if i >= s.len:
+      return some(CSSLength(num: n, unit: cuPx))
   if s[i] == '.':
     inc i
-    if i >= s.len: return some(CSSLength(num: n, unit: cuPx))
+    if i >= s.len:
+      return some(CSSLength(num: n, unit: cuPx))
     var d = 1
     while i < s.len and s[i] in AsciiDigit:
       n += float64(decValue(s[i])) / float64(d)
       inc d
       inc i
-  if i >= s.len: return some(CSSLength(num: n, unit: cuPx))
-  if s[i] == '%': return some(CSSLength(num: n, unit: cuPerc))
+  if i < s.len and s[i] == '%':
+    return some(CSSLength(num: n, unit: cuPerc))
   return some(CSSLength(num: n, unit: cuPx))
 
 func skipWhitespace(vals: openArray[CSSComponentValue]; i: var int) =
