@@ -14,14 +14,12 @@ type
   Overflow* = array[DimensionType, Span]
 
   InlineAtomType* = enum
-    iatSpacing, iatWord, iatInlineBlock, iatImage
+    iatWord, iatInlineBlock, iatImage
 
   InlineAtom* = ref object
     offset*: Offset
     size*: Size
     case t*: InlineAtomType
-    of iatSpacing:
-      discard
     of iatWord:
       str*: string
     of iatInlineBlock:

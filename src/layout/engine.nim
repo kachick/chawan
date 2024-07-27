@@ -304,7 +304,10 @@ func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
     # skip line feed between double-width characters
     return 0
   if not state.fragment.computed.whitespacepre:
-    if ictx.lbstate.atoms.len == 0 or ictx.lbstate.atoms[^1].t == iatSpacing:
+    if ictx.lbstate.atoms.len == 0:
+      return 0
+    let atom = ictx.lbstate.atoms[^1]
+    if atom.t == iatWord and atom.str[^1] == ' ':
       return 0
   return ictx.cellWidth * ictx.whitespacenum
 
@@ -527,17 +530,24 @@ proc putAtom(state: var LineBoxState; atom: InlineAtom;
 
 proc addSpacing(ictx: var InlineContext; width, height: LayoutUnit;
     state: InlineState; hang = false) =
-  let spacing = InlineAtom(
-    t: iatSpacing,
-    size: size(w = width, h = height),
-    offset: offset(x = ictx.lbstate.size.w, y = height)
-  )
-  let iastate = InlineAtomState(baseline: height)
+  let fragment = ictx.whitespaceFragment
+  if fragment.state.atoms.len == 0 or fragment.state.atoms[^1].t != iatWord:
+    let atom = InlineAtom(
+      t: iatWord,
+      size: size(w = 0, h = height),
+      offset: offset(x = ictx.lbstate.size.w, y = height)
+    )
+    let iastate = InlineAtomState(baseline: height)
+    ictx.lbstate.putAtom(atom, iastate, fragment)
+  let atom = fragment.state.atoms[^1]
+  let n = (width div ictx.cellWidth).toInt #TODO
+  for i in 0 ..< n:
+    atom.str &= ' '
+  atom.size.w += width
   if not hang:
     # In some cases, whitespace may "hang" at the end of the line. This means
     # it is written, but is not actually counted in the box's width.
     ictx.lbstate.size.w += width
-  ictx.lbstate.putAtom(spacing, iastate, ictx.whitespaceFragment)
 
 proc flushWhitespace(ictx: var InlineContext; state: InlineState;
     hang = false) =
@@ -662,7 +672,15 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
       ictx.addSpacing(shift, ictx.cellHeight, state)
     ictx.root.state.xminwidth = max(ictx.root.state.xminwidth, atom.xminwidth)
     ictx.applyLineHeight(ictx.lbstate, state.fragment.computed)
-    if atom.t != iatWord:
+    if atom.t == iatWord:
+      if ictx.lbstate.atoms.len > 0 and state.fragment.state.atoms.len > 0:
+        let oatom = ictx.lbstate.atoms[^1]
+        if oatom.t == iatWord and oatom == state.fragment.state.atoms[^1]:
+          oatom.str &= atom.str
+          oatom.size.w += atom.size.w
+          ictx.lbstate.size.w += atom.size.w
+          return
+    else:
       ictx.lbstate.charwidth = 0
     ictx.lbstate.putAtom(atom, iastate, state.fragment)
     atom.offset.x += ictx.lbstate.size.w

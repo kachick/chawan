@@ -261,24 +261,6 @@ proc setRowWord(grid: var FlexibleGrid; state: var RenderState;
   var x = toInt((offset.x + word.offset.x) div state.attrs.ppc) # x cell
   grid.setText(word.str, x, y, format, node)
 
-proc setSpacing(grid: var FlexibleGrid; state: var RenderState;
-    spacing: InlineAtom; offset: Offset; format: Format; node: StyledNode) =
-  let y = toInt((offset.y + spacing.offset.y) div state.attrs.ppl) # y cell
-  if y < 0: return # y is outside the canvas, no need to draw
-  var x = toInt((offset.x + spacing.offset.x) div state.attrs.ppc) # x cell
-  let width = toInt(spacing.size.w div state.attrs.ppc) # cell width
-  if x + width < 0:
-    return # highest x is outside the canvas, no need to draw
-  var i = 0
-  if x < 0:
-    i -= x
-    x = 0
-  if i < width:
-    # make sure we have line y
-    if grid.high < y:
-      grid.addLines(y - grid.high)
-    grid[y].setText(' '.repeat(width - i), x, format, node)
-
 proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     color: CellColor; startx, starty, endx, endy: int; node: StyledNode) =
   var starty = starty div state.attrs.ppl
@@ -388,8 +370,6 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
         grid.renderBlockBox(state, atom.innerbox, offset + atom.offset)
       of iatWord:
         grid.setRowWord(state, atom, offset, format, fragment.node)
-      of iatSpacing:
-        grid.setSpacing(state, atom, offset, format, fragment.node)
       of iatImage:
         let x1 = offset.x.toInt
         let y1 = offset.y.toInt
