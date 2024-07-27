@@ -156,10 +156,14 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     case element.attr(satAlign).toLowerAscii()
     of "left":
       set_cv "float", FloatLeft
-      set_cv "display", DisplayBlock
     of "right":
       set_cv "float", FloatRight
-      set_cv "display", DisplayBlock
+    of "top":
+      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignTop)
+    of "middle":
+      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignMiddle)
+    of "bottom":
+      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignBottom)
   template map_table_align =
     case element.attr(satAlign).toLowerAscii()
     of "left":
@@ -215,7 +219,7 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     set_cv "-cha-bgcolor-is-canvas", true
 
   case element.tagType
-  of TAG_DIV:
+  of TAG_DIV, TAG_P:
     map_align
   of TAG_TABLE:
     map_height_nozero
