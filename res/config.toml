@@ -237,6 +237,7 @@ images = false
 scripting = false
 referer-from = false
 cookie = false
+meta-refresh = "ask"
 
 [search]
 wrap = true

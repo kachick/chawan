@@ -110,9 +110,12 @@ Same as `pager.load(url + "\n")`.</td>
 </tr>
 
 <tr>
-<td>`gotoURL(url)`</td>
+<td>`gotoURL(url, options = {replace: null, contentType: null})`</td>
 <td>Go to the specified URL immediately (without a prompt). This differs from
 `load` and `loadSubmit` in that it *does not* try to correct the URL.<br>
+When `replace` is set, the new buffer may replace the old one if it loads
+successfully. When `contentType` is set, the new buffer's content type is
+forcefully set to that string.<br>
 Use this for loading automatically retrieved (i.e. non-user-provided) URLs.</td>
 </tr>
 

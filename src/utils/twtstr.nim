@@ -45,12 +45,17 @@ func snakeToKebabCase*(s: string): string =
       c = '-'
 
 func kebabToCamelCase*(s: string): string =
-  result = s
+  result = ""
   var flip = false
-  for c in result.mitems:
-    if flip:
-      c = c.toUpperAscii()
-    flip = c == '-'
+  for c in s:
+    if c == '-':
+      flip = true
+    else:
+      if flip:
+        result &= c.toUpperAscii()
+      else:
+        result &= c
+      flip = false
 
 func camelToKebabCase*(s: string): string =
   result = ""
@@ -60,17 +65,6 @@ func camelToKebabCase*(s: string): string =
       result &= c.toLowerAscii()
     else:
       result &= c
-
-func startsWithNoCase*(s, prefix: string): bool =
-  if s.len < prefix.len:
-    return false
-  # prefix.len is always lower
-  var i = 0
-  while true:
-    if i == prefix.len: return true
-    if s[i].toLowerAscii() != prefix[i].toLowerAscii():
-      return false
-    inc i
 
 func hexValue*(c: char): int =
   if c in AsciiDigit:
@@ -114,9 +108,9 @@ func toHexLower*(u: uint16): string =
 func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
   return s1.cmpIgnoreCase(s2) == 0
 
-func startsWithIgnoreCase*(s1, s2: string): bool =
+func startsWithIgnoreCase*(s1, s2: string; si = 0): bool =
   if s1.len < s2.len: return false
-  for i in 0 ..< s2.len:
+  for i in si ..< s2.len:
     if s1[i].toLowerAscii() != s2[i].toLowerAscii():
       return false
   return true

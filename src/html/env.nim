@@ -112,13 +112,13 @@ proc fetch(window: Window; input: JSValue; init = none(RequestInit)):
 # Forward declaration hack
 windowFetch = fetch
 
-proc setTimeout(window: Window; handler: JSValue; timeout = 0i32): int32
-    {.jsfunc.} =
-  return window.timeouts.setTimeout(ttTimeout, handler, timeout)
+proc setTimeout(window: Window; handler: JSValue; timeout = 0i32;
+    args: varargs[JSValue]): int32 {.jsfunc.} =
+  return window.timeouts.setTimeout(ttTimeout, handler, timeout, args)
 
-proc setInterval(window: Window; handler: JSValue; interval = 0i32): int32
-    {.jsfunc.} =
-  return window.timeouts.setTimeout(ttInterval, handler, interval)
+proc setInterval(window: Window; handler: JSValue; interval = 0i32;
+    args: varargs[JSValue]): int32 {.jsfunc.} =
+  return window.timeouts.setTimeout(ttInterval, handler, interval, args)
 
 proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
   window.timeouts.clearTimeout(id)

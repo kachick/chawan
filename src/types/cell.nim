@@ -2,19 +2,19 @@ import types/color
 import utils/strwidth
 
 type
-  FormatFlags* = enum
-    ffBold
-    ffItalic
-    ffUnderline
-    ffReverse
-    ffStrike
-    ffOverline
-    ffBlink
+  FormatFlag* = enum
+    ffBold = "bold"
+    ffItalic = "italic"
+    ffUnderline = "underline"
+    ffReverse = "reverse"
+    ffStrike = "strike"
+    ffOverline = "overline"
+    ffBlink = "blink"
 
   Format* = object
     fgcolor*: CellColor
     bgcolor*: CellColor
-    flags*: set[FormatFlags]
+    flags*: set[FormatFlag]
 
   SimpleFormatCell* = object
     format*: Format
@@ -50,7 +50,7 @@ iterator items*(grid: FixedGrid): FixedCell {.inline.} =
   for cell in grid.cells:
     yield cell
 
-const FormatCodes*: array[FormatFlags, tuple[s, e: uint8]] = [
+const FormatCodes*: array[FormatFlag, tuple[s, e: uint8]] = [
   ffBold: (1u8, 22u8),
   ffItalic: (3u8, 23u8),
   ffUnderline: (4u8, 24u8),

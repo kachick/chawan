@@ -908,9 +908,9 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
       let tok2 = get_tok
       fail_non_signless_integer tok2, none(CSSAnB)
       return some((-1, -int(tok2.nvalue)))
-    elif tok.value.startsWithNoCase("n-"):
+    elif tok.value.startsWithIgnoreCase("n-"):
       return some((1, -parse_sub_int(tok.value, "n-".len)))
-    elif tok.value.startsWithNoCase("-n-"):
+    elif tok.value.startsWithIgnoreCase("-n-"):
       fail_plus
       return some((-1, -parse_sub_int(tok.value, "n-".len)))
     else:
@@ -952,7 +952,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
       let tok2 = get_tok
       fail_non_signless_integer tok2, none(CSSAnB)
       return some((int(tok.nvalue), -int(tok2.nvalue)))
-    elif tok.unit.startsWithNoCase("n-"):
+    elif tok.unit.startsWithIgnoreCase("n-"):
       # <ndashdigit-dimension>
       return some((int(tok.nvalue), -parse_sub_int(tok.unit, "n-".len)))
     else:

@@ -5,6 +5,7 @@ import std/os
 import std/osproc
 import std/posix
 import std/selectors
+import std/sets
 import std/tables
 import std/unicode
 
@@ -21,6 +22,7 @@ import io/socketstream
 import io/stdio
 import io/tempfile
 import io/urlfilter
+import js/timeout
 import layout/renderdocument
 import loader/connecterror
 import loader/headers
@@ -146,12 +148,14 @@ type
     numload*: int # number of pages currently being loaded
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     procmap*: seq[ProcMapItem]
+    refreshAllowed: HashSet[string]
     regex: Opt[Regex]
     reverseSearch: bool
     scommand*: string
     selector*: Selector[int]
     status: Surface
     term*: Terminal
+    timeouts*: TimeoutState
     unreg*: seq[Container]
 
 jsDestructor(Pager)
@@ -1119,7 +1123,7 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
   let ctx = pager.jsctx
   var res = BufferConfig(
     userstyle: pager.config.css.stylesheet,
-    referer_from: pager.config.buffer.referer_from,
+    refererFrom: pager.config.buffer.referer_from,
     scripting: pager.config.buffer.scripting,
     charsets: pager.config.encoding.document_charset,
     images: pager.config.buffer.images,
@@ -1127,7 +1131,8 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
     autofocus: pager.config.buffer.autofocus,
     isdump: pager.config.start.headless,
     charsetOverride: charsetOverride,
-    protocol: pager.config.protocol
+    protocol: pager.config.protocol,
+    metaRefresh: pager.config.buffer.meta_refresh
   )
   loaderConfig = LoaderClientConfig(
     defaultHeaders: newHeaders(pager.config.network.default_headers),
@@ -1171,7 +1176,7 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
     if sc.scripting.isSome:
       res.scripting = sc.scripting.get
     if sc.referer_from.isSome:
-      res.referer_from = sc.referer_from.get
+      res.refererFrom = sc.referer_from.get
     if sc.document_charset.len > 0:
       res.charsets = sc.document_charset
     if sc.images.isSome:
@@ -1187,6 +1192,8 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       loaderConfig.insecureSSLNoVerify = sc.insecure_ssl_no_verify.get
     if sc.autofocus.isSome:
       res.autofocus = sc.autofocus.get
+    if sc.meta_refresh.isSome:
+      res.metaRefresh = sc.meta_refresh.get
   if res.images:
     loaderConfig.filter.allowschemes
       .add(pager.config.external.urimethodmap.imageProtos)
@@ -1196,9 +1203,9 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
 proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     contentType = none(string); cs = CHARSET_UNKNOWN; replace: Container = nil;
     replaceBackup: Container = nil; redirectDepth = 0;
-    referrer: Container = nil; save = false; url: URL = nil) =
+    referrer: Container = nil; save = false; url: URL = nil): Container =
   pager.navDirection = ndNext
-  if referrer != nil and referrer.config.referer_from:
+  if referrer != nil and referrer.config.refererFrom:
     request.referrer = referrer.url
   let url = if url != nil: url else: request.url
   var loaderConfig: LoaderClientConfig
@@ -1237,8 +1244,10 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     else:
       pager.addContainer(container)
     inc pager.numload
+    return container
   else:
     pager.container.findAnchor(request.url.anchor)
+    return nil
 
 proc omniRewrite(pager: Pager; s: string): string =
   for rule in pager.config.omnirule:
@@ -1271,7 +1280,7 @@ proc loadURL*(pager: Pager; url: string; ctype = none(string);
       some(pager.container.url)
     else:
       none(URL)
-    pager.gotoURL(newRequest(firstparse.get), prev, ctype, cs)
+    discard pager.gotoURL(newRequest(firstparse.get), prev, ctype, cs)
     return
   var urls: seq[URL]
   if pager.config.network.prepend_https and
@@ -1288,10 +1297,10 @@ proc loadURL*(pager: Pager; url: string; ctype = none(string);
   if urls.len == 0:
     pager.alert("Invalid URL " & url)
   else:
-    let prevc = pager.container
-    pager.gotoURL(newRequest(urls.pop()), contentType = ctype, cs = cs)
-    if pager.container != prevc:
-      pager.container.retry = urls
+    let container = pager.gotoURL(newRequest(urls.pop()), contentType = ctype,
+      cs = cs)
+    if container != nil:
+      container.retry = urls
 
 proc readPipe0*(pager: Pager; contentType: string; cs: Charset;
     fd: FileHandle; url: URL; title: string; flags: set[ContainerFlag]):
@@ -1402,7 +1411,7 @@ proc updateReadLine*(pager: Pager) =
       of lmPassword:
         let url = LineDataAuth(pager.lineData).url
         url.password = lineedit.news
-        pager.gotoURL(newRequest(url), some(pager.container.url),
+        discard pager.gotoURL(newRequest(url), some(pager.container.url),
           replace = pager.container, referrer = pager.container)
         pager.lineData = nil
       of lmCommand:
@@ -1472,18 +1481,26 @@ proc load(pager: Pager; s = "") {.jsfunc.} =
     pager.setLineEdit(lmLocation, s)
 
 # Go to specific URL (for JS)
-proc jsGotoURL(pager: Pager; v: JSValue): JSResult[void] {.jsfunc: "gotoURL".} =
-  let req = fromJS[JSRequest](pager.jsctx, v)
-  if req.isSome:
-    pager.gotoURL(req.get.request)
+type GotoURLDict = object of JSDict
+  contentType: Option[string]
+  replace: Container
+
+proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
+    {.jsfunc: "gotoURL".} =
+  let request = if (let x = fromJS[JSRequest](pager.jsctx, v); x.isSome):
+    x.get.request
+  elif (let x = fromJS[URL](pager.jsctx, v); x.isSome):
+    newRequest(x.get)
   else:
     let s = ?fromJS[string](pager.jsctx, v)
-    pager.gotoURL(newRequest(?newURL(s)))
-  ok()
+    newRequest(?newURL(s))
+  discard pager.gotoURL(request, contentType = t.contentType,
+    replace = t.replace)
+  return ok()
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
-  pager.gotoURL(newRequest(pager.container.url), none(URL),
+  discard pager.gotoURL(newRequest(pager.container.url), none(URL),
     pager.container.contentType, replace = pager.container)
 
 proc setEnvVars(pager: Pager) {.jsfunc.} =
@@ -1818,18 +1835,18 @@ proc redirectTo(pager: Pager; container: Container; request: Request) =
     container.replaceBackup
   else:
     container.find(ndAny)
-  pager.gotoURL(request, some(container.url), replace = container,
+  let nc = pager.gotoURL(request, some(container.url), replace = container,
     replaceBackup = replaceBackup, redirectDepth = container.redirectDepth + 1,
     referrer = container)
-  pager.container.loadinfo = "Redirecting to " & $request.url
-  pager.onSetLoadInfo(pager.container)
+  nc.loadinfo = "Redirecting to " & $request.url
+  pager.onSetLoadInfo(nc)
   dec pager.numload
 
 proc fail(pager: Pager; container: Container; errorMessage: string) =
   dec pager.numload
   pager.deleteContainer(container, container.find(ndAny))
   if container.retry.len > 0:
-    pager.gotoURL(newRequest(container.retry.pop()),
+    discard pager.gotoURL(newRequest(container.retry.pop()),
       contentType = container.contentType)
   else:
     pager.alert("Can't load " & $container.url & " (" & errorMessage & ")")
@@ -1997,6 +2014,16 @@ proc handleConnectingContainerError*(pager: Pager; i: int) =
   item.stream.sclose()
   pager.connectingContainers.del(i)
 
+proc metaRefresh(pager: Pager; container: Container; n: int; url: URL) =
+  let ctx = pager.jsctx
+  let fun = ctx.newFunction(["url", "replace"],
+    "pager.gotoURL(url, {replace: replace})")
+  let args = [ctx.toJS(url), ctx.toJS(container)]
+  discard pager.timeouts.setTimeout(ttTimeout, fun, int32(n), args)
+  JS_FreeValue(ctx, fun)
+  for arg in args:
+    JS_FreeValue(ctx, arg)
+
 proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
     bool =
   case event.t
@@ -2035,12 +2062,12 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
         not event.save and not container.isHoverURL(url):
       pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
         if x:
-          pager.gotoURL(event.request, some(container.url),
+          discard pager.gotoURL(event.request, some(container.url),
             referrer = pager.container, save = event.save)
       )
     else:
       let url = if event.url != nil: event.url else: event.request.url
-      pager.gotoURL(event.request, some(container.url),
+      discard pager.gotoURL(event.request, some(container.url),
         referrer = pager.container, save = event.save, url = url)
   of cetStatus:
     if pager.container == container:
@@ -2068,6 +2095,23 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
       pager.connectingContainers.del(i)
       pager.unregisterFd(int(item.stream.fd))
       item.stream.sclose()
+  of cetMetaRefresh:
+    let url = event.refreshURL
+    let n = event.refreshIn
+    case container.config.metaRefresh
+    of mrNever: assert false
+    of mrAlways: pager.metaRefresh(container, n, url)
+    of mrAsk:
+      let surl = $url
+      if surl in pager.refreshAllowed:
+        pager.metaRefresh(container, n, url)
+      else:
+        pager.ask("Redirect to " & $url & " (in " & $n & "ms)?")
+          .then(proc(x: bool) =
+            if x:
+              pager.refreshAllowed.incl($url)
+              pager.metaRefresh(container, n, url)
+          )
   return true
 
 proc handleEvents*(pager: Pager; container: Container) =

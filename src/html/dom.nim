@@ -2414,6 +2414,12 @@ func findAnchor*(document: Document; id: string): Element =
       return child
   return nil
 
+proc findMetaRefresh*(document: Document): Element =
+  for child in document.elements(TAG_META):
+    if child.attr(satHttpEquiv) == "refresh":
+      return child
+  return nil
+
 func focus*(document: Document): Element =
   return document.internalFocus
 

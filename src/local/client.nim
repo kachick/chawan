@@ -738,6 +738,7 @@ proc launchClient*(client: Client; pages: seq[string];
   # better associate it with jsctx
   client.timeouts = newTimeoutState(client.selector, client.jsctx,
     client.console.err, proc(src, file: string) = client.evalJSFree(src, file))
+  client.pager.timeouts = client.timeouts
   addExitProc((proc() = client.cleanup()))
   if client.config.start.startup_script != "":
     let s = if fileExists(client.config.start.startup_script):

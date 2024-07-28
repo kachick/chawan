@@ -49,7 +49,8 @@ type
 
   ContainerEventType* = enum
     cetAnchor, cetNoAnchor, cetReadLine, cetReadArea, cetReadFile, cetOpen,
-    cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle, cetCancel
+    cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle, cetCancel,
+    cetMetaRefresh
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -67,6 +68,9 @@ type
       anchor*: string
     of cetAlert:
       msg*: string
+    of cetMetaRefresh:
+      refreshIn*: int
+      refreshURL*: URL
     else: discard
 
   HighlightType = enum
@@ -144,6 +148,7 @@ type
     replaceBackup*: Container # for redirection; when set, we get discarded
     # if we are referenced by another container, replaceRef is set so that we
     # can clear ourselves on discard
+    #TODO this is a mess :(
     replaceRef*: Container
     code*: int # note: this is not the status code, but the ConnectErrorCode.
     errorMessage*: string
@@ -1713,6 +1718,15 @@ proc onload(container: Container; res: int) =
       )
     else:
       container.needslines = true
+    if container.config.metaRefresh != mrNever:
+      container.iface.checkRefresh().then(proc(res: CheckRefreshResult) =
+        if res.n >= 0:
+          container.triggerEvent(ContainerEvent(
+            t: cetMetaRefresh,
+            refreshIn: res.n,
+            refreshURL: if res.url != nil: res.url else: container.url
+          ))
+      )
   else:
     container.needslines = true
     container.setLoadInfo(convertSize(res) & " loaded")
@@ -1744,7 +1758,7 @@ proc applyResponse*(container: Container; response: Response;
     cookieJar.add(response.extractCookies())
   # set referrer policy, if any
   let referrerPolicy = response.extractReferrerPolicy()
-  if container.config.referer_from:
+  if container.config.refererFrom:
     if referrerPolicy.isSome:
       container.loaderConfig.referrerPolicy = referrerPolicy.get
   else:

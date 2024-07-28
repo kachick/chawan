@@ -135,7 +135,7 @@ proc main() =
   else: discard #TODO
   let headers = getEnv("REQUEST_HEADERS")
   for line in headers.split("\r\n"):
-    if line.startsWithNoCase("Accept-Encoding: "):
+    if line.startsWithIgnoreCase("Accept-Encoding: "):
       let s = line.after(' ')
       # From the CURLOPT_ACCEPT_ENCODING manpage:
       # > The application does not have to keep the string around after

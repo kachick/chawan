@@ -30,12 +30,20 @@ import utils/twtstr
 
 type
   ColorMode* = enum
-    cmMonochrome, cmANSI, cmEightBit, cmTrueColor
+    cmMonochrome = "monochrome"
+    cmANSI = "ansi"
+    cmEightBit = "eight-bit"
+    cmTrueColor = "true-color"
 
-  FormatMode* = set[FormatFlags]
+  MetaRefresh* = enum
+    mrNever = "never"
+    mrAlways = "always"
+    mrAsk = "ask"
 
   ImageMode* = enum
-    imNone = "none", imSixel = "sixel", imKitty = "kitty"
+    imNone = "none"
+    imSixel = "sixel"
+    imKitty = "kitty"
 
   ChaPathResolved* = distinct string
 
@@ -65,6 +73,7 @@ type
     default_headers*: TableRef[string, string]
     insecure_ssl_no_verify*: Option[bool]
     autofocus*: Option[bool]
+    meta_refresh*: Option[MetaRefresh]
 
   OmniRule* = ref object
     match*: Regex
@@ -116,8 +125,8 @@ type
 
   DisplayConfig = object
     color_mode* {.jsgetset.}: Option[ColorMode]
-    format_mode* {.jsgetset.}: Option[FormatMode]
-    no_format_mode* {.jsgetset.}: FormatMode
+    format_mode* {.jsgetset.}: Option[set[FormatFlag]]
+    no_format_mode* {.jsgetset.}: set[FormatFlag]
     image_mode* {.jsgetset.}: Option[ImageMode]
     alt_screen* {.jsgetset.}: Option[bool]
     highlight_color* {.jsgetset.}: ARGBColor
@@ -148,6 +157,7 @@ type
     cookie* {.jsgetset.}: bool
     referer_from* {.jsgetset.}: bool
     autofocus* {.jsgetset.}: bool
+    meta_refresh* {.jsgetset.}: MetaRefresh
 
   Config* = ref object
     jsctx: JSContext
@@ -326,11 +336,9 @@ proc parseConfigValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
   k: string)
-proc parseConfigValue(ctx: var ConfigParser; x: var Option[ColorMode];
-  v: TomlValue; k: string)
-proc parseConfigValue(ctx: var ConfigParser; x: var Option[FormatMode];
-  v: TomlValue; k: string)
-proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
+proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
+  k: string)
+proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
   k: string)
@@ -466,47 +474,20 @@ proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
   typeCheck(v, tvtInteger, k)
   x = v.i
 
-proc parseConfigValue(ctx: var ConfigParser; x: var Option[ColorMode];
-    v: TomlValue; k: string) =
+proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
+    k: string) =
   typeCheck(v, tvtString, k)
-  case v.s
-  of "auto": x = none(ColorMode)
-  of "monochrome": x = some(cmMonochrome)
-  of "ansi": x = some(cmANSI)
-  of "8bit", "eight-bit": x = some(cmEightBit)
-  of "24bit", "true-color": x = some(cmTrueColor)
+  let y = strictParseEnum[ColorMode](v.s)
+  if y.isSome:
+    x = y.get
+  # backwards compat
+  elif v.s == "8bit":
+    x = cmEightBit
+  elif v.s == "24bit":
+    x = cmTrueColor
   else:
     raise newException(ValueError, "unknown color mode '" & v.s &
       "' for key " & k)
-
-proc parseConfigValue(ctx: var ConfigParser; x: var Option[FormatMode];
-    v: TomlValue; k: string) =
-  typeCheck(v, {tvtString, tvtArray}, k)
-  if v.t == tvtString and v.s == "auto":
-    x = none(FormatMode)
-  else:
-    var y: FormatMode
-    ctx.parseConfigValue(y, v, k)
-    x = some(y)
-
-proc parseConfigValue(ctx: var ConfigParser; x: var FormatMode; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtArray, k)
-  for i in 0 ..< v.a.len:
-    let kk = k & "[" & $i & "]"
-    let vv = v.a[i]
-    typeCheck(vv, tvtString, kk)
-    case vv.s
-    of "bold": x.incl(ffBold)
-    of "italic": x.incl(ffItalic)
-    of "underline": x.incl(ffUnderline)
-    of "reverse": x.incl(ffReverse)
-    of "strike": x.incl(ffStrike)
-    of "overline": x.incl(ffOverline)
-    of "blink": x.incl(ffBlink)
-    else:
-      raise newException(ValueError, "unknown format mode '" & vv.s &
-        "' for key " & kk)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
     k: string) =
@@ -560,14 +541,14 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
   typeCheck(v, {tvtString, tvtArray}, k)
   if v.t == tvtString:
     var xx: T
-    xx.parseConfigValue(v, k)
+    ctx.parseConfigValue(xx, v, k)
     x = {xx}
   else:
     x = {}
     for i in 0 ..< v.a.len:
       let kk = k & "[" & $i & "]"
       var xx: T
-      xx.parseConfigValue(v.a[i], kk)
+      ctx.parseConfigValue(xx, v.a[i], kk)
       x.incl(xx)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;

@@ -84,7 +84,7 @@ type
     lineDamage: seq[int]
     attrs*: WindowAttributes
     colorMode: ColorMode
-    formatMode: FormatMode
+    formatMode: set[FormatFlag]
     imageMode*: ImageMode
     smcup: bool
     tc: Termcap
@@ -257,7 +257,7 @@ proc resetFormat(term: Terminal): string =
       return term.cap me
   return SGR()
 
-proc startFormat(term: Terminal; flag: FormatFlags): string =
+proc startFormat(term: Terminal; flag: FormatFlag): string =
   when termcap_found:
     if term.isatty():
       case flag
@@ -269,7 +269,7 @@ proc startFormat(term: Terminal; flag: FormatFlags): string =
       else: discard
   return SGR(FormatCodes[flag].s)
 
-proc endFormat(term: Terminal; flag: FormatFlags): string =
+proc endFormat(term: Terminal; flag: FormatFlag): string =
   when termcap_found:
     if term.isatty():
       case flag
@@ -389,7 +389,7 @@ template rgbSGR(rgb: RGBColor; bgmod: int): string =
   SGR(38 + bgmod, 2, rgb.r, rgb.g, rgb.b)
 
 proc processFormat*(term: Terminal; format: var Format; cellf: Format): string =
-  for flag in FormatFlags:
+  for flag in FormatFlag:
     if flag in term.formatMode:
       if flag in format.flags and flag notin cellf.flags:
         result &= term.endFormat(flag)
@@ -587,7 +587,7 @@ proc applyConfig(term: Terminal) =
     term.colorMode = term.config.display.color_mode.get
   if term.config.display.format_mode.isSome:
     term.formatMode = term.config.display.format_mode.get
-  for fm in FormatFlags:
+  for fm in FormatFlag:
     if fm in term.config.display.no_format_mode:
       term.formatMode.excl(fm)
   if term.config.display.image_mode.isSome:
@@ -1219,7 +1219,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.formatMode.incl(ffBlink)
   else:
     term.smcup = true
-    term.formatMode = {low(FormatFlags)..high(FormatFlags)}
+    term.formatMode = {FormatFlag.low..FormatFlag.high}
 
 type
   MouseInputType* = enum

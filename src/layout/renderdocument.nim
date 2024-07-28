@@ -55,7 +55,7 @@ proc addFormat(line: var FlexibleLine; pos: int; format: Format;
 func toFormat(computed: CSSComputedValues): Format =
   if computed == nil:
     return Format()
-  var flags: set[FormatFlags]
+  var flags: set[FormatFlag] = {}
   if computed{"font-style"} in {FontStyleItalic, FontStyleOblique}:
     flags.incl(ffItalic)
   if computed{"font-weight"} > 500:

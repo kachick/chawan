@@ -144,10 +144,10 @@ Defaults to false.</td>
 <td>boolean</td>
 <td>Enable/disable cookies on sites.<br>
 Defaults to false.<br>
-Note that in Chawan, each website gets a separate cookie jar, so some websites
-relying on cross-site cookies may not work as expected. You may use the
-`[[siteconf]]` "cookie-jar" and "third-party-cookie" settings to adjust this
-behavior for specific sites.</td>
+Note: in Chawan, each website gets a separate cookie jar, so websites relying on
+cross-site cookies may not work as expected. You may use the `[[siteconf]]`
+"cookie-jar" and "third-party-cookie" settings to adjust this behavior for
+specific sites.</td>
 </tr>
 
 <tr>
@@ -165,6 +165,16 @@ option disabled, only enabling it for specific sites in `[[siteconf]]`.
 <td>When set to true, elements with an "autofocus" attribute are focused on
 automatically after the buffer is loaded.<br>
 Defaults to false</td>
+</tr>
+
+<tr>
+<td>meta-refresh</td>
+<td>"never" / "always" / "ask"</td>
+<td>Whether or not `http-equiv=refresh` meta tags should be respected. "never"
+completely disables them, "always" automatically accepts all of them, "ask"
+brings up a pop-up menu.<br>
+Defaults to "ask".
+</td>
 </tr>
 
 </table>
@@ -702,7 +712,8 @@ returned, it will replace the old one.</td>
 <td>cookie</td>
 <td>boolean</td>
 <td>Whether loading cookies should be allowed for this URL. By default, this is
-false for all websites.</td>
+false for all websites.<br>
+Overrides `buffer.cookie`.</td>
 </tr>
 
 <tr>
@@ -728,7 +739,7 @@ subdomains.</td>
 originating from this domain. Simplified example: if you click a link on a.com
 that refers to b.com, and referer-from is true, b.com is sent "a.com" as the
 Referer header.<br>
-Overrides `buffer.referer-from`. Defaults to false.
+Overrides `buffer.referer-from`.
 </td>
 </tr>
 
@@ -755,8 +766,8 @@ Overrides `buffer.referer-from`. Defaults to false.
 <tr>
 <td>document-charset</td>
 <td>charset label string</td>
-<td>Specify the default encoding for this site. Overrides `document-charset`
-in `[encoding]`.</td>
+<td>Specify the default encoding for this site. Overrides
+`encoding.document-charset`. </td>
 </tr>
 
 <tr>
@@ -772,14 +783,14 @@ with this stylesheet to get the final user stylesheet.)</td>
 <td>proxy</td>
 <td>URL</td>
 <td>Specify a proxy for network requests fetching contents of this buffer.
-Overrides `proxy` in `[network]`.</td>
+Overrides `network.proxy`.</td>
 </tr>
 
 <tr>
 <td>default-headers</td>
 <td>table</td>
 <td>Specify a list of default headers for HTTP(S) network requests to this
-buffer. Overrides `default-headers` in `[network]`.</td>
+buffer. Overrides `network.default-headers`.</td>
 </tr>
 
 <tr>
@@ -796,7 +807,17 @@ are doing.</td>
 <td>autofocus</td>
 <td>boolean</td>
 <td>When set to true, elements with an "autofocus" attribute are focused on
-automatically after the buffer is loaded. Overrides buffer.autofocus.</td>
+automatically after the buffer is loaded. Overrides `buffer.autofocus`.</td>
+</tr>
+
+<tr>
+<td>meta-refresh</td>
+<td>"never" / "always" / "ask"</td>
+<td>Whether or not `http-equiv=refresh` meta tags should be respected. "never"
+completely disables them, "always" automatically accepts all of them, "ask"
+brings up a pop-up menu.<br>
+Overrides `buffer.meta-refresh`.
+</td>
 </tr>
 
 </table>

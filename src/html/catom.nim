@@ -9,6 +9,7 @@ import monoucha/javascript
 import monoucha/jserror
 import monoucha/tojs
 import types/opt
+import utils/twtstr
 
 # create a static enum compatible with chame/tags
 
@@ -33,6 +34,7 @@ macro makeStaticAtom =
       satColor = "color"
       satCols = "cols"
       satColspan = "colspan"
+      satContent = "content"
       satCrossorigin = "crossorigin"
       satDOMContentLoaded = "DOMContentLoaded"
       satDefer = "defer"
@@ -102,7 +104,7 @@ macro makeStaticAtom =
     if t == TAG_UNKNOWN:
       continue
     let tn = $t
-    let name = "sat" & tn[0].toUpperAscii() & tn.substr(1)
+    let name = "sat" & tn[0].toUpperAscii() & tn.substr(1).kebabToCamelCase()
     seen.incl(tn)
     decl0.add(newNimNode(nnkEnumFieldDef).add(ident(name), newStrLitNode(tn)))
   for i, f in StaticAtom0.getType():
