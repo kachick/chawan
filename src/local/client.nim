@@ -17,14 +17,10 @@ import html/dom
 import html/env
 import html/formdata
 import html/xmlhttprequest
-import io/bufstream
 import io/bufwriter
 import io/dynstream
-import io/filestream
-import io/posixstream
 import io/promise
 import io/serversocket
-import io/socketstream
 import js/console
 import js/domexception
 import js/encoding

@@ -28,14 +28,10 @@ import html/env
 import html/event
 import html/formdata as formdata_impl
 import io/bufreader
-import io/bufstream
 import io/bufwriter
 import io/dynstream
-import io/filestream
-import io/posixstream
 import io/promise
 import io/serversocket
-import io/socketstream
 import js/console
 import js/timeout
 import layout/renderdocument

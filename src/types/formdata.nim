@@ -1,7 +1,6 @@
 import std/strutils
 
 import io/dynstream
-import io/posixstream
 import monoucha/javascript
 import types/blob
 import utils/twtstr

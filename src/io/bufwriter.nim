@@ -7,7 +7,6 @@ import std/tables
 
 import img/bitmap
 import io/dynstream
-import io/socketstream
 import loader/request
 import types/blob
 import types/color

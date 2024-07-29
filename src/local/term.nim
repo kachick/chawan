@@ -12,7 +12,7 @@ import chagashi/decoder
 import chagashi/encoder
 import config/config
 import img/bitmap
-import io/posixstream
+import io/dynstream
 import js/base64
 import types/blob
 import types/cell

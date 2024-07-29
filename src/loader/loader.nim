@@ -33,10 +33,8 @@ import std/tables
 import io/bufreader
 import io/bufwriter
 import io/dynstream
-import io/posixstream
 import io/promise
 import io/serversocket
-import io/socketstream
 import io/tempfile
 import io/urlfilter
 import loader/cgi

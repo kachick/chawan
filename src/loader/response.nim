@@ -4,9 +4,8 @@ import std/tables
 import chagashi/charset
 import chagashi/decoder
 import img/bitmap
-import io/posixstream
+import io/dynstream
 import io/promise
-import io/socketstream
 import loader/headers
 import loader/request
 import monoucha/javascript

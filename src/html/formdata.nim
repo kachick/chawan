@@ -3,7 +3,6 @@ import html/catom
 import html/dom
 import html/enums
 import io/dynstream
-import io/posixstream
 import js/base64
 import js/domexception
 import monoucha/javascript

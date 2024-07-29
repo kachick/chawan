@@ -138,15 +138,19 @@ proc clearRect*(bmp: Bitmap; x0, x1, y0, y1: uint64) =
 proc clear*(bmp: Bitmap) =
   bmp.clearRect(0, bmp.width, 0, bmp.height)
 
+type GlyphCacheItem = object
+  u: uint32
+  bmp: Bitmap
+
 var unifontBitmap*: Bitmap = nil
-var glyphCache: seq[tuple[u: uint32, bmp: Bitmap]]
+var glyphCache: seq[GlyphCacheItem] = @[]
 var glyphCacheI = 0
 proc getCharBmp(u: uint32): Bitmap =
   # We only have the BMP.
   let u = if u <= 0xFFFF: u else: 0xFFFD
-  for (cu, bmp) in glyphCache:
-    if cu == u:
-      return bmp
+  for it in glyphCache:
+    if it.u == u:
+      return it.bmp
   # Unifont glyphs start at x: 32, y: 64, and are of 8x16/16x16 size
   let gx = uint64(32 + 16 * (u mod 0x100))
   let gy = uint64(64 + 16 * (u div 0x100))
@@ -166,9 +170,9 @@ proc getCharBmp(u: uint32): Bitmap =
       if c != white:
         bmp.setpx(x, y, c)
   if glyphCache.len < 256:
-    glyphCache.add((u, bmp))
+    glyphCache.add(GlyphCacheItem(u: u, bmp: bmp))
   else:
-    glyphCache[glyphCacheI] = (u, bmp)
+    glyphCache[glyphCacheI] = GlyphCacheItem(u: u, bmp: bmp)
     inc glyphCacheI
     if glyphCacheI >= glyphCache.len:
       glyphCacheI = 0

@@ -9,11 +9,9 @@ import chagashi/charset
 import config/config
 import config/mimetypes
 import img/bitmap
-import io/bufstream
 import io/dynstream
 import io/promise
 import io/serversocket
-import io/socketstream
 import layout/renderdocument
 import loader/headers
 import loader/loader

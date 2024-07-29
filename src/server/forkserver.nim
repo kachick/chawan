@@ -10,9 +10,7 @@ import html/formdata
 import io/bufreader
 import io/bufwriter
 import io/dynstream
-import io/posixstream
 import io/serversocket
-import io/socketstream
 import io/stdio
 import loader/loader
 import server/buffer

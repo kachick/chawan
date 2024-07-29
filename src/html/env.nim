@@ -7,7 +7,7 @@ import html/event
 import html/formdata
 import html/script
 import html/xmlhttprequest
-import io/filestream
+import io/dynstream
 import io/promise
 import js/base64
 import js/console

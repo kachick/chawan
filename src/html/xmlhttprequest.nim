@@ -5,6 +5,7 @@ import std/tables
 import html/catom
 import html/dom
 import html/event
+import html/script
 import io/promise
 import js/domexception
 import loader/headers

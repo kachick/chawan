@@ -16,9 +16,7 @@ import config/mailcap
 import img/bitmap
 import io/bufreader
 import io/dynstream
-import io/posixstream
 import io/promise
-import io/socketstream
 import io/stdio
 import io/tempfile
 import io/urlfilter

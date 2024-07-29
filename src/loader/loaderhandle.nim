@@ -4,7 +4,6 @@ import std/tables
 
 import io/bufwriter
 import io/dynstream
-import io/posixstream
 import loader/headers
 
 when defined(debug):

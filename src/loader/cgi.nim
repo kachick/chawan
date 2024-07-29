@@ -4,7 +4,6 @@ import std/posix
 import std/strutils
 
 import io/dynstream
-import io/posixstream
 import io/stdio
 import loader/connecterror
 import loader/headers
