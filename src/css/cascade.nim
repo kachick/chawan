@@ -137,42 +137,6 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let s = element.attrul(satSize)
     if s.isSome:
       set_cv "width", CSSLength(num: float64(s.get), unit: cuCh)
-  template map_valign =
-    case element.attr(satValign).toLowerAscii()
-    of "top":
-      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignTop)
-    of "middle":
-      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignMiddle)
-    of "bottom":
-      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignBottom)
-    of "baseline":
-      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignBaseline)
-  template map_align =
-    case element.attr(satAlign).toLowerAscii()
-    of "center", "middle": set_cv "text-align", TextAlignChaCenter
-    of "left": set_cv "text-align", TextAlignChaLeft
-    of "right": set_cv "text-align", TextAlignChaRight
-  template map_img_align =
-    case element.attr(satAlign).toLowerAscii()
-    of "left":
-      set_cv "float", FloatLeft
-    of "right":
-      set_cv "float", FloatRight
-    of "top":
-      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignTop)
-    of "middle":
-      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignMiddle)
-    of "bottom":
-      set_cv "vertical-align", CSSVerticalAlign(keyword: VerticalAlignBottom)
-  template map_table_align =
-    case element.attr(satAlign).toLowerAscii()
-    of "left":
-      set_cv "float", FloatLeft
-    of "right":
-      set_cv "float", FloatRight
-    of "center":
-      set_cv "margin-left", CSSLengthAuto #TODO should be inline-start
-      set_cv "margin-right", CSSLengthAuto #TODO should be inline-end
   template map_text =
     let s = element.attr(satText)
     if s != "":
@@ -197,54 +161,28 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
       let i = rowspan.get
       if i <= 65534:
         set_cv "-cha-rowspan", int(i)
-  template map_list_type_ol =
-    let ctype = element.attr(satType)
-    if ctype.len > 0:
-      case ctype[0]
-      of '1': set_cv "list-style-type", ListStyleTypeDecimal
-      of 'a': set_cv "list-style-type", ListStyleTypeLowerAlpha
-      of 'A': set_cv "list-style-type", ListStyleTypeUpperAlpha
-      of 'i': set_cv "list-style-type", ListStyleTypeLowerRoman
-      of 'I': set_cv "list-style-type", ListStyleTypeUpperRoman
-      else: discard
-  template map_list_type_ul =
-    let ctype = element.attr(satType)
-    if ctype.len > 0:
-      case ctype.toLowerAscii()
-      of "none": set_cv "list-style-type", ListStyleTypeNone
-      of "disc": set_cv "list-style-type", ListStyleTypeDisc
-      of "circle": set_cv "list-style-type", ListStyleTypeCircle
-      of "square": set_cv "list-style-type", ListStyleTypeSquare
   template set_bgcolor_is_canvas =
     set_cv "-cha-bgcolor-is-canvas", true
 
   case element.tagType
-  of TAG_DIV, TAG_P:
-    map_align
   of TAG_TABLE:
     map_height_nozero
     map_width_nozero
     map_bgcolor
-    map_table_align
   of TAG_TD, TAG_TH:
     map_height_nozero
     map_width_nozero
     map_bgcolor
-    map_valign
-    map_align
     map_colspan
     map_rowspan
   of TAG_THEAD, TAG_TBODY, TAG_TFOOT, TAG_TR:
     map_height
     map_bgcolor
-    map_valign
-    map_align
   of TAG_COL:
     map_width
   of TAG_IMG:
     map_width
     map_height
-    map_img_align
   of TAG_CANVAS:
     map_width
     map_height
@@ -266,10 +204,6 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let input = HTMLInputElement(element)
     if input.inputType in InputTypeWithSize:
       map_size
-  of TAG_OL:
-    map_list_type_ol
-  of TAG_UL:
-    map_list_type_ul
   else: discard
 
 type
