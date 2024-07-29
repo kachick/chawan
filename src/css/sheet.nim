@@ -1,4 +1,3 @@
-import std/algorithm
 import std/tables
 
 import css/cssparser
@@ -26,10 +25,11 @@ type
 
   CSSStylesheet* = ref object
     mqList*: seq[CSSMediaQueryDef]
-    tagTable: Table[CAtom, seq[CSSRuleDef]]
-    idTable: Table[CAtom, seq[CSSRuleDef]]
-    classTable: Table[CAtom, seq[CSSRuleDef]]
-    generalList: seq[CSSRuleDef]
+    tagTable*: Table[CAtom, seq[CSSRuleDef]]
+    idTable*: Table[CAtom, seq[CSSRuleDef]]
+    classTable*: Table[CAtom, seq[CSSRuleDef]]
+    attrTable*: Table[CAtom, seq[CSSRuleDef]]
+    generalList*: seq[CSSRuleDef]
     len: int
     factory: CAtomFactory
 
@@ -37,6 +37,7 @@ type SelectorHashes = object
   tag: CAtom
   id: CAtom
   class: CAtom
+  attr: CAtom
 
 func newStylesheet*(cap: int; factory: CAtomFactory): CSSStylesheet =
   let bucketsize = cap div 2
@@ -44,6 +45,7 @@ func newStylesheet*(cap: int; factory: CAtomFactory): CSSStylesheet =
     tagTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
     idTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
     classTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
+    attrTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
     generalList: newSeqOfCap[CSSRuleDef](bucketsize),
     factory: factory
   )
@@ -69,43 +71,47 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
   of stId:
     hashes.id = sel.id
     return true
-  of stAttr, stPseudoElement, stUniversal:
+  of stAttr:
+    hashes.attr = sel.attr
+  of stPseudoElement, stUniversal:
     return false
   of stPseudoClass:
     if sel.pseudo.t notin {pcIs, pcWhere}:
       return false
     # Basically just hash whatever the selectors have in common:
-    #1. get the hashable values of selector 1
-    #2. for every other selector x:
-    #3.   get hashable values of selector x
-    #4.   store hashable values of selector x that aren't stored yet
-    #5.   for every hashable value of selector 1 that doesn't match selector x
-    #6.     cancel hashable value
+    # 1. get the hashable values of selector 1
+    # 2. for every other selector x:
+    # 3.   get hashable values of selector x
+    # 4.   store hashable values of selector x that aren't stored yet
+    # 5.   for every hashable value of selector 1 that doesn't match selector x
+    # 6.     cancel hashable value
     var cancelTag = false
     var cancelId = false
     var cancelClass = false
+    var cancelAttr = false
     var i = 0
     if i < sel.pseudo.fsels.len:
       hashes.getSelectorIds(sel.pseudo.fsels[i])
       inc i
     while i < sel.pseudo.fsels.len:
-      var nhashes: SelectorHashes
+      var nhashes = SelectorHashes()
       nhashes.getSelectorIds(sel.pseudo.fsels[i])
       if hashes.tag == CAtomNull:
         hashes.tag = nhashes.tag
-      elif not cancelTag and nhashes.tag != CAtomNull and
-          nhashes.tag != hashes.tag:
+      elif nhashes.tag != CAtomNull and nhashes.tag != hashes.tag:
         cancelTag = true
       if hashes.id == CAtomNull:
         hashes.id = nhashes.id
-      elif not cancelId and nhashes.id != CAtomNull and
-          nhashes.id != hashes.id:
+      elif nhashes.id != CAtomNull and nhashes.id != hashes.id:
         cancelId = true
       if hashes.class == CAtomNull:
         hashes.class = nhashes.class
-      elif not cancelClass and nhashes.class != CAtomNull and
-          nhashes.class != hashes.class:
+      elif nhashes.class != CAtomNull and nhashes.class != hashes.class:
         cancelClass = true
+      if hashes.attr == CAtomNull:
+        hashes.attr = nhashes.attr
+      elif nhashes.attr != CAtomNull and nhashes.attr != hashes.attr:
+        cancelAttr = true
       inc i
     if cancelTag:
       hashes.tag = CAtomNull
@@ -113,34 +119,16 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       hashes.id = CAtomNull
     if cancelClass:
       hashes.class = CAtomNull
+    if cancelAttr:
+      hashes.attr = CAtomNull
     return hashes.tag != CAtomNull or hashes.id != CAtomNull or
       hashes.class != CAtomNull
 
-proc ruleDefCmp(a, b: CSSRuleDef): int =
+proc ruleDefCmp*(a, b: CSSRuleDef): int =
   cmp(a.idx, b.idx)
 
-iterator genRules*(sheet: CSSStylesheet; tag, id: CAtom; classes: seq[CAtom]):
-    CSSRuleDef =
-  var rules: seq[CSSRuleDef]
-  sheet.tagTable.withValue(tag, v):
-    for rule in v[]:
-      rules.add(rule)
-  if id != CAtomNull:
-    sheet.idTable.withValue(id, v):
-      for rule in v[]:
-        rules.add(rule)
-  for class in classes:
-    sheet.classTable.withValue(class, v):
-      for rule in v[]:
-        rules.add(rule)
-  for rule in sheet.generalList:
-    rules.add(rule)
-  rules.sort(ruleDefCmp, order = Ascending)
-  for rule in rules:
-    yield rule
-
 proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
-  var hashes: SelectorHashes
+  var hashes = SelectorHashes()
   for cxsel in rule.sels:
     hashes.getSelectorIds(cxsel)
     if hashes.tag != CAtomNull:
@@ -178,6 +166,11 @@ proc add*(sheet, sheet2: CSSStylesheet) =
       p[].add(value)
     do:
       sheet.classTable[key] = value
+  for key, value in sheet2.attrTable.pairs:
+    sheet.attrTable.withValue(key, p):
+      p[].add(value)
+    do:
+      sheet.attrTable[key] = value
 
 proc addRule(stylesheet: CSSStylesheet; rule: CSSQualifiedRule) =
   let sels = parseSelectors(rule.prelude, stylesheet.factory)

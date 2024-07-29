@@ -1,6 +1,6 @@
 import std/algorithm
 import std/options
-import std/strutils
+import std/tables
 
 import chame/tags
 import css/cssparser
@@ -95,8 +95,27 @@ proc calcRule(tosorts: var ToSorts; styledNode: StyledNode; rule: CSSRuleDef) =
 
 func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
   var tosorts: ToSorts
-  let elem = Element(styledNode.node)
-  for rule in sheet.genRules(elem.localName, elem.id, elem.classList.toks):
+  let element = Element(styledNode.node)
+  var rules: seq[CSSRuleDef] = @[]
+  sheet.tagTable.withValue(element.localName, v):
+    for rule in v[]:
+      rules.add(rule)
+  if element.id != CAtomNull:
+    sheet.idTable.withValue(element.id, v):
+      for rule in v[]:
+        rules.add(rule)
+  for class in element.classList.toks:
+    sheet.classTable.withValue(class, v):
+      for rule in v[]:
+        rules.add(rule)
+  for attr in element.attrs:
+    sheet.attrTable.withValue(attr.qualifiedName, v):
+      for rule in v[]:
+        rules.add(rule)
+  for rule in sheet.generalList:
+    rules.add(rule)
+  rules.sort(ruleDefCmp, order = Ascending)
+  for rule in rules:
     tosorts.calcRule(styledNode, rule)
   for i in PseudoElem:
     tosorts[i].sort((proc(x, y: (int, CSSRuleDef)): int =

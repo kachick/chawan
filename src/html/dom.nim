@@ -233,7 +233,7 @@ type
     id*: CAtom
     name*: CAtom
     classList* {.jsget.}: DOMTokenList
-    attrs: seq[AttrData] # sorted by int(qualifiedName)
+    attrs*: seq[AttrData] # sorted by int(qualifiedName)
     attributesInternal: NamedNodeMap
     internalHover: bool
     invalid*: bool
