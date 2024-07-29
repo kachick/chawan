@@ -752,7 +752,7 @@ proc checkRefresh*(buffer: Buffer): CheckRefreshResult {.proxy.} =
     return CheckRefreshResult(n: -1)
   return CheckRefreshResult(n: n, url: url.get)
 
-proc do_reshape(buffer: Buffer) =
+proc reshape(buffer: Buffer) =
   if buffer.document == nil:
     return # not parsed yet, nothing to render
   let uastyle = if buffer.document.mode != QUIRKS:
@@ -769,7 +769,7 @@ proc do_reshape(buffer: Buffer) =
 
 proc maybeReshape(buffer: Buffer) =
   if buffer.document != nil and buffer.document.invalid:
-    buffer.do_reshape()
+    buffer.reshape()
     buffer.document.invalid = false
 
 proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
@@ -843,9 +843,8 @@ proc processData(buffer: Buffer; iq: openArray[uint8]): bool =
 proc windowChange*(buffer: Buffer; attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
   buffer.prevStyled = nil
-  if buffer.window != nil:
-    buffer.window.attrs = attrs
-  buffer.do_reshape()
+  buffer.window.attrs = attrs
+  buffer.reshape()
 
 type UpdateHoverResult* = object
   hover*: seq[tuple[t: HoverType, s: string]]
@@ -887,7 +886,7 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
           elem.setHover(false)
           repaint = true
   if repaint:
-    buffer.do_reshape()
+    buffer.reshape()
   buffer.prevnode = thisnode
   return UpdateHoverResult(repaint: repaint, hover: hover)
 
@@ -1086,7 +1085,7 @@ proc load*(buffer: Buffer): int {.proxy, task.} =
   if buffer.state == bsLoaded:
     return -1
   elif buffer.bytesRead > buffer.reportedBytesRead:
-    buffer.do_reshape()
+    buffer.reshape()
     buffer.reportedBytesRead = buffer.bytesRead
     return buffer.bytesRead
   else:
@@ -1134,7 +1133,7 @@ proc onload(buffer: Buffer) =
       reprocess = false
     else: # EOF
       buffer.finishLoad().then(proc() =
-        buffer.do_reshape()
+        buffer.reshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
         if buffer.config.scripting:
@@ -1149,7 +1148,7 @@ proc onload(buffer: Buffer) =
   # pass
   if not buffer.config.isdump and buffer.tasks[bcLoad] != 0:
     # only makes sense when not in dump mode (and the user has requested a load)
-    buffer.do_reshape()
+    buffer.reshape()
     buffer.reportedBytesRead = buffer.bytesRead
     if buffer.hasTask(bcGetTitle):
       buffer.resolveTask(bcGetTitle, buffer.document.title)
@@ -1168,7 +1167,7 @@ proc getTitle*(buffer: Buffer): string {.proxy, task.} =
 
 proc forceRender*(buffer: Buffer) {.proxy.} =
   buffer.prevStyled = nil
-  buffer.do_reshape()
+  buffer.reshape()
 
 proc cancel*(buffer: Buffer) {.proxy.} =
   if buffer.state == bsLoaded:
@@ -1195,7 +1194,7 @@ proc cancel*(buffer: Buffer) {.proxy.} =
     buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
   buffer.state = bsLoaded
-  buffer.do_reshape()
+  buffer.reshape()
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc serializeMultipart(entries: seq[FormDataEntry]): FormData =
@@ -1331,13 +1330,13 @@ proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element): Requ
 proc setFocus(buffer: Buffer; e: Element): bool =
   if buffer.document.focus != e:
     buffer.document.setFocus(e)
-    buffer.do_reshape()
+    buffer.reshape()
     return true
 
 proc restoreFocus(buffer: Buffer): bool =
   if buffer.document.focus != nil:
     buffer.document.setFocus(nil)
-    buffer.do_reshape()
+    buffer.reshape()
     return true
 
 type ReadSuccessResult* = object
@@ -1372,20 +1371,20 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
       of itFile:
         input.file = newWebFile(s, fd)
         input.setInvalid()
-        buffer.do_reshape()
+        buffer.reshape()
         res.repaint = true
         res.open = buffer.implicitSubmit(input)
       else:
         input.value = s
         input.setInvalid()
-        buffer.do_reshape()
+        buffer.reshape()
         res.repaint = true
         res.open = buffer.implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(buffer.document.focus)
       textarea.value = s
       textarea.setInvalid()
-      buffer.do_reshape()
+      buffer.reshape()
       res.repaint = true
     else: discard
     let r = buffer.restoreFocus()
@@ -1445,7 +1444,7 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
       if not buffer.config.scripting:
         return ClickResult(repaint: repaint)
       let s = buffer.evalJSURL(url)
-      buffer.do_reshape()
+      buffer.reshape()
       repaint = true
       if s.isNone:
         return ClickResult(repaint: repaint)
@@ -1470,7 +1469,7 @@ proc click(buffer: Buffer; button: HTMLButtonElement): ClickResult =
       open = buffer.submitForm(button.form, button)
     of btReset:
       button.form.reset()
-      buffer.do_reshape()
+      buffer.reshape()
       return ClickResult(repaint: true)
     of btButton: discard
     let repaint = buffer.setFocus(button)
@@ -1525,7 +1524,7 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
   of itCheckbox:
     input.setChecked(not input.checked)
     input.setInvalid()
-    buffer.do_reshape()
+    buffer.reshape()
     return ClickResult(repaint: true)
   of itRadio:
     for radio in input.radiogroup:
@@ -1533,12 +1532,12 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
       radio.setInvalid()
     input.setChecked(true)
     input.setInvalid()
-    buffer.do_reshape()
+    buffer.reshape()
     return ClickResult(repaint: true)
   of itReset:
     if input.form != nil:
       input.form.reset()
-      buffer.do_reshape()
+      buffer.reshape()
       return ClickResult(repaint: true)
     return ClickResult(repaint: false)
   of itSubmit, itButton:
@@ -1593,7 +1592,7 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
       let event = newEvent(window.toAtom(satClick), element)
       canceled = window.jsctx.dispatch(element, event)
       if buffer.document.invalid:
-        buffer.do_reshape()
+        buffer.reshape()
         buffer.document.invalid = false
         repaint = true
   if not canceled:
@@ -1721,7 +1720,7 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
         let element = HTMLElement(node)
         if element.tagType notin {TAG_HEAD, TAG_SCRIPT, TAG_STYLE, TAG_A}:
           stack.add(element)
-  buffer.do_reshape()
+  buffer.reshape()
 
 proc toggleImages*(buffer: Buffer) {.proxy.} =
   buffer.config.images = not buffer.config.images
@@ -1845,7 +1844,6 @@ proc runBuffer(buffer: Buffer) =
           alive = false
           break
       if selectors.Event.Timer in event.events:
-        assert buffer.window != nil
         let r = buffer.window.timeouts.runTimeoutFd(event.fd)
         assert r
         buffer.window.runJSJobs()

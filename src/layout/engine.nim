@@ -250,7 +250,6 @@ type
     whitespaceIsLF: bool
     whitespaceFragment: InlineFragment
     word: InlineAtom
-    wordstate: InlineAtomState
     wrappos: int # position of last wrapping opportunity, or -1
     textFragmentSeen: bool
     lastTextFragment: InlineFragment
@@ -325,14 +324,10 @@ proc applyLineHeight(ictx: InlineContext; state: var LineBoxState;
   state.paddingBottom = max(paddingBottom, state.paddingBottom)
   state.lineHeight = max(lineHeight, state.lineHeight)
 
-proc newWord(ictx: var InlineContext; state: var InlineState) =
+proc newWord(ictx: var InlineContext) =
   ictx.word = InlineAtom(
     t: iatWord,
     size: size(w = 0, h = ictx.cellHeight)
-  )
-  ictx.wordstate = InlineAtomState(
-    vertalign: state.fragment.computed{"vertical-align"},
-    baseline: ictx.cellHeight
   )
   ictx.wrappos = -1
   ictx.hasshy = false
@@ -528,16 +523,16 @@ proc putAtom(state: var LineBoxState; atom: InlineAtom;
   state.atoms.add(atom)
   fragment.state.atoms.add(atom)
 
-proc addSpacing(ictx: var InlineContext; width, height: LayoutUnit;
-    state: InlineState; hang = false) =
+proc addSpacing(ictx: var InlineContext; width: LayoutUnit; state: InlineState;
+    hang = false) =
   let fragment = ictx.whitespaceFragment
   if fragment.state.atoms.len == 0 or fragment.state.atoms[^1].t != iatWord:
     let atom = InlineAtom(
       t: iatWord,
-      size: size(w = 0, h = height),
-      offset: offset(x = ictx.lbstate.size.w, y = height)
+      size: size(w = 0, h = ictx.cellHeight),
+      offset: offset(x = ictx.lbstate.size.w, y = ictx.cellHeight)
     )
-    let iastate = InlineAtomState(baseline: height)
+    let iastate = InlineAtomState(baseline: atom.size.h)
     ictx.lbstate.putAtom(atom, iastate, fragment)
   let atom = fragment.state.atoms[^1]
   let n = (width div ictx.cellWidth).toInt #TODO
@@ -555,7 +550,7 @@ proc flushWhitespace(ictx: var InlineContext; state: InlineState;
   ictx.lbstate.charwidth += ictx.whitespacenum
   ictx.whitespacenum = 0
   if shift > 0:
-    ictx.addSpacing(shift, ictx.cellHeight, state, hang)
+    ictx.addSpacing(shift, state, hang)
 
 # Prepare the next line's initial width and available width.
 # (If space on the left is excluded by floats, set the initial width to
@@ -669,7 +664,7 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
       shift = ictx.computeShift(state)
   if atom.size.w > 0 and atom.size.h > 0:
     if shift > 0:
-      ictx.addSpacing(shift, ictx.cellHeight, state)
+      ictx.addSpacing(shift, state)
     ictx.root.state.xminwidth = max(ictx.root.state.xminwidth, atom.xminwidth)
     ictx.applyLineHeight(ictx.lbstate, state.fragment.computed)
     if atom.t == iatWord:
@@ -703,8 +698,12 @@ proc addWord(ictx: var InlineContext; state: var InlineState): bool =
   result = false
   if ictx.word.str != "":
     ictx.word.str.mnormalize() #TODO this may break on EOL.
-    result = ictx.addAtom(state, ictx.wordstate, ictx.word)
-    ictx.newWord(state)
+    let iastate = InlineAtomState(
+      vertalign: state.fragment.computed{"vertical-align"},
+      baseline: ictx.word.size.h
+    )
+    result = ictx.addAtom(state, iastate, ictx.word)
+    ictx.newWord()
 
 proc addWordEOL(ictx: var InlineContext; state: var InlineState): bool =
   result = false
@@ -841,7 +840,7 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
 
 proc layoutText(ictx: var InlineContext; state: var InlineState; s: string) =
   ictx.flushWhitespace(state)
-  ictx.newWord(state)
+  ictx.newWord()
   let transform = state.fragment.computed{"text-transform"}
   if transform == TextTransformNone:
     ictx.layoutTextLoop(state, s)
