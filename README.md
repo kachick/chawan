@@ -123,7 +123,7 @@ Here's some:
   possible.
 * The default image decoder (PNG, JPEG, GIF, BMP) uses the
   [stb_image](https://github.com/nothings/stb) library, and WebP images are
-  decoded using the [jebp](https://github.com/matanui159/jebp) library. Image
+  decoded using the [JebP](https://github.com/matanui159/jebp) library. Image
   codecs are handled as protocols, so users will be able to add their own codecs
   (once I document how it works...)
 

@@ -21,6 +21,7 @@ Table of contents:
 * [QuickJS](#quickjs)
 * [Punycode library](#punycode-library)
 * [STB image](#stb-image)
+* [JebP](#jebp)
 
 ## Chawan
 
@@ -120,9 +121,9 @@ Sean Barrett et al. are used for image transcoding. These libraries
 are dedicated to the public domain, and are distributed under the same
 terms as Chawan.
 
-## jebp
+## JebP
 
-A slightly modified version of the jebp library by Jasmine Minter is used for
+A slightly modified version of the JebP library by Jasmine Minter is used for
 decoding WebP images. This library is distributed under the following license:
 
 ```
