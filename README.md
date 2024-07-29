@@ -54,10 +54,11 @@ Currently implemented features are:
 * user-programmable keybindings (defaults are vi(m)-like)
 * basic JavaScript support in documents (disabled by default for security
   reasons)
-* supports several protocols: HTTP(S), FTP, Gopher, Gemini, Finger, etc.
-* can [load](doc/localcgi.md) [user-defined](doc/urimethodmap.md)
-  [protocols](doc/protocols.md)/[file formats](doc/mailcap.md)
-* built-in markdown viewer, man page viewer
+* supports several [protocols](doc/protocols.md): HTTP(S), FTP, Gopher, Gemini,
+  Finger, etc.
+* can load user-defined [protocols](doc/urimethodmap.md) and
+  [file formats](doc/mailcap.md)
+* markdown viewer, man page viewer
 * WIP sixel/kitty image support (still somewhat limited; progress tracked at
   <https://todo.sr.ht/~bptato/chawan/13>)
 * mouse support
@@ -79,6 +80,11 @@ Currently implemented features are:
 * protocols: [doc/protocols.md](doc/protocols.md)
 * troubleshooting: [doc/troubleshooting.md](doc/troubleshooting.md)
 
+If you're interested in modifying the code:
+
+* architecture: [doc/architecture.md](doc/architecture.md)
+* style guide, debugging tips, etc.: [doc/hacking.md](doc/hacking.md)
+
 ## Neighbors
 
 Many other text-based web browsers exist. Here's some recommendations if you
@@ -86,7 +92,7 @@ want to try more established ones:
 
 * [w3m](https://github.com/tats/w3m) - A text-mode browser, extensible using
   local-cgi. Also has inline image display and very good table support.
-  Inspired many features of Chawan.
+  Main source of inspiration for Chawan.
 * [elinks](https://github.com/rkd77/elinks) - Has CSS and JavaScript support,
   and incremental rendering (it's pretty fast.)
 * [lynx](https://lynx.invisible-island.net/) - "THE text-based web browser."

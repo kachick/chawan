@@ -33,7 +33,7 @@ Explanation for the separate directories found in `src/`:
 * img: image-related code. Mostly useless because we can't draw images to the
   screen yet. (One day...)
 * io: code for IPC, interaction with the file system, etc.
-* js: wrappers for QuickJS.
+* js: modules mainly for use by JS code.
 * layout: the layout engine and its renderer.
 * loader: code for the file loader server (?).
 * local: code for the main process (i.e. the pager).
@@ -181,8 +181,10 @@ script calls document.write and then the parser is called re-entrantly.
 QuickJS is used by both the pager as a scripting language, and by buffers for
 running on-page scripts when JavaScript is enabled.
 
-The core JS related functionality can be found in the js/ module. (One day I
-hope to split it out into a standalone library.)
+The core JS related functionality has been separated out into the
+[Monoucha](https://git.sr.ht/~bptato/monoucha) library, so it can be used
+outside of Chawan too. Interested readers are invited to read the Monoucha
+[manual](https://git.sr.ht/~bptato/monoucha/tree/master/doc/manual.md) as well.
 
 ### General
 
@@ -295,11 +297,6 @@ It has some problems:
 * It's slow on large documents, because we don't have partial layouting
   capabilities.
 
-A good layout engine would be able to skip layouting of contents before/after
-the currently visible part of the screen, especially in plain text files. Sadly
-we don't have this functionality; everything is laid out again from scratch
-every time we may have to re-layout.
-
 Our layout engine is a rather simple procedural layout implementation. It runs
 in two passes.
 
@@ -313,6 +310,9 @@ to its parent.
 
 Layout is fully recursive. This means that after a certain nesting depth, the
 buffer will run out of stack space and promptly crash.
+
+Since we do not cache layout results, and the whole page is layouted (no partial
+layouting), it gets quite slow on large documents.
 
 ### Rendering
 
