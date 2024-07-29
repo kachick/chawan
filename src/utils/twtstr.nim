@@ -108,9 +108,9 @@ func toHexLower*(u: uint16): string =
 func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
   return s1.cmpIgnoreCase(s2) == 0
 
-func startsWithIgnoreCase*(s1, s2: string; si = 0): bool =
+func startsWithIgnoreCase*(s1, s2: openArray[char]): bool =
   if s1.len < s2.len: return false
-  for i in si ..< s2.len:
+  for i in 0 ..< s2.len:
     if s1[i].toLowerAscii() != s2[i].toLowerAscii():
       return false
   return true

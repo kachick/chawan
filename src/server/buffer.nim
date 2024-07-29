@@ -738,7 +738,7 @@ proc checkRefresh*(buffer: Buffer): CheckRefreshResult {.proxy.} =
   if s[i] notin {',', ';'}:
     return CheckRefreshResult(n: -1)
   i = s.skipBlanks(i + 1)
-  if s.startsWithIgnoreCase("url=", i):
+  if s.toOpenArray(i, s.high).startsWithIgnoreCase("url="):
     i = s.skipBlanks(i + "url=".len)
   var q = false
   if i < s.len and s[i] in {'"', '\''}:
