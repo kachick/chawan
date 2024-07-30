@@ -131,6 +131,12 @@ const XTSHIFTESCAPE = CSI(">0s")
 template XTSMGRAPHICS(pi, pa, pv: untyped): string =
   CSI("?" & $pi, $pa, $pv & "S")
 
+# number of color registers
+const XTNUMREGS = XTSMGRAPHICS(1, 1, 0)
+
+# image dimensions
+const XTIMGDIMS = XTSMGRAPHICS(2, 1, 0)
+
 # device control string
 const DCSSTART = "\eP"
 
@@ -139,6 +145,8 @@ template DCS(a, b: char; s: varargs[string]): string =
 
 template XTGETTCAP(s: varargs[string, `$`]): string =
   DCS('+', 'q', s)
+
+const XTGETRGB = XTGETTCAP("524742")
 
 # OS command
 template OSC(s: varargs[string, `$`]): string =
@@ -969,10 +977,13 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       outs &= XTGETFG
     if term.config.display.image_mode.isNone:
       outs &= KITTYQUERY
-      outs &= XTSMGRAPHICS(1, 1, 0) # color registers
-      outs &= XTSMGRAPHICS(2, 1, 0) # dimensions
+      outs &= XTNUMREGS
+      outs &= XTIMGDIMS
+    elif term.config.display.image_mode.get == imSixel:
+      outs &= XTNUMREGS
+      outs &= XTIMGDIMS
     if term.config.display.color_mode.isNone:
-      outs &= XTGETTCAP("524742")
+      outs &= XTGETRGB
     outs &=
       XTGETANSI &
       GEOMPIXEL &
@@ -985,6 +996,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       GEOMPIXEL &
       CELLSIZE &
       GEOMCELL &
+      XTIMGDIMS &
       DA1
     term.outfile.write(outs)
   term.flush()
