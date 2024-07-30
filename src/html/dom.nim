@@ -83,6 +83,9 @@ type
     internalConsole*: Console
     navigator* {.jsget.}: Navigator
     screen* {.jsget.}: Screen
+    history* {.jsget.}: History
+    localStorage* {.jsget.}: Storage
+    sessionStorage* {.jsget.}: Storage
     settings*: EnvironmentSettings
     loader*: FileLoader
     location* {.jsget.}: Location
@@ -109,6 +112,11 @@ type
   MimeTypeArray* = object
 
   Screen* = object
+
+  History* = object
+
+  Storage* = object
+    map*: seq[tuple[key, value: string]]
 
   NamedNodeMap = ref object
     element: Element
@@ -387,6 +395,8 @@ jsDestructor(Navigator)
 jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
 jsDestructor(Screen)
+jsDestructor(History)
+jsDestructor(Storage)
 
 jsDestructor(Element)
 jsDestructor(HTMLElement)

@@ -1,4 +1,5 @@
 import std/selectors
+import std/tables
 
 import html/catom
 import html/chadombuilder
@@ -21,6 +22,7 @@ import loader/request
 import loader/response
 import monoucha/javascript
 import monoucha/jserror
+import monoucha/jspropenumlist
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -92,11 +94,77 @@ proc height(screen: var Screen): int64 {.jsfget.} =
 proc colorDepth(screen: var Screen): int64 {.jsfget.} = 24
 proc pixelDepth(screen: var Screen): int64 {.jsfget.} = screen.colorDepth
 
+# History
+func length(history: var History): uint32 {.jsfget.} = 1
+func state(history: var History): JSValue {.jsfget.} = JS_NULL
+func go(history: var History) {.jsfunc.} = discard
+func back(history: var History) {.jsfunc.} = discard
+func forward(history: var History) {.jsfunc.} = discard
+
+# Storage
+func find(this: Storage; key: string): int =
+  for i in 0 ..< this.map.len:
+    if this.map[i].key == key:
+      return i
+  return -1
+
+func length(this: var Storage): uint32 {.jsfget.} =
+  return uint32(this.map.len)
+
+func key(this: var Storage; i: uint32): Option[string] {.jsfunc.} =
+  if int(i) < this.map.len:
+    return some(this.map[int(i)].value)
+  return none(string)
+
+func getItem(this: var Storage; s: string): Option[string]
+    {.jsfunc.} =
+  let i = this.find(s)
+  if i != -1:
+    return some(this.map[i].value)
+  return none(string)
+
+func setItem(this: var Storage; key, value: string):
+    Err[DOMException] {.jsfunc.} =
+  let i = this.find(key)
+  if i != -1:
+    this.map[i].value = value
+  else:
+    if this.map.len >= 64:
+      return errDOMException("Quota exceeded", "QuotaExceededError")
+    this.map.add((key, value))
+  ok()
+
+func removeItem(this: var Storage; key: string) {.jsfunc.} =
+  let i = this.find(key)
+  if i != -1:
+    this.map.del(i)
+
+func names(ctx: JSContext; this: var Storage): JSPropertyEnumList
+    {.jspropnames.} =
+  var list = newJSPropertyEnumList(ctx, uint32(this.map.len))
+  for it in this.map:
+    list.add(it.key)
+  return list
+
+func getter(this: var Storage; s: string): Option[string]
+    {.jsgetprop.} =
+  return this.getItem(s)
+
+func setter(this: var Storage; k, v: string): Err[DOMException]
+    {.jssetprop.} =
+  return this.setItem(k, v)
+
+func delete(this: var Storage; k: string): bool {.jsdelprop.} =
+  this.removeItem(k)
+  return true
+
 proc addNavigatorModule*(ctx: JSContext) =
   ctx.registerType(Navigator)
   ctx.registerType(PluginArray)
   ctx.registerType(MimeTypeArray)
   ctx.registerType(Screen)
+  ctx.registerType(History)
+  ctx.registerType(Storage)
 
 proc fetch(window: Window; input: JSValue; init = none(RequestInit)):
     JSResult[FetchPromise] {.jsfunc.} =
