@@ -234,14 +234,14 @@ You may find these links useful.
   and then some more.
 * DOM: <https://dom.spec.whatwg.org/>. Includes events, basic
   node-related stuff, etc.
-* Encoding: <https://encoding.spec.whatwg.org/>. The core encoding stuff
-  are already finished in Chagashi, this is now mainly relevant for the
-  TextEncoder JS interface (js/encoding).
+* Encoding: <https://encoding.spec.whatwg.org/>. The core encoding
+  algorithms are already implemented in Chagashi, so this is now mainly
+  relevant for the TextEncoder JS interface (js/encoding).
 * URL: <https://url.spec.whatwg.org/>. For some incomprehensible reason,
   it's defined as an equally incomprehensible state machine. types/url
   implements this.
 * Fetch: <https://fetch.spec.whatwg.org/>. Networking stuff. Also see
-  <xhr.spec.whatwg.org> for XMLHttpRequest.
+  <https://xhr.spec.whatwg.org> for XMLHttpRequest.
 * Web IDL: <https://webidl.spec.whatwg.org/>. Relevant for Monoucha/JS
   bindings.
 
