@@ -530,7 +530,7 @@ proc handleError(client: Client; fd: int) =
     if fd in client.fdmap:
       let container = client.fdmap[fd]
       if container != client.consoleWrapper.container:
-        client.console.log("Error in buffer", $container.url)
+        client.console.error("Error in buffer", $container.url)
       else:
         client.consoleWrapper.container = nil
       client.selector.unregister(fd)
@@ -695,7 +695,7 @@ proc dumpBuffers(client: Client) =
       client.pager.drawBuffer(container, stdout)
       client.pager.handleEvents(container)
     except IOError:
-      client.console.log("Error in buffer", $container.url)
+      client.console.error("Error in buffer", $container.url)
       # check for errors
       client.handleRead(client.forkserver.estream.fd)
       client.quit(1)

@@ -1,6 +1,8 @@
 import io/dynstream
-import monoucha/jserror
+import monoucha/fromjs
 import monoucha/javascript
+import monoucha/jserror
+import types/opt
 
 type Console* = ref object
   err*: DynStream
@@ -19,36 +21,55 @@ proc newConsole*(err: DynStream; clearFun: proc() = nil; showFun: proc() = nil;
     hideFun: hideFun
   )
 
-proc log*(console: Console; ss: varargs[string]) {.jsfunc.} =
+proc log*(console: Console; ss: varargs[string]) =
+  var buf = ""
   for i, s in ss:
-    console.err.write(s)
+    buf &= s
     if i != ss.high:
-      console.err.write(' ')
-  console.err.write('\n')
-  console.err.sflush()
+      buf &= ' '
+  buf &= '\n'
+  console.err.write(buf)
+
+proc error*(console: Console; ss: varargs[string]) =
+  console.log(ss)
+
+proc log*(ctx: JSContext; console: Console; ss: varargs[JSValue]):
+    JSResult[void] {.jsfunc.} =
+  var buf = ""
+  for i, val in ss:
+    buf &= ?fromJS[string](ctx, val)
+    if i != ss.high:
+      buf &= ' '
+  buf &= '\n'
+  console.err.write(buf)
+  ok()
 
 proc clear(console: Console) {.jsfunc.} =
   if console.clearFun != nil:
     console.clearFun()
 
 # For now, these are the same as log().
-proc debug(console: Console; ss: varargs[string]) {.jsfunc.} =
-  console.log(ss)
+proc debug(ctx: JSContext; console: Console; ss: varargs[JSValue]):
+    JSResult[void] {.jsfunc.} =
+  return log(ctx, console, ss)
 
-proc error*(console: Console; ss: varargs[string]) {.jsfunc.} =
-  console.log(ss)
+proc error(ctx: JSContext; console: Console; ss: varargs[JSValue]):
+    JSResult[void] {.jsfunc.} =
+  return log(ctx, console, ss)
 
-proc info(console: Console; ss: varargs[string]) {.jsfunc.} =
-  console.log(ss)
+proc info(ctx: JSContext; console: Console; ss: varargs[JSValue]):
+    JSResult[void] {.jsfunc.} =
+  return log(ctx, console, ss)
 
-proc warn(console: Console; ss: varargs[string]) {.jsfunc.} =
-  console.log(ss)
+proc warn(ctx: JSContext; console: Console; ss: varargs[JSValue]):
+    JSResult[void] {.jsfunc.} =
+  return log(ctx, console, ss)
 
-proc show(console: Console; ss: varargs[string]) {.jsfunc.} =
+proc show(console: Console) {.jsfunc.} =
   if console.showFun != nil:
     console.showFun()
 
-proc hide(console: Console; ss: varargs[string]) {.jsfunc.} =
+proc hide(console: Console) {.jsfunc.} =
   if console.hideFun != nil:
     console.hideFun()
 
