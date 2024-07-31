@@ -5,12 +5,12 @@
  * 1. put this script in your CGI directory
  * 2. chmod +x /your/cgi-bin/directory/git.cgi
  * 3. ln -s /your/cgi-bin/directory/git.cgi /usr/local/bin/gitcha
- * 4. run `gitcha log', `gitcha switch' or `gitcha stash list'
+ * 4. run `gitcha log', `gitcha branch' or `gitcha stash list'
  * other params work too, but without any special processing. it's still useful
  * for ones that open the pager, like git show; this way you can reload the view
  * with `U'.
- * it's less convenient for e.g. git checkout and friends, so it may be best to
- * just alias the pager-opening commands.
+ * git checkout and friends are blocked for security & convenience reasons, so
+ * it may be best to just alias the pager-opening commands.
  * (if you have ansi2html, it also works with w3m. just set GITCHA_CHA=w3m) */
 
 const gitcha = std.getenv("GITCHA_GITCHA") ?? "gitcha";
@@ -68,30 +68,36 @@ const config = ["-c", "color.ui=always", "-c", "log.decorate=short"];
 const params = query.params ? decodeURIComponent(query.params).split(' ')
 	.map(x => decodeURIComponent(x)) : [];
 
-const cgi0 = `${query.prefix}git.cgi?prefix=${query.prefix}&path=${query.path}`;
-const cgi1 = `${cgi0}&params=show`;
-const cgi2 = `${cgi0}&params=log`;
-const cgi3 = `${cgi0}&params=switch`;
-const cgi4 = `${cgi0}&params=stash%20apply`;
-const cgi5 = `${cgi0}&params=stash%20drop`;
-if (params[0] == "log") {
-	runGitCmd(config, params, /[a-f0-9]{40}/g,
-		x => `<a href='${cgi1}%20${x}'>${x}</a>`)
-} else if (params[0] == "branch" && (params.length == 1 ||
-	params.length == 2 && params[1] == "--list")) {
-	runGitCmd(config, params, /^(\s+)([\w.-]+)$/g,
-		(_, ws, name) => `${ws}<a href='${cgi2}%20${name}'>${name}</a>\
- <form method=POST action='${cgi3}%20${name}'><input type=submit value=switch></form>`);
+function cgi(cmd) {
+	const cgi0 = `${query.prefix}git.cgi?prefix=${query.prefix}&path=${query.path}`;
+	return `${cgi0}&params=${encodeURIComponent(cmd)}`;
+}
+
+if (params[0] == "log" || params[0] == "blame") {
+	const showUrl = cgi("show");
+	runGitCmd(config, params, /[a-f0-9]{7}[a-f0-9]*/g,
+		x => `<a href='${showUrl}%20${x}'>${x}</a>`);
+} else if (params[0] == "branch" &&
+	(params.length == 1 ||
+	params.length == 2 && ["-l", "--list", "-a", "--all"].includes(params[1]))) {
+	const logUrl = cgi("log");
+	const checkoutUrl = cgi("checkout");
+	runGitCmd(config, params, /^(\s+)(<span style='color: -cha-ansi...;'>)?([\w./-]+)(<.*)?$/g,
+		(_, ws, $, name) => `${ws}<a href='${logUrl}%20${name}'>${name}</a>\
+ <form method=POST action='${checkoutUrl}%20${name}'><input type=submit value=switch></form>`);
 } else if (params[0] == "stash" && params[1] == "list") {
+	const showUrl = cgi("show");
+	const stashApply = cgi("stash apply");
+	const stashDrop = cgi("stash drop");
 	runGitCmd(config, params, /^stash@\{([0-9]+)\}/g,
-		(s, n) => `stash@{<a href='${cgi1}%20${s}'>${n}</a>}\
- <form method=POST action='${cgi4}%20${s}'><input type=submit value=apply></form>` +
-` <form method=POST action='${cgi5}%20${s}'><input type=submit value=drop></form>`);
+		(s, n) => `stash@{<a href='${showUrl}%20${s}'>${n}</a>}\
+ <form method=POST action='${stashApply}%20${s}'><input type=submit value=apply></form>` +
+` <form method=POST action='${stashDrop}%20${s}'><input type=submit value=drop></form>`);
 } else {
 	const safeForGet = ["show", "diff", "blame", "status"];
 	if (std.getenv("REQUEST_METHOD") != "POST" &&
 		!safeForGet.includes(params[0])) {
-		std.out.puts(`Content-Type: text/plain\n\nnot allowed`);
+		std.out.puts(`Status: 403\nContent-Type: text/plain\n\nnot allowed`);
 		std.out.flush();
 		std.exit(1);
 	}
