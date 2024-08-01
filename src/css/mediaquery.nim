@@ -79,23 +79,12 @@ func `$`*(mf: MediaFeature): string =
     return "hover: " & $mf.b
   of mftPrefersColorScheme:
     return "prefers-color-scheme: " & $mf.b
-  of mftWidth:
+  of mftWidth, mftHeight:
     result &= $mf.lengthrange.s.a
     result &= " <"
     if mf.lengthrange.aeq:
       result &= "="
-    result &= " width <"
-    if mf.lengthrange.beq:
-      result &= "="
-    result &= " "
-    result &= $mf.lengthrange.s.b
-  of mftHeight:
-    result &= $mf.lengthrange.s.a
-    result &= " <"
-    if mf.lengthrange.aeq:
-      result &= "="
-    result &= " width "
-    result &= "<"
+    result &= ' ' & $mf.t & " <"
     if mf.lengthrange.beq:
       result &= "="
     result &= " "

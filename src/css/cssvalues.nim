@@ -1091,7 +1091,7 @@ func cssLineHeight(cval: CSSComponentValue): Opt[CSSLength] =
     of cttNumber:
       return cssLength(tok.nvalue * 100, "%")
     of cttIdent:
-      if tok.value == "normal":
+      if tok.value.equalsIgnoreCase("normal"):
         return ok(CSSLengthAuto)
     else:
       return cssLength(tok, has_auto = false)
@@ -1161,7 +1161,7 @@ func cssImage(cval: CSSComponentValue): Opt[CSSContent] =
   if isToken(cval):
     #TODO bg-image only
     let tok = getToken(cval)
-    if tok.tokenType == cttIdent and tok.value == "none":
+    if tok.tokenType == cttIdent and tok.value.equalsIgnoreCase("none"):
       return ok(CSSContent(t: ContentImage, s: ""))
   let url = cssURL(cval)
   if url.isSome:

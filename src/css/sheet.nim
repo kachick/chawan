@@ -5,6 +5,7 @@ import css/cssvalues
 import css/mediaquery
 import css/selectorparser
 import html/catom
+import utils/twtstr
 
 type
   CSSRuleBase* = ref object of RootObj
@@ -193,8 +194,7 @@ proc addRule(stylesheet: CSSStylesheet; rule: CSSQualifiedRule) =
     inc stylesheet.len
 
 proc addAtRule(stylesheet: CSSStylesheet; atrule: CSSAtRule) =
-  case atrule.name
-  of "media":
+  if atrule.name.equalsIgnoreCase("media"):
     if atrule.oblock == nil:
       # invalid at-rule
       return
@@ -212,7 +212,6 @@ proc addAtRule(stylesheet: CSSStylesheet; atrule: CSSAtRule) =
           media.children.addRule(CSSQualifiedRule(rule))
       stylesheet.mqList.add(media)
       stylesheet.len = media.children.len
-  else: discard #TODO
 
 proc parseStylesheet*(ibuf: string; factory: CAtomFactory): CSSStylesheet =
   let raw = parseStylesheet(ibuf)

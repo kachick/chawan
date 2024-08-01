@@ -1,6 +1,5 @@
 compilation:
 - reduce binary size
-	* remove the null columns in EUC-KR decoding
 	* fbf for unifont
 	* maybe use system wcwidth?
 charsets:
