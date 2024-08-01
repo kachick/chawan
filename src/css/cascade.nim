@@ -26,17 +26,12 @@ type
     user: RuleList
     author: seq[RuleList]
 
-func appliesLR(feature: MediaFeature; window: Window;
-    n: LayoutUnit): bool =
-  let a = px(feature.lengthrange.a, window.attrs, 0)
-  let b = px(feature.lengthrange.b, window.attrs, 0)
-  if not feature.lengthaeq and a == n:
+func appliesLR(feature: MediaFeature; window: Window; n: LayoutUnit): bool =
+  let a = feature.lengthrange.s.a.px(window.attrs, 0)
+  let b = feature.lengthrange.s.b.px(window.attrs, 0)
+  if not feature.lengthrange.aeq and a == n or a > n:
     return false
-  if a > n:
-    return false
-  if not feature.lengthbeq and b == n:
-    return false
-  if b < n:
+  if not feature.lengthrange.beq and b == n or b < n:
     return false
   return true
 
@@ -66,7 +61,6 @@ func applies(mq: MediaQuery; window: Window): bool =
     of mtScreen: return true
     of mtSpeech: return false
     of mtTty: return true
-    of mtUnknown: return false
   of mctNot:
     return not mq.n.applies(window)
   of mctAnd:

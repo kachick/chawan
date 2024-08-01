@@ -276,8 +276,8 @@ css/ contains everything related to styling: CSS parsing and cascading.
 
 The parser is not very interesting, it's just an implementation of the CSS 3
 parsing module. The latest iteration of the selector parser is pretty good. The
-media query parser is horrible and should be rewritten. And the CSS value parser
-works OK, but is missing features like variables.
+media query parser and the CSS value parser both work OK, but are missing
+some commonly used features like variables.
 
 Cascading is slow, though it could be slower. Chawan has style caching, so
 re-styles are normally very fast. Also, a hash map is used for reducing initial

@@ -1,3 +1,4 @@
+import std/algorithm
 import std/macros
 import std/options
 import std/strutils
@@ -582,8 +583,7 @@ func ic_to_px(ic: float64; window: WindowAttributes): LayoutUnit =
 func ex_to_px(ex: float64; window: WindowAttributes): LayoutUnit =
   (ex * float64(window.ppc) / 2).toLayoutUnit()
 
-func px*(l: CSSLength; window: WindowAttributes; p: LayoutUnit): LayoutUnit
-    {.inline.} =
+func px*(l: CSSLength; window: WindowAttributes; p: LayoutUnit): LayoutUnit =
   case l.unit
   of cuEm, cuRem: em_to_px(l.num, window)
   of cuCh: ch_to_px(l.num, window)
@@ -785,45 +785,26 @@ const Colors: Table[string, ARGBColor] = ((func (): Table[string, ARGBColor] =
   result["transparent"] = rgba(0x00, 0x00, 0x00, 0x00)
 )())
 
-func isToken(cval: CSSComponentValue): bool {.inline.} =
+template isToken(cval: CSSComponentValue): bool =
   cval of CSSToken
 
-func getToken(cval: CSSComponentValue): CSSToken {.inline.} =
+template getToken(cval: CSSComponentValue): CSSToken =
   CSSToken(cval)
 
-func parseIdent0[T](map: static openArray[(string, T)]; s: string): Opt[T] =
-  # cmp when len is small enough, otherwise lowercase & hashmap
-  when map.len <= 4:
-    for (k, v) in map:
-      if k.equalsIgnoreCase(s):
-        return ok(v)
-  else:
-    const MapTable = map.toTable()
-    let val = s.toLowerAscii()
-    if val in MapTable:
-      return ok(MapTable[val])
-  return err()
-
-func parseIdent[T](map: static openArray[(string, T)]; cval: CSSComponentValue):
-    Opt[T] =
+func parseIdent(map: openArray[IdentMapItem]; cval: CSSComponentValue):
+    Opt[int] =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == cttIdent:
-      return parseIdent0[T](map, tok.value)
+      return map.parseEnumNoCase0(tok.value)
   return err()
-
-func getIdentMap[T: enum](e: typedesc[T]): seq[(string, T)] =
-  result = @[]
-  for e in T.low .. T.high:
-    result.add(($e, e))
 
 func parseIdent[T: enum](cval: CSSComponentValue): Opt[T] =
   const IdentMap = getIdentMap(T)
-  return IdentMap.parseIdent(cval)
+  return ok(cast[T](?IdentMap.parseIdent(cval)))
 
 func cssLength(val: float64; unit: string): Opt[CSSLength] =
-  const UnitMap = getIdentMap(CSSUnit)
-  let u = ?UnitMap.parseIdent0(unit)
+  let u = ?parseEnumNoCase[CSSUnit](unit)
   return ok(CSSLength(num: val, unit: u))
 
 const CSSLengthAuto* = CSSLength(auto: true)

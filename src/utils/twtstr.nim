@@ -537,37 +537,34 @@ proc makeCRLF*(s: string): string =
     else:
       result &= s[i]
 
+type IdentMapItem* = tuple[s: string; n: int]
+
+func getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
+  result = @[]
+  for e in T.low .. T.high:
+    result.add(($e, int(e)))
+  result.sort(proc(x, y: IdentMapItem): int = cmp(x[0], y[0]))
+
 func strictParseEnum*[T: enum](s: string): Option[T] =
-  # cmp when len is small enough, otherwise hashmap
-  when {T.low..T.high}.len <= 4:
-    for e in T.low .. T.high:
-      if $e == s:
-        return some(e)
-  else:
-    const tab = (func(): Table[string, T] =
-      result = initTable[string, T]()
-      for e in T.low .. T.high:
-        result[$e] = e
-    )()
-    if s in tab:
-      return some(tab[s])
+  const IdentMap = getIdentMap(T)
+  let i = IdentMap.binarySearch(s, proc(x: IdentMapItem; y: string): int =
+    return x[0].cmp(y)
+  )
+  if i != -1:
+    return some(cast[T](IdentMap[i].n))
   return none(T)
 
-func parseEnumNoCase*[T: enum](s: string): Option[T] =
-  # cmp when len is small enough, otherwise hashmap
-  when {T.low..T.high}.len <= 4:
-    for e in T.low .. T.high:
-      if ($e).equalsIgnoreCase(s):
-        return some(e)
-  else:
-    const tab = (func(): Table[string, T] =
-      result = initTable[string, T]()
-      for e in T.low .. T.high:
-        result[$e] = e
-    )()
-    if s in tab:
-      return some(tab[s])
-  return none(T)
+func parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): Opt[int] =
+  let i = map.binarySearch(s, proc(x: IdentMapItem; y: string): int =
+    return x[0].cmpIgnoreCase(y)
+  )
+  if i != -1:
+    return ok(map[i].n)
+  return err()
+
+func parseEnumNoCase*[T: enum](s: string): Opt[T] =
+  const IdentMap = getIdentMap(T)
+  return ok(cast[T](?IdentMap.parseEnumNoCase0(s)))
 
 proc getContentTypeAttr*(contentType, attrname: string): string =
   var i = contentType.find(';')

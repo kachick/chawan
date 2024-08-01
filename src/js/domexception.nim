@@ -28,27 +28,30 @@ const NamesTable = {
   "TimeoutError": 23u16,
   "InvalidNodeTypeError": 24u16,
   "DataCloneError": 25u16
-}.toTable()
+}
 
 type
   DOMException* = ref object of JSError
     name* {.jsget.}: string
+    code {.jsget.}: uint16
 
   DOMResult*[T] = Result[T, DOMException]
 
 jsDestructor(DOMException)
 
 proc newDOMException*(message = ""; name = "Error"): DOMException {.jsctor.} =
-  return DOMException(e: jeDOMException, name: name, message: message)
+  let ex = DOMException(e: jeDOMException, name: name, message: message)
+  for it in NamesTable:
+    if it[0] == name:
+      ex.code = it[1]
+      break
+  return ex
 
 template errDOMException*(message, name: string): untyped =
   err(newDOMException(message, name))
 
 func message0(this: DOMException): string {.jsfget: "message".} =
   return this.message
-
-func code(this: DOMException): uint16 {.jsfget.} =
-  return NamesTable.getOrDefault(this.name, 0u16)
 
 proc addDOMExceptionModule*(ctx: JSContext) =
   ctx.registerType(DOMException, JS_CLASS_ERROR, errid = opt(jeDOMException))
