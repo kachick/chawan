@@ -404,20 +404,6 @@ type
     val: CSSComputedValue
     global: CSSGlobalType
 
-const ShorthandNames = block:
-  var tab = initTable[string, CSSShorthandType]()
-  for t in CSSShorthandType:
-    if $t != "":
-      tab[$t] = t
-  tab
-
-const PropertyNames = block:
-  var tab = initTable[string, CSSPropertyType]()
-  for t in CSSPropertyType:
-    if $t != "":
-      tab[$t] = t
-  tab
-
 const ValueTypes = [
   cptNone: cvtNone,
   cptColor: cvtColor,
@@ -483,16 +469,16 @@ const InheritedProperties = {
 }
 
 func shorthandType(s: string): CSSShorthandType =
-  return ShorthandNames.getOrDefault(s.toLowerAscii(), cstNone)
+  return parseEnumNoCase[CSSShorthandType](s).get(cstNone)
 
 func propertyType(s: string): CSSPropertyType =
-  return PropertyNames.getOrDefault(s.toLowerAscii(), cptNone)
+  return parseEnumNoCase[CSSPropertyType](s).get(cptNone)
 
 func valueType(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
 func isSupportedProperty*(s: string): bool =
-  return s in PropertyNames
+  return propertyType(s) != cptNone
 
 func `$`*(length: CSSLength): string =
   if length.auto:
@@ -672,7 +658,7 @@ const romanNumbers = [
 ]
 
 const romanNumbersLower = block:
-  var res: seq[(int, string)]
+  var res: seq[(int, string)] = @[]
   for (n, s) in romanNumbers:
     res.add((n, s.toLowerAscii()))
   res
@@ -687,8 +673,9 @@ func japaneseNumber(i: int): string =
   if i == 0:
     return "〇"
   var n = i
+  var s = ""
   if i < 0:
-    result &= "マイナス"
+    s &= "マイナス"
     n *= -1
   let o = n
   var ss: seq[string] = @[]
@@ -737,10 +724,9 @@ func japaneseNumber(i: int): string =
     of 9: ss.add("九")
     else: discard
     n -= m
-  n = ss.len - 1
-  while n >= 0:
-    result &= ss[n]
-    dec n
+  for j in countdown(ss.high, 0):
+    s &= ss[j]
+  return s
 
 func listMarker*(t: CSSListStyleType; i: int): string =
   case t
@@ -757,15 +743,12 @@ func listMarker*(t: CSSListStyleType; i: int): string =
   of ListStyleTypeLowerAlpha: return numToBase(i, LowerAlphaMap) & ". "
   of ListStyleTypeLowerGreek: return numToBase(i, LowerGreekMap) & ". "
   of ListStyleTypeHiragana: return numToBase(i, HiraganaMap) & "、"
-  of ListStyleTypeHiraganaIroha:
-    return numToBase(i, HiraganaIrohaMap) & "、"
+  of ListStyleTypeHiraganaIroha: return numToBase(i, HiraganaIrohaMap) & "、"
   of ListStyleTypeKatakana: return numToBase(i, KatakanaMap) & "、"
-  of ListStyleTypeKatakanaIroha:
-    return numToBase(i, KatakanaIrohaMap) & "、"
+  of ListStyleTypeKatakanaIroha: return numToBase(i, KatakanaIrohaMap) & "、"
   of ListStyleTypeCjkEarthlyBranch:
     return numToFixed(i, EarthlyBranchMap) & "、"
-  of ListStyleTypeCjkHeavenlyStem:
-    return numToFixed(i, HeavenlyStemMap) & "、"
+  of ListStyleTypeCjkHeavenlyStem: return numToFixed(i, HeavenlyStemMap) & "、"
   of ListStyleTypeJapaneseInformal: return japaneseNumber(i) & "、"
 
 #TODO this should change by language
@@ -778,12 +761,6 @@ func quoteEnd*(level: int): string =
   if level == 0:
     return "“"
   return "‘"
-
-const Colors: Table[string, ARGBColor] = ((func (): Table[string, ARGBColor] =
-  for name, rgb in ColorsRGB:
-    result[name] = rgb
-  result["transparent"] = rgba(0x00, 0x00, 0x00, 0x00)
-)())
 
 template isToken(cval: CSSComponentValue): bool =
   cval of CSSToken
@@ -931,9 +908,11 @@ func cssColor*(val: CSSComponentValue): Opt[CellColor] =
       if c.isSome:
         return ok(c.get.cellColor())
     of cttIdent:
-      let s = tok.value.toLowerAscii()
-      if s in Colors:
-        return ok(Colors[s].cellColor())
+      if tok.value.equalsIgnoreCase("transparent"):
+        return ok(rgba(0, 0, 0, 0).cellColor())
+      let x = namedRGBColor(tok.value)
+      if x.isSome:
+        return ok(x.get.cellColor())
     else: discard
   elif val of CSSFunction:
     let f = CSSFunction(val)
@@ -1254,7 +1233,7 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
 
 func getInitialColor(t: CSSPropertyType): CellColor =
   if t == cptBackgroundColor:
-    return Colors["transparent"].cellColor()
+    return rgba(0, 0, 0, 0).cellColor()
   return defaultColor
 
 func getInitialLength(t: CSSPropertyType): CSSLength =

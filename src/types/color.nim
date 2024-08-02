@@ -1,4 +1,6 @@
+import std/algorithm
 import std/options
+import std/strutils
 import std/tables
 
 import utils/twtstr
@@ -76,171 +78,165 @@ func cellColor*(c: EightBitColor): CellColor =
 
 const defaultColor* = CellColor(t: ctNone, n: 0)
 
-const
-  ANSI_BLACK* = ANSIColor(0u8)
-  ANSI_RED* = ANSIColor(1u8)
-  ANSI_GREEN* = ANSIColor(2u8)
-  ANSI_YELLOW* = ANSIColor(3u8)
-  ANSI_BLUE* = ANSIColor(4u8)
-  ANSI_MAGENTA* = ANSIColor(5u8)
-  ANSI_CYAN* = ANSIColor(6u8)
-  ANSI_WHITE* = ANSIColor(7u8)
+const ColorsRGBMap = {
+  "aliceblue": 0xF0F8FFu32,
+  "antiquewhite": 0xFAEBD7u32,
+  "aqua": 0x00FFFFu32,
+  "aquamarine": 0x7FFFD4u32,
+  "azure": 0xF0FFFFu32,
+  "beige": 0xF5F5DCu32,
+  "bisque": 0xFFE4C4u32,
+  "black": 0x000000u32,
+  "blanchedalmond": 0xFFEBCDu32,
+  "blue": 0x0000FFu32,
+  "blueviolet": 0x8A2BE2u32,
+  "brown": 0xA52A2Au32,
+  "burlywood": 0xDEB887u32,
+  "cadetblue": 0x5F9EA0u32,
+  "chartreuse": 0x7FFF00u32,
+  "chocolate": 0xD2691Eu32,
+  "coral": 0xFF7F50u32,
+  "cornflowerblue": 0x6495EDu32,
+  "cornsilk": 0xFFF8DCu32,
+  "crimson": 0xDC143Cu32,
+  "cyan": 0x00FFFFu32,
+  "darkblue": 0x00008Bu32,
+  "darkcyan": 0x008B8Bu32,
+  "darkgoldenrod": 0xB8860Bu32,
+  "darkgray": 0xA9A9A9u32,
+  "darkgreen": 0x006400u32,
+  "darkgrey": 0xA9A9A9u32,
+  "darkkhaki": 0xBDB76Bu32,
+  "darkmagenta": 0x8B008Bu32,
+  "darkolivegreen": 0x556B2Fu32,
+  "darkorange": 0xFF8C00u32,
+  "darkorchid": 0x9932CCu32,
+  "darkred": 0x8B0000u32,
+  "darksalmon": 0xE9967Au32,
+  "darkseagreen": 0x8FBC8Fu32,
+  "darkslateblue": 0x483D8Bu32,
+  "darkslategray": 0x2F4F4Fu32,
+  "darkslategrey": 0x2F4F4Fu32,
+  "darkturquoise": 0x00CED1u32,
+  "darkviolet": 0x9400D3u32,
+  "deeppink": 0xFF1493u32,
+  "deepskyblue": 0x00BFFFu32,
+  "dimgray": 0x696969u32,
+  "dimgrey": 0x696969u32,
+  "dodgerblue": 0x1E90FFu32,
+  "firebrick": 0xB22222u32,
+  "floralwhite": 0xFFFAF0u32,
+  "forestgreen": 0x228B22u32,
+  "fuchsia": 0xFF00FFu32,
+  "gainsboro": 0xDCDCDCu32,
+  "ghostwhite": 0xF8F8FFu32,
+  "gold": 0xFFD700u32,
+  "goldenrod": 0xDAA520u32,
+  "gray": 0x808080u32,
+  "green": 0x008000u32,
+  "greenyellow": 0xADFF2Fu32,
+  "grey": 0x808080u32,
+  "honeydew": 0xF0FFF0u32,
+  "hotpink": 0xFF69B4u32,
+  "indianred": 0xCD5C5Cu32,
+  "indigo": 0x4B0082u32,
+  "ivory": 0xFFFFF0u32,
+  "khaki": 0xF0E68Cu32,
+  "lavender": 0xE6E6FAu32,
+  "lavenderblush": 0xFFF0F5u32,
+  "lawngreen": 0x7CFC00u32,
+  "lemonchiffon": 0xFFFACDu32,
+  "lightblue": 0xADD8E6u32,
+  "lightcoral": 0xF08080u32,
+  "lightcyan": 0xE0FFFFu32,
+  "lightgoldenrodyellow": 0xFAFAD2u32,
+  "lightgray": 0xD3D3D3u32,
+  "lightgreen": 0x90EE90u32,
+  "lightgrey": 0xD3D3D3u32,
+  "lightpink": 0xFFB6C1u32,
+  "lightsalmon": 0xFFA07Au32,
+  "lightseagreen": 0x20B2AAu32,
+  "lightskyblue": 0x87CEFAu32,
+  "lightslategray": 0x778899u32,
+  "lightslategrey": 0x778899u32,
+  "lightsteelblue": 0xB0C4DEu32,
+  "lightyellow": 0xFFFFE0u32,
+  "lime": 0x00FF00u32,
+  "limegreen": 0x32CD32u32,
+  "linen": 0xFAF0E6u32,
+  "magenta": 0xFF00FFu32,
+  "maroon": 0x800000u32,
+  "mediumaquamarine": 0x66CDAAu32,
+  "mediumblue": 0x0000CDu32,
+  "mediumorchid": 0xBA55D3u32,
+  "mediumpurple": 0x9370DBu32,
+  "mediumseagreen": 0x3CB371u32,
+  "mediumslateblue": 0x7B68EEu32,
+  "mediumspringgreen": 0x00FA9Au32,
+  "mediumturquoise": 0x48D1CCu32,
+  "mediumvioletred": 0xC71585u32,
+  "midnightblue": 0x191970u32,
+  "mintcream": 0xF5FFFAu32,
+  "mistyrose": 0xFFE4E1u32,
+  "moccasin": 0xFFE4B5u32,
+  "navajowhite": 0xFFDEADu32,
+  "navy": 0x000080u32,
+  "oldlace": 0xFDF5E6u32,
+  "olive": 0x808000u32,
+  "olivedrab": 0x6B8E23u32,
+  "orange": 0xFFA500u32,
+  "orangered": 0xFF4500u32,
+  "orchid": 0xDA70D6u32,
+  "palegoldenrod": 0xEEE8AAu32,
+  "palegreen": 0x98FB98u32,
+  "paleturquoise": 0xAFEEEEu32,
+  "palevioletred": 0xDB7093u32,
+  "papayawhip": 0xFFEFD5u32,
+  "peachpuff": 0xFFDAB9u32,
+  "peru": 0xCD853Fu32,
+  "pink": 0xFFC0CBu32,
+  "plum": 0xDDA0DDu32,
+  "powderblue": 0xB0E0E6u32,
+  "purple": 0x800080u32,
+  "rebeccapurple": 0x663399u32,
+  "red": 0xFF0000u32,
+  "rosybrown": 0xBC8F8Fu32,
+  "royalblue": 0x4169E1u32,
+  "saddlebrown": 0x8B4513u32,
+  "salmon": 0xFA8072u32,
+  "sandybrown": 0xF4A460u32,
+  "seagreen": 0x2E8B57u32,
+  "seashell": 0xFFF5EEu32,
+  "sienna": 0xA0522Du32,
+  "silver": 0xC0C0C0u32,
+  "skyblue": 0x87CEEBu32,
+  "slateblue": 0x6A5ACDu32,
+  "slategray": 0x708090u32,
+  "slategrey": 0x708090u32,
+  "snow": 0xFFFAFAu32,
+  "springgreen": 0x00FF7Fu32,
+  "steelblue": 0x4682B4u32,
+  "tan": 0xD2B48Cu32,
+  "teal": 0x008080u32,
+  "thistle": 0xD8BFD8u32,
+  "tomato": 0xFF6347u32,
+  "turquoise": 0x40E0D0u32,
+  "violet": 0xEE82EEu32,
+  "wheat": 0xF5DEB3u32,
+  "white": 0xFFFFFFu32,
+  "whitesmoke": 0xF5F5F5u32,
+  "yellow": 0xFFFF00u32,
+  "yellowgreen": 0x9ACD32u32,
+}
 
-const ColorsRGB* = block:
-  const ColorsRGBMap = {
-    "aliceblue": 0xf0f8ff,
-    "antiquewhite": 0xfaebd7,
-    "aqua": 0x00ffff,
-    "aquamarine": 0x7fffd4,
-    "azure": 0xf0ffff,
-    "beige": 0xf5f5dc,
-    "bisque": 0xffe4c4,
-    "black": 0x000000,
-    "blanchedalmond": 0xffebcd,
-    "blue": 0x0000ff,
-    "blueviolet": 0x8a2be2,
-    "brown": 0xa52a2a,
-    "burlywood": 0xdeb887,
-    "cadetblue": 0x5f9ea0,
-    "chartreuse": 0x7fff00,
-    "chocolate": 0xd2691e,
-    "coral": 0xff7f50,
-    "cornflowerblue": 0x6495ed,
-    "cornsilk": 0xfff8dc,
-    "crimson": 0xdc143c,
-    "cyan": 0x00ffff,
-    "darkblue": 0x00008b,
-    "darkcyan": 0x008b8b,
-    "darkgoldenrod": 0xb8860b,
-    "darkgray": 0xa9a9a9,
-    "darkgreen": 0x006400,
-    "darkgrey": 0xa9a9a9,
-    "darkkhaki": 0xbdb76b,
-    "darkmagenta": 0x8b008b,
-    "darkolivegreen": 0x556b2f,
-    "darkorange": 0xff8c00,
-    "darkorchid": 0x9932cc,
-    "darkred": 0x8b0000,
-    "darksalmon": 0xe9967a,
-    "darkseagreen": 0x8fbc8f,
-    "darkslateblue": 0x483d8b,
-    "darkslategray": 0x2f4f4f,
-    "darkslategrey": 0x2f4f4f,
-    "darkturquoise": 0x00ced1,
-    "darkviolet": 0x9400d3,
-    "deeppink": 0xff1493,
-    "deepskyblue": 0x00bfff,
-    "dimgray": 0x696969,
-    "dimgrey": 0x696969,
-    "dodgerblue": 0x1e90ff,
-    "firebrick": 0xb22222,
-    "floralwhite": 0xfffaf0,
-    "forestgreen": 0x228b22,
-    "fuchsia": 0xff00ff,
-    "gainsboro": 0xdcdcdc,
-    "ghostwhite": 0xf8f8ff,
-    "gold": 0xffd700,
-    "goldenrod": 0xdaa520,
-    "gray": 0x808080,
-    "green": 0x008000,
-    "greenyellow": 0xadff2f,
-    "grey": 0x808080,
-    "honeydew": 0xf0fff0,
-    "hotpink": 0xff69b4,
-    "indianred": 0xcd5c5c,
-    "indigo": 0x4b0082,
-    "ivory": 0xfffff0,
-    "khaki": 0xf0e68c,
-    "lavender": 0xe6e6fa,
-    "lavenderblush": 0xfff0f5,
-    "lawngreen": 0x7cfc00,
-    "lemonchiffon": 0xfffacd,
-    "lightblue": 0xadd8e6,
-    "lightcoral": 0xf08080,
-    "lightcyan": 0xe0ffff,
-    "lightgoldenrodyellow": 0xfafad2,
-    "lightgray": 0xd3d3d3,
-    "lightgreen": 0x90ee90,
-    "lightgrey": 0xd3d3d3,
-    "lightpink": 0xffb6c1,
-    "lightsalmon": 0xffa07a,
-    "lightseagreen": 0x20b2aa,
-    "lightskyblue": 0x87cefa,
-    "lightslategray": 0x778899,
-    "lightslategrey": 0x778899,
-    "lightsteelblue": 0xb0c4de,
-    "lightyellow": 0xffffe0,
-    "lime": 0x00ff00,
-    "limegreen": 0x32cd32,
-    "linen": 0xfaf0e6,
-    "magenta": 0xff00ff,
-    "maroon": 0x800000,
-    "mediumaquamarine": 0x66cdaa,
-    "mediumblue": 0x0000cd,
-    "mediumorchid": 0xba55d3,
-    "mediumpurple": 0x9370db,
-    "mediumseagreen": 0x3cb371,
-    "mediumslateblue": 0x7b68ee,
-    "mediumspringgreen": 0x00fa9a,
-    "mediumturquoise": 0x48d1cc,
-    "mediumvioletred": 0xc71585,
-    "midnightblue": 0x191970,
-    "mintcream": 0xf5fffa,
-    "mistyrose": 0xffe4e1,
-    "moccasin": 0xffe4b5,
-    "navajowhite": 0xffdead,
-    "navy": 0x000080,
-    "oldlace": 0xfdf5e6,
-    "olive": 0x808000,
-    "olivedrab": 0x6b8e23,
-    "orange": 0xffa500,
-    "orangered": 0xff4500,
-    "orchid": 0xda70d6,
-    "palegoldenrod": 0xeee8aa,
-    "palegreen": 0x98fb98,
-    "paleturquoise": 0xafeeee,
-    "palevioletred": 0xdb7093,
-    "papayawhip": 0xffefd5,
-    "peachpuff": 0xffdab9,
-    "peru": 0xcd853f,
-    "pink": 0xffc0cb,
-    "plum": 0xdda0dd,
-    "powderblue": 0xb0e0e6,
-    "purple": 0x800080,
-    "red": 0xff0000,
-    "rosybrown": 0xbc8f8f,
-    "royalblue": 0x4169e1,
-    "saddlebrown": 0x8b4513,
-    "salmon": 0xfa8072,
-    "sandybrown": 0xf4a460,
-    "seagreen": 0x2e8b57,
-    "seashell": 0xfff5ee,
-    "sienna": 0xa0522d,
-    "silver": 0xc0c0c0,
-    "skyblue": 0x87ceeb,
-    "slateblue": 0x6a5acd,
-    "slategray": 0x708090,
-    "slategrey": 0x708090,
-    "snow": 0xfffafa,
-    "springgreen": 0x00ff7f,
-    "steelblue": 0x4682b4,
-    "tan": 0xd2b48c,
-    "teal": 0x008080,
-    "thistle": 0xd8bfd8,
-    "tomato": 0xff6347,
-    "turquoise": 0x40e0d0,
-    "violet": 0xee82ee,
-    "wheat": 0xf5deb3,
-    "white": 0xffffff,
-    "whitesmoke": 0xf5f5f5,
-    "yellow": 0xffff00,
-    "yellowgreen": 0x9acd32,
-    "rebeccapurple": 0x663399,
-  }
-  var res: Table[string, RGBColor]
-  for it in ColorsRGBMap:
-    res[it[0]] = RGBColor(it[1])
-  res
+func namedRGBColor*(s: string): Option[RGBColor] =
+  let i = ColorsRGBMap.binarySearch(s,
+    proc(x: (string, uint32); y: string): int =
+      return x[0].cmpIgnoreCase(y)
+  )
+  if i != -1:
+    return some(RGBColor(ColorsRGBMap[i][1]))
+  return none(RGBColor)
 
 func r*(c: ARGBColor): uint8 =
   return uint8(uint32(c) shr 16)
@@ -444,82 +440,81 @@ template `$`*(rgbcolor: RGBColor): string =
   "rgb(" & $rgbcolor.r & ", " & $rgbcolor.g & ", " & $rgbcolor.b & ")"
 
 template `$`*(color: CellColor): string =
-  if color.t == ctRGB:
-    $color.argbcolor
-  else:
-    "tcolor" & $color.n
+  case color.t
+  of ctNone: "none"
+  of ctRGB: $color.argbcolor
+  of ctANSI: "ansi" & $color.n
 
-func parseHexColor*(s: string): Option[ARGBColor] =
+func parseHexColor*(s: openArray[char]): Option[ARGBColor] =
   for c in s:
-    if hexValue(c) == -1: return none(ARGBColor)
+    if c notin AsciiHexDigit:
+      return none(ARGBColor)
   case s.len
   of 6:
     let c = 0xFF000000 or
-            (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
-            (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
-            (hexValue(s[4]) shl 4) or hexValue(s[5])
+      (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
+      (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
+      (hexValue(s[4]) shl 4) or hexValue(s[5])
     return some(ARGBColor(c))
   of 8:
     let c = (hexValue(s[6]) shl 28) or (hexValue(s[7]) shl 24) or
-            (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
-            (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
-            (hexValue(s[4]) shl 4) or hexValue(s[5])
+      (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
+      (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
+      (hexValue(s[4]) shl 4) or hexValue(s[5])
     return some(ARGBColor(c))
   of 3:
     let c = 0xFF000000 or
-            (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
-            (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
-            (hexValue(s[2]) shl 4) or hexValue(s[2])
+      (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
+      (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
+      (hexValue(s[2]) shl 4) or hexValue(s[2])
     return some(ARGBColor(c))
   of 4:
     let c = (hexValue(s[3]) shl 28) or (hexValue(s[3]) shl 24) or
-            (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
-            (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
-            (hexValue(s[2]) shl 4) or hexValue(s[2])
+      (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
+      (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
+      (hexValue(s[2]) shl 4) or hexValue(s[2])
     return some(ARGBColor(c))
-  else: discard
+  else:
+    return none(ARGBColor)
 
 func parseARGBColor*(s: string): Option[ARGBColor] =
-  if s in ColorsRGB:
-    return some(ARGBColor(ColorsRGB[s]))
+  if (let x = namedRGBColor(s); x.isSome):
+    return some(x.get.toARGBColor())
   if (s.len == 3 or s.len == 4 or s.len == 6 or s.len == 8) and s[0] == '#':
-    return parseHexColor(s[1..^1])
+    return parseHexColor(s.toOpenArray(1, s.high))
   if s.len > 2 and s[0] == '0' and s[1] == 'x':
-    return parseHexColor(s[2..^1])
+    return parseHexColor(s.toOpenArray(2, s.high))
   return parseHexColor(s)
 
+func myHexValue(c: char): uint32 =
+  let n = hexValue(c)
+  if n != -1:
+    return uint32(n)
+  return 0
+
 func parseLegacyColor0*(s: string): RGBColor =
-  if s in ColorsRGB:
-    return ColorsRGB[s]
-  block hex:
-    if s.len == 4:
-      for c in s:
-        if hexValue(c) == -1:
-          break hex
-      let c = (hexValue(s[0]) * 17 shl 16) or
-        (hexValue(s[1]) * 17 shl 8) or
-        (hexValue(s[2]) * 17)
-      return RGBColor(c)
-  # Seriously, what the hell.
+  assert s != ""
+  if (let x = namedRGBColor(s); x.isSome):
+    return x.get
+  if s.find(AllChars - AsciiHexDigit) == -1:
+    let c = (hexValue(s[0]) * 17 shl 16) or
+      (hexValue(s[1]) * 17 shl 8) or
+      (hexValue(s[2]) * 17)
+    return RGBColor(c)
+  # o_0
   var s2 = if s[0] == '#':
     s.substr(1)
   else:
     s
-  for i in 0 ..< s2.len:
-    if hexValue(s2[i]) == -1:
-      s2[i] = '0'
   while s2.len == 0 or s2.len mod 3 != 0:
     s2 &= '0'
-  var l = s2.len div 3
-  let c1 = s2[0..<min(l,2)]
-  let c2 = s2[l..<min(l*2,l+2)]
-  let c3 = s2[l*2..<min(l*3,l*2+2)]
+  let l = s2.len div 3
   let c = if l == 1:
-    (hexValue(c1[0]) shl 20) or (hexValue(c1[0]) shl 16) or
-    (hexValue(c2[0]) shl 12) or (hexValue(c2[0]) shl 8) or
-    (hexValue(c3[0]) shl 4) or hexValue(c3[0])
+    (myHexValue(s2[0]) shl 20) or (myHexValue(s2[0]) shl 16) or
+    (myHexValue(s2[1]) shl 12) or (myHexValue(s2[1]) shl 8) or
+    (myHexValue(s2[2]) shl 4) or myHexValue(s2[2])
   else:
-    (hexValue(c1[0]) shl 20) or (hexValue(c1[1]) shl 16) or
-    (hexValue(c2[0]) shl 12) or (hexValue(c2[1]) shl 8) or
-    (hexValue(c3[0]) shl 4) or hexValue(c3[1])
+    (myHexValue(s2[0]) shl 20) or (myHexValue(s2[1]) shl 16) or
+    (myHexValue(s2[l]) shl 12) or (myHexValue(s2[l + 1]) shl 8) or
+    (myHexValue(s2[l * 2]) shl 4) or myHexValue(s2[l * 2 + 1])
   return RGBColor(c)

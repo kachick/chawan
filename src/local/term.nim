@@ -1369,10 +1369,12 @@ const ANSIColorMap = [
 ]
 
 proc newTerminal*(outfile: File; config: Config): Terminal =
+  const DefaultBackground = namedRGBColor("black").get
+  const DefaultForeground = namedRGBColor("white").get
   return Terminal(
     outfile: outfile,
     config: config,
-    defaultBackground: ColorsRGB["black"],
-    defaultForeground: ColorsRGB["white"],
+    defaultBackground: DefaultBackground,
+    defaultForeground: DefaultForeground,
     colorMap: ANSIColorMap
   )
