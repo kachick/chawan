@@ -5,7 +5,6 @@ https:			cgi-bin:http
 finger:			cgi-bin:cha-finger
 gemini:			cgi-bin:gmifetch
 about:			cgi-bin:about
-data:			cgi-bin:data
 file:			cgi-bin:file
 ftp:			cgi-bin:ftp
 sftp:			cgi-bin:ftp

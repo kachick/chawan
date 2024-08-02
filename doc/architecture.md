@@ -111,6 +111,9 @@ following steps:
   "view source" operation, and by buffers in the rare situation where their
   initial character encoding guess proves to be incorrect and they need to
   rewind the source.
+* `data:` Decode a data URL. This is done directly in the loader process
+  because very long data URLs wouldn't fit into the environment. (Plus,
+  obviously, it's more efficient this way.)
 
 The loader process distinguishes between clients (i.e the main process or
 buffers) through client keys. In theory this should help against rogue clients,

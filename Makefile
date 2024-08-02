@@ -49,7 +49,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html \
 	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
-	$(OUTDIR_CGI_BIN)/data $(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
+	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
 	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc \
@@ -96,8 +96,6 @@ $(OUTDIR_CGI_BIN)/man: lib/monoucha/monoucha/jsregex.nim \
 $(OUTDIR_CGI_BIN)/http: adapter/protocol/curlwrap.nim \
 		adapter/protocol/curlerrors.nim adapter/protocol/curl.nim \
 		src/utils/sandbox.nim $(twtstr)
-$(OUTDIR_CGI_BIN)/data: src/types/opt.nim src/utils/map.nim \
-		src/loader/connecterror.nim $(twtstr)
 $(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
 $(OUTDIR_CGI_BIN)/file: adapter/protocol/dirlist.nim $(twtstr) \
 		src/utils/strwidth.nim src/loader/connecterror.nim
@@ -164,8 +162,7 @@ manpages = $(manpages1) $(manpages5)
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
 
-protocols = http about data file ftp gopher gmifetch cha-finger man spartan \
-	stbi jebp
+protocols = http about file ftp gopher gmifetch cha-finger man spartan stbi jebp
 converters = gopher2html md2html ansi2html gmi2html
 tools = urldec urlenc
 
@@ -174,7 +171,7 @@ install:
 	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
 	install -m755 "$(OUTDIR_BIN)/cha" "$(DESTDIR)$(PREFIX)/bin"
 	install -m755 "$(OUTDIR_BIN)/mancha" "$(DESTDIR)$(PREFIX)/bin"
-	@# intentionally not quoted
+# intentionally not quoted
 	mkdir -p $(LIBEXECDIR_CHAWAN)/cgi-bin
 	for f in $(protocols); \
 	do install -m755 "$(OUTDIR_CGI_BIN)/$$f" $(LIBEXECDIR_CHAWAN)/cgi-bin; done
@@ -189,10 +186,12 @@ install:
 uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/cha"
 	rm -f "$(DESTDIR)$(PREFIX)/bin/mancha"
-	@# intentionally not quoted
+# intentionally not quoted
 	for f in $(protocols); do rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/$$f; done
-	@# note: png has been removed in favor of stbi.
+# note: png has been removed in favor of stbi.
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
+# note: data has been moved back into the main binary.
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 	rmdir $(LIBEXECDIR_CHAWAN) || true

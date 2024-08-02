@@ -407,6 +407,49 @@ proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: LoaderHandle;
   else:
     handle.sendResult(ERROR_URL_NOT_IN_CACHE)
 
+# Data URL handler.
+# Moved back into loader from CGI, because data URLs can get extremely long
+# and thus no longer fit into the environment.
+proc loadDataSend(ctx: LoaderContext; handle: LoaderHandle; s, ct: string) =
+  handle.sendResult(0)
+  handle.sendStatus(200)
+  handle.sendHeaders(newHeaders({"Content-Type": ct}))
+  let buffer = newLoaderBuffer(size = s.len)
+  buffer.len = s.len
+  copyMem(buffer.page, unsafeAddr s[0], s.len)
+  let output = handle.output
+  case ctx.pushBuffer(output, buffer, 0)
+  of pbrUnregister:
+    if output.registered:
+      ctx.unregister(output)
+    output.oclose()
+  of pbrDone:
+    if output.registered or output.suspended:
+      output.istreamAtEnd = true
+      ctx.outputMap[output.ostream.fd] = output
+    else:
+      output.oclose()
+
+proc loadData(ctx: LoaderContext; handle: LoaderHandle; request: Request) =
+  let url = request.url
+  var ct = url.path.s.until(',')
+  if AllChars - Ascii + Controls - {'\t', ' '} in ct:
+    handle.sendResult(ERROR_INVALID_URL, "invalid data URL")
+    handle.close()
+    return
+  let sd = ct.len + 1 # data start
+  let body = percentDecode(url.path.s, sd)
+  if ct.endsWith(";base64"):
+    let d = atob0(body) # decode from ct end + 1
+    if d.isNone:
+      handle.sendResult(ERROR_INVALID_URL, "invalid data URL")
+      handle.close()
+      return
+    ct.setLen(ct.len - ";base64".len) # remove base64 indicator
+    ctx.loadDataSend(handle, d.get, ct)
+  else:
+    ctx.loadDataSend(handle, body, ct)
+
 proc loadResource(ctx: LoaderContext; client: ClientData;
     config: LoaderClientConfig; request: Request; handle: LoaderHandle) =
   var redo = true
@@ -452,15 +495,17 @@ proc loadResource(ctx: LoaderContext; client: ClientData;
       ctx.loadFromCache(client, handle, request)
       assert handle.istream == nil
       handle.close()
+    elif request.url.scheme == "data":
+      ctx.loadData(handle, request)
     else:
       prevurl = request.url
       case ctx.config.uriMethodMap.findAndRewrite(request.url)
-      of URI_RESULT_SUCCESS:
+      of ummrSuccess:
         inc tries
         redo = true
-      of URI_RESULT_WRONG_URL:
+      of ummrWrongURL:
         handle.rejectHandle(ERROR_INVALID_URI_METHOD_ENTRY)
-      of URI_RESULT_NOT_FOUND:
+      of ummrNotFound:
         handle.rejectHandle(ERROR_UNKNOWN_SCHEME)
   if tries >= MaxRewrites:
     handle.rejectHandle(ERROR_TOO_MANY_REWRITES)

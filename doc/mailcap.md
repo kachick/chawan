@@ -123,12 +123,17 @@ audio/*; mpv -; needsterminal
 video/*; mpv -
 
 # Open docx files using LibreOffice Writer.
-application/vnd.openxmlformats-officedocument.wordprocessingml.document;lowriter %s
+application/vnd.openxmlformats-officedocument.wordprocessingml.document; lowriter %s
 # (Wow that was ugly.)
 
 # Display manpages using pandoc. (Make sure the mime type matches the one
 # set in your mime.types file for extensions .1, .2, .3, ...)
-application/x-troff-man;pandoc - -f man -t html -o -; x-htmloutput
+application/x-troff-man; pandoc - -f man -t html -o -; x-htmloutput
+
+# epub -> HTML using pandoc. (Again, don't forget to adjust mime.types.)
+# We set http_proxy to keep it from downloading whatever through http/s.
+application/epub+zip; http_proxy=localhost:0 pandoc - -f epub \
+--embed-resources --standalone; x-htmloutput
 
 # Following entry will be ignored, as text/html is supported natively by Chawan.
 text/html; cha -dT text/html -I %{charset}; copiousoutput

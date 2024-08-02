@@ -93,9 +93,9 @@ func cap*(buffer: LoaderBuffer): int {.inline.} =
 template isEmpty*(output: OutputHandle): bool =
   output.currentBuffer == nil and not output.suspended
 
-proc newLoaderBuffer*(): LoaderBuffer =
+proc newLoaderBuffer*(size = LoaderBufferPageSize): LoaderBuffer =
   return LoaderBuffer(
-    page: cast[ptr UncheckedArray[uint8]](alloc(LoaderBufferPageSize)),
+    page: cast[ptr UncheckedArray[uint8]](alloc(size)),
     len: 0
   )
 

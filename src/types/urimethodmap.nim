@@ -32,7 +32,7 @@ func rewriteURL(pattern, surl: string): string =
     result &= '%'
 
 type URIMethodMapResult* = enum
-  URI_RESULT_NOT_FOUND, URI_RESULT_SUCCESS, URI_RESULT_WRONG_URL
+  ummrNotFound, ummrSuccess, ummrWrongURL
 
 proc findAndRewrite*(this: URIMethodMap; url: var URL): URIMethodMapResult =
   let protocol = url.protocol
@@ -40,10 +40,10 @@ proc findAndRewrite*(this: URIMethodMap; url: var URL): URIMethodMapResult =
     let surl = this.map[protocol].rewriteURL($url)
     let x = newURL(surl)
     if x.isNone:
-      return URI_RESULT_WRONG_URL
+      return ummrWrongURL
     url = x.get
-    return URI_RESULT_SUCCESS
-  return URI_RESULT_NOT_FOUND
+    return ummrSuccess
+  return ummrNotFound
 
 proc insert(this: var URIMethodMap; k, v: string) =
   if not this.map.hasKeyOrPut(k, v) and k.startsWith("img-codec+"):

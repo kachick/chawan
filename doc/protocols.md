@@ -18,8 +18,8 @@ this document.
 * [Gemini](#gemini)
 * [Finger](#finger)
 * [Spartan](#spartan)
-* [Local schemes: file:, about:, man:, data:](#local-schemes-file-about-man-data)
-* [Internal schemes: cgi-bin:, stream:, cache:](#internal-schemes-cgi-bin-stream-cache)
+* [Local schemes: file:, about:, man:](#local-schemes-file-about-man-data)
+* [Internal schemes: cgi-bin:, stream:, cache:, data:](#internal-schemes-cgi-bin-stream-cache-data)
 * [Custom protocols](#custom-protocols)
 
 <!-- MANON -->
@@ -110,7 +110,7 @@ protocol-specific line type. This is sort of supported through a sed filter
 for gemtext outputs in the CGI script (in other words, no modification to
 gmi2html was done to support this).
 
-## Local schemes: file:, about:, man:, data:
+## Local schemes: file:, about:, man:
 
 While these are not necessarily *protocols*, they are implemented similarly
 to the protocols listed above (and thus can also be replaced, if the user
@@ -129,14 +129,12 @@ references into links. A wrapper command `mancha` also exists; this has an
 interface similar to `man`. Note: this used to be based on w3mman2html.cgi, but
 it has been rewritten in Nim (and therefore no longer depends on Perl either).
 
-`data:` decodes a data URL as defined in RFC 2397.
+## Internal schemes: cgi-bin:, stream:, cache:, data:
 
-## Internal schemes: cgi-bin:, stream:, cache:
-
-Three internal protocols exist: `cgi-bin:`, `stream:` and `cache:`. These are
-the basic building blocks for the implementation of every protocol mentioned
-above; for this reason, these can *not* be replaced, and are implemented in
-the main browser binary.
+Four internal protocols exist: `cgi-bin:`, `stream:`, `cache:` and `data:`.
+These are the basic building blocks for the implementation of every protocol
+mentioned above; for this reason, these can *not* be replaced, and are
+implemented in the main browser binary.
 
 `cgi-bin:` executes a local CGI script. This scheme is used for the actual
 implementation of the non-internal protocols mentioned above. Local CGI scripts
@@ -159,6 +157,10 @@ rewinding or re-interpreting streams already downloaded. Note that this is not a
 real cache; files are deterministically loaded from the "cache" upon certain
 actions, and from the network upon others, but neither is used as a fallback
 to the other.
+
+`data:` decodes a data URL as defined in RFC 2397. This used to be a CGI module,
+but has been moved back into the loader process because these URLs can get
+so long that they no longer fit into the environment.
 
 ## Custom protocols
 
