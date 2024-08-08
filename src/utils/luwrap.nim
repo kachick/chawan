@@ -94,12 +94,11 @@ type
 
   LUContext* = ref LUContextObj
 
-{.warning[Deprecated]: off.}:
-  proc `=destroy`*(ctx: var LUContextObj) =
-    for lur, cr in ctx.crs.mpairs:
-      if lur in ctx.inited:
-        cr_free(addr cr)
-    ctx.inited = {}
+proc `=destroy`*(ctx: var LUContextObj) =
+  for lur, cr in ctx.crs.mpairs:
+    if lur in ctx.inited:
+      cr_free(addr cr)
+  ctx.inited = {}
 
 proc initGeneralCategory(ctx: LUContext; lur: LURangeType) =
   if lur notin ctx.inited:

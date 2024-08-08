@@ -4,7 +4,6 @@ import std/posix
 
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/tojs
 import types/opt
 import utils/twtstr
@@ -283,8 +282,8 @@ proc unquote(p: string): ChaPathResult[string] =
 proc toJS*(ctx: JSContext; p: ChaPath): JSValue =
   toJS(ctx, $p)
 
-proc fromJSChaPath*(ctx: JSContext; val: JSValue): JSResult[ChaPath] =
-  return cast[JSResult[ChaPath]](fromJS[string](ctx, val))
+proc fromJS*(ctx: JSContext; val: JSValue; res: var ChaPath): Opt[void] =
+  return ctx.fromJS(val, string(res))
 
 proc unquote*(p: ChaPath): ChaPathResult[string] =
   let s = ?unquote(string(p))

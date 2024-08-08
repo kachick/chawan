@@ -1,7 +1,6 @@
 import std/tables
 
 import monoucha/quickjs
-import monoucha/jserror
 import monoucha/javascript
 import monoucha/jsutils
 import monoucha/jsopaque
@@ -201,24 +200,27 @@ proc promiseThenCallback(ctx: JSContext; this_val: JSValue; argc: cint;
     JS_SetOpaque(fun, nil)
   return JS_UNDEFINED
 
-proc fromJSEmptyPromise*(ctx: JSContext; val: JSValue): JSResult[EmptyPromise] =
+proc fromJS*(ctx: JSContext; val: JSValue; res: var EmptyPromise): Opt[void] =
   if not JS_IsObject(val):
-    return errTypeError("Value is not an object")
-  var p = EmptyPromise()
-  GC_ref(p)
+    JS_ThrowTypeError(ctx, "value is not an object")
+    return err()
+  res = EmptyPromise()
+  GC_ref(res)
   let tmp = JS_NewObject(ctx)
-  JS_SetOpaque(tmp, cast[pointer](p))
+  JS_SetOpaque(tmp, cast[pointer](res))
   let fun = JS_NewCFunctionData(ctx, promiseThenCallback, 0, 0, 1,
     tmp.toJSValueArray())
   JS_FreeValue(ctx, tmp)
-  let res = JS_Invoke(ctx, val, ctx.getOpaque().strRefs[jstThen], 1,
+  let val = JS_Invoke(ctx, val, ctx.getOpaque().strRefs[jstThen], 1,
     fun.toJSValueArray())
   JS_FreeValue(ctx, fun)
-  if JS_IsException(res):
-    JS_FreeValue(ctx, res)
+  if JS_IsException(val):
+    JS_FreeValue(ctx, val)
+    GC_unref(res)
+    res = nil
     return err()
-  JS_FreeValue(ctx, res)
-  return ok(p)
+  JS_FreeValue(ctx, val)
+  return ok()
 
 proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue =
   if promise == nil:

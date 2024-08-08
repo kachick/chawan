@@ -52,7 +52,7 @@ proc newWebFile*(name: string; fd: FileHandle): WebFile =
 
 type
   BlobPropertyBag = object of JSDict
-    `type`: string
+    `type` {.jsdefault.}: string
     #TODO endings
 
   FilePropertyBag = object of BlobPropertyBag

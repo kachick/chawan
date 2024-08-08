@@ -1060,11 +1060,12 @@ proc newURL*(url: URL): URL =
   result = URL()
   url.cloneInto(result)
 
-proc setHref(url: URL; s: string): Err[JSError] {.jsfset: "href".} =
+proc setHref(ctx: JSContext; url: URL; s: string) {.jsfset: "href".} =
   let purl = basicParseURL(s)
-  if purl.isNone:
-    return errTypeError(s & " is not a valid URL")
-  purl.get.cloneInto(url)
+  if purl.isSome:
+    purl.get.cloneInto(url)
+  else:
+    JS_ThrowTypeError(ctx, "%s is not a valid URL", s)
 
 func isIP*(url: URL): bool =
   return url.host.t in {htIpv4, htIpv6}

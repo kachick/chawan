@@ -13,7 +13,7 @@ type
     encoding: Charset
     ignoreBOM {.jsget.}: bool
     errorMode: DecoderErrorMode
-    doNotFlush: bool
+    stream: bool
     bomSeen: bool
     tdctx: TextDecoderContext
 
@@ -21,10 +21,10 @@ jsDestructor(JSTextDecoder)
 jsDestructor(JSTextEncoder)
 
 type TextDecoderOptions = object of JSDict
-  fatal: bool
-  ignoreBOM: bool
+  fatal {.jsdefault.}: bool
+  ignoreBOM {.jsdefault.}: bool
 
-func newJSTextDecoder(label = "utf-8", options = TextDecoderOptions()):
+func newJSTextDecoder(label = "utf-8"; options = TextDecoderOptions()):
     JSResult[JSTextDecoder] {.jsctor.} =
   let encoding = getCharset(label)
   if encoding in {CHARSET_UNKNOWN, CHARSET_REPLACEMENT}:
@@ -52,17 +52,16 @@ proc decode0(this: JSTextDecoder; ctx: JSContext; input: JSArrayBufferView;
   return ok(JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len)))
 
 type TextDecodeOptions = object of JSDict
-  stream: bool
+  stream {.jsdefault.}: bool
 
 #TODO AllowSharedBufferSource
 proc decode(ctx: JSContext; this: JSTextDecoder;
     input = none(JSArrayBufferView); options = TextDecodeOptions()):
     JSResult[JSValue] {.jsfunc.} =
-  if not this.doNotFlush:
+  if not this.stream:
     this.tdctx = initTextDecoderContext(this.encoding, this.errorMode)
     this.bomSeen = false
-  if this.doNotFlush != options.stream:
-    this.doNotFlush = options.stream
+  this.stream = options.stream
   if input.isSome:
     return this.decode0(ctx, input.get, options.stream)
   return ok(JS_NewString(ctx, ""))

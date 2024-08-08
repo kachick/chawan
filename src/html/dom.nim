@@ -908,13 +908,15 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 # preparation for Worker support.)
 func getGlobal*(ctx: JSContext): Window =
   let global = JS_GetGlobalObject(ctx)
-  let window = fromJS[Window](ctx, global).get
+  var window: Window
+  assert ctx.fromJS(global, window).isSome
   JS_FreeValue(ctx, global)
   return window
 
 func getWindow*(ctx: JSContext): Window =
   let global = JS_GetGlobalObject(ctx)
-  let window = fromJS[Window](ctx, global).get
+  var window: Window
+  assert ctx.fromJS(global, window).isSome
   JS_FreeValue(ctx, global)
   return window
 
@@ -1481,12 +1483,15 @@ func namedItem(collection: HTMLCollection; s: string): Element {.jsfunc.} =
       return it
   return nil
 
-func getter[T: uint32|string](collection: HTMLCollection; u: T):
-    Option[Element] {.jsgetprop.} =
-  when T is uint32:
-    return option(collection.item(u))
-  else:
-    return option(collection.namedItem(u))
+func getter(ctx: JSContext; collection: HTMLCollection; atom: JSAtom):
+    Opt[Option[Element]] {.jsgetprop.} =
+  var u: uint32
+  if ctx.fromJS(atom, u).isSome:
+    return ok(option(collection.item(u)))
+  var s: string
+  if ctx.fromJS(atom, s).isSome:
+    return ok(option(collection.namedItem(s)))
+  return err()
 
 func names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
@@ -2622,7 +2627,7 @@ func newText*(document: Document; data: string): Text =
   )
 
 func newText(ctx: JSContext; data = ""): Text {.jsctor.} =
-  let window = ctx.getGlobalOpaque(Window).get
+  let window = ctx.getGlobal()
   return window.document.newText(data)
 
 func newCDATASection(document: Document; data: string): CDATASection =
@@ -2645,7 +2650,7 @@ func newDocumentFragment(document: Document): DocumentFragment =
   return DocumentFragment(internalDocument: document, index: -1)
 
 func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
-  let window = ctx.getGlobalOpaque(Window).get
+  let window = ctx.getGlobal()
   return window.document.newDocumentFragment()
 
 func newComment(document: Document; data: string): Comment =
@@ -2656,7 +2661,7 @@ func newComment(document: Document; data: string): Comment =
   )
 
 func newComment(ctx: JSContext; data: string = ""): Comment {.jsctor.} =
-  let window = ctx.getGlobalOpaque(Window).get
+  let window = ctx.getGlobal()
   return window.document.newComment(data)
 
 #TODO custom elements
@@ -4288,7 +4293,7 @@ const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
 proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
     {.cdecl.} =
   let entry = ReflectTable[uint16(magic)]
-  let op = getOpaque0(this)
+  let op = this.getOpaque()
   if unlikely(not ctx.isInstanceOf(this, "Element") or op == nil):
     return JS_ThrowTypeError(ctx,
       "Reflected getter called on a value that is not an element")
@@ -4320,40 +4325,41 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
     return JS_ThrowTypeError(ctx,
       "Reflected getter called on a value that is not an element")
   let entry = ReflectTable[uint16(magic)]
-  let op = getOpaque0(this)
+  let op = this.getOpaque()
   assert op != nil
   let element = cast[Element](op)
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
   case entry.t
   of rtStr:
-    let x = fromJS[string](ctx, val)
-    if x.isSome:
-      element.attr(entry.attrname, x.get)
+    var x: string
+    if ctx.fromJS(val, x).isSome:
+      element.attr(entry.attrname, x)
   of rtBool:
-    let x = fromJS[bool](ctx, val)
-    if x.isSome:
-      if x.get:
+    var x: bool
+    if ctx.fromJS(val, x).isSome:
+      if x:
         element.attr(entry.attrname, "")
       else:
         let i = element.findAttr(entry.attrname)
         if i != -1:
           element.delAttr(i)
   of rtLong:
-    let x = fromJS[int32](ctx, val)
-    if x.isSome:
-      element.attrl(entry.attrname, x.get)
+    var x: int32
+    if ctx.fromJS(val, x).isSome:
+      element.attrl(entry.attrname, x)
   of rtUlong:
-    let x = fromJS[uint32](ctx, val)
-    if x.isSome:
-      element.attrul(entry.attrname, x.get)
+    var x: uint32
+    if ctx.fromJS(val, x).isSome:
+      element.attrul(entry.attrname, x)
   of rtUlongGz:
-    let x = fromJS[uint32](ctx, val)
-    if x.isSome:
-      element.attrulgz(entry.attrname, x.get)
+    var x: uint32
+    if ctx.fromJS(val, x).isSome:
+      element.attrulgz(entry.attrname, x)
   of rtFunction:
     if JS_IsFunction(ctx, val):
-      let target = fromJS[EventTarget](ctx, this).get
+      var target: EventTarget
+      assert ctx.fromJS(this, target).isSome
       ctx.definePropertyC(this, $entry.attrname, JS_DupValue(ctx, val))
       #TODO I haven't checked but this might also be wrong
       let ctype = ctx.getGlobal().toAtom(entry.ctype)

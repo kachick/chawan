@@ -161,44 +161,36 @@ type
       str: string
 
   RequestInit* = object of JSDict
-    #TODO aliasing in dicts
-    `method`: HttpMethod # default: GET
-    headers: Option[HeadersInit]
-    body: Option[BodyInit]
-    referrer: Option[string]
-    referrerPolicy: Option[ReferrerPolicy]
-    credentials: Option[CredentialsMode]
-    mode: Option[RequestMode]
-    window: Option[JSValue]
+    `method`* {.jsdefault.}: Option[HttpMethod] #TODO aliasing in dicts
+    headers* {.jsdefault.}: Option[HeadersInit]
+    body* {.jsdefault.}: Option[BodyInit]
+    referrer* {.jsdefault.}: Option[string]
+    referrerPolicy* {.jsdefault.}: Option[ReferrerPolicy]
+    credentials* {.jsdefault.}: Option[CredentialsMode]
+    mode* {.jsdefault.}: Option[RequestMode]
+    window* {.jsdefault: JS_UNDEFINED.}: JSValue
 
-proc fromJSBodyInit(ctx: JSContext; val: JSValue): JSResult[BodyInit] =
-  if JS_IsUndefined(val) or JS_IsNull(val):
-    return err(nil)
-  block formData:
-    let x = fromJS[FormData](ctx, val)
-    if x.isSome:
-      return ok(BodyInit(t: bitFormData, formData: x.get))
-  block blob:
-    let x = fromJS[Blob](ctx, val)
-    if x.isSome:
-      return ok(BodyInit(t: bitBlob, blob: x.get))
-  block searchParams:
-    let x = fromJS[URLSearchParams](ctx, val)
-    if x.isSome:
-      return ok(BodyInit(t: bitUrlSearchParams, searchParams: x.get))
-  block str:
-    let x = fromJS[string](ctx, val)
-    if x.isSome:
-      return ok(BodyInit(t: bitString, str: x.get))
-  return errTypeError("Invalid body init type")
+proc fromJS(ctx: JSContext; val: JSValue; res: var BodyInit): Opt[void] =
+  if not JS_IsUndefined(val) and not JS_IsNull(val):
+    res = BodyInit(t: bitFormData)
+    if ctx.fromJS(val, res.formData).isSome:
+      return ok()
+    res = BodyInit(t: bitBlob)
+    if ctx.fromJS(val, res.blob).isSome:
+      return ok()
+    res = BodyInit(t: bitUrlSearchParams)
+    if ctx.fromJS(val, res.searchParams).isSome:
+      return ok()
+    res = BodyInit(t: bitString)
+    if ctx.fromJS(val, res.str).isSome:
+      return ok()
+  JS_ThrowTypeError(ctx, "invalid body init type")
+  return err()
 
 var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.noSideEffect, nimcall.}
 
-proc newRequest*(ctx: JSContext; resource: JSValue; init = none(RequestInit)):
-    JSResult[JSRequest] {.jsctor.} =
-  defer:
-    if init.isSome and init.get.window.isSome:
-      JS_FreeValue(ctx, init.get.window.get)
+proc newRequest*(ctx: JSContext; resource: JSValue;
+    init = RequestInit(window: JS_UNDEFINED)): JSResult[JSRequest] {.jsctor.} =
   let headers = newHeaders(hgRequest)
   var fallbackMode = opt(rmCors)
   var window = RequestWindow(t: rwtClient)
@@ -207,51 +199,50 @@ proc newRequest*(ctx: JSContext; resource: JSValue; init = none(RequestInit)):
   var httpMethod = hmGet
   var referrer: URL = nil
   var url: URL = nil
-  if JS_IsString(resource):
-    let s = ?fromJS[string](ctx, resource)
-    url = ?parseJSURL(s, option(ctx.getAPIBaseURLImpl()))
-  else:
-    let resource = ?fromJS[JSRequest](ctx, resource)
-    url = resource.url
-    httpMethod = resource.request.httpMethod
-    headers.table = resource.headers.table
-    referrer = resource.request.referrer
-    credentials = resource.credentialsMode
-    body = resource.request.body
+  if (var res: JSRequest; ctx.fromJS(resource, res).isSome):
+    url = res.url
+    httpMethod = res.request.httpMethod
+    headers.table = res.headers.table
+    referrer = res.request.referrer
+    credentials = res.credentialsMode
+    body = res.request.body
     fallbackMode = opt(RequestMode)
-    window = resource.window
+    window = res.window
+  else:
+    var s: string
+    ?ctx.fromJS(resource, s)
+    url = ?parseJSURL(s, option(ctx.getAPIBaseURLImpl()))
   if url.username != "" or url.password != "":
     return errTypeError("Input URL contains a username or password")
   var mode = fallbackMode.get(rmNoCors)
   let destination = rdNone
   #TODO origin, window
-  if init.isSome: #TODO spec wants us to check if it's "not empty"...
-    let init = init.get
-    if init.window.isSome:
-      if not JS_IsNull(init.window.get):
-        return errTypeError("Expected window to be null")
-      window = RequestWindow(t: rwtNoWindow)
-    if mode == rmNavigate:
-      mode = rmSameOrigin
-    #TODO flags?
-    #TODO referrer
-    httpMethod = init.`method`
-    if init.body.isSome:
-      let ibody = init.body.get
-      case ibody.t
-      of bitFormData:
-        body = RequestBody(t: rbtMultipart, multipart: ibody.formData)
-      of bitString:
-        body = RequestBody(t: rbtString, s: ibody.str)
-      else: discard #TODO
-      if httpMethod in {hmGet, hmHead}:
-        return errTypeError("HEAD or GET Request cannot have a body.")
-    if init.headers.isSome:
-      ?headers.fill(init.headers.get)
-    if init.credentials.isSome:
-      credentials = init.credentials.get
-    if init.mode.isSome:
-      mode = init.mode.get
+  if not JS_IsUndefined(init.window):
+    if not JS_IsNull(init.window):
+      return errTypeError("Expected window to be null")
+    window = RequestWindow(t: rwtNoWindow)
+  if mode == rmNavigate:
+    mode = rmSameOrigin
+  #TODO flags?
+  #TODO referrer
+  if init.`method`.isSome:
+    httpMethod = init.`method`.get
+  if init.body.isSome:
+    let ibody = init.body.get
+    case ibody.t
+    of bitFormData:
+      body = RequestBody(t: rbtMultipart, multipart: ibody.formData)
+    of bitString:
+      body = RequestBody(t: rbtString, s: ibody.str)
+    else: discard #TODO
+    if httpMethod in {hmGet, hmHead}:
+      return errTypeError("HEAD or GET Request cannot have a body.")
+  if init.headers.isSome:
+    ?headers.fill(init.headers.get)
+  if init.credentials.isSome:
+    credentials = init.credentials.get
+  if init.mode.isSome:
+    mode = init.mode.get
   if mode == rmNoCors:
     headers.guard = hgRequestNoCors
   return ok(JSRequest(

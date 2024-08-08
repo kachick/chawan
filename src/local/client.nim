@@ -148,9 +148,9 @@ proc command0(client: Client; src: string; filename = "<command>";
     client.jsctx.writeException(client.console.err)
   else:
     if not silence:
-      let str = fromJS[string](client.jsctx, ret)
-      if str.isSome:
-        client.console.log(str.get)
+      var res: string
+      if client.jsctx.fromJS(ret, res).isSome:
+        client.console.log(res)
   JS_FreeValue(client.jsctx, ret)
 
 proc command(client: Client; src: string) =
@@ -207,9 +207,9 @@ proc evalAction(client: Client; action: string; arg0: int32): EmptyPromise =
   if JS_IsException(ret):
     client.jsctx.writeException(client.console.err)
   elif JS_IsObject(ret):
-    let maybep = fromJSEmptyPromise(ctx, ret)
-    if maybep.isSome:
-      p = maybep.get
+    var maybep: EmptyPromise
+    if ctx.fromJS(ret, maybep).isSome:
+      p = maybep
   JS_FreeValue(ctx, ret)
   return p
 

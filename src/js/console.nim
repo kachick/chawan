@@ -1,7 +1,6 @@
 import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import types/opt
 
 type Console* = ref object
@@ -33,11 +32,13 @@ proc log*(console: Console; ss: varargs[string]) =
 proc error*(console: Console; ss: varargs[string]) =
   console.log(ss)
 
-proc log*(ctx: JSContext; console: Console; ss: varargs[JSValue]):
-    JSResult[void] {.jsfunc.} =
+proc log*(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
+    {.jsfunc.} =
   var buf = ""
   for i, val in ss:
-    buf &= ?fromJS[string](ctx, val)
+    var res: string
+    ?ctx.fromJS(val, res)
+    buf &= res
     if i != ss.high:
       buf &= ' '
   buf &= '\n'
@@ -49,20 +50,20 @@ proc clear(console: Console) {.jsfunc.} =
     console.clearFun()
 
 # For now, these are the same as log().
-proc debug(ctx: JSContext; console: Console; ss: varargs[JSValue]):
-    JSResult[void] {.jsfunc.} =
+proc debug(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
+    {.jsfunc.} =
   return log(ctx, console, ss)
 
-proc error(ctx: JSContext; console: Console; ss: varargs[JSValue]):
-    JSResult[void] {.jsfunc.} =
+proc error(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
+    {.jsfunc.} =
   return log(ctx, console, ss)
 
-proc info(ctx: JSContext; console: Console; ss: varargs[JSValue]):
-    JSResult[void] {.jsfunc.} =
+proc info(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
+    {.jsfunc.} =
   return log(ctx, console, ss)
 
-proc warn(ctx: JSContext; console: Console; ss: varargs[JSValue]):
-    JSResult[void] {.jsfunc.} =
+proc warn(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
+    {.jsfunc.} =
   return log(ctx, console, ss)
 
 proc show(console: Console) {.jsfunc.} =
@@ -80,8 +81,4 @@ proc addConsoleModule*(ctx: JSContext) =
 
 proc writeException*(ctx: JSContext; s: DynStream) =
   s.write(ctx.getExceptionMsg())
-  s.sflush()
-
-proc writeException*(ctx: JSContext; s: DynStream; err: JSError) =
-  s.write(ctx.getExceptionMsg(err))
   s.sflush()

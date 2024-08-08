@@ -75,9 +75,9 @@ proc runEntry(state: var TimeoutState; entry: TimeoutEntry; name: string) =
       state.jsctx.writeException(state.err)
     JS_FreeValue(state.jsctx, ret)
   else:
-    let s = fromJS[string](state.jsctx, entry.val)
-    if s.isSome:
-      state.evalJSFree(s.get, name)
+    var s: string
+    if state.jsctx.fromJS(entry.val, s).isSome:
+      state.evalJSFree(s, name)
 
 proc runTimeoutFd*(state: var TimeoutState; fd: int): bool =
   if fd notin state.timeoutFds:

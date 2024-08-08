@@ -1426,10 +1426,11 @@ proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
     return err() # error
   if JS_IsUndefined(ret):
     return err() # no need to navigate
-  let s = ?fromJS[string](ctx, ret)
+  var res: string
+  ?ctx.fromJS(ret, res)
   JS_FreeValue(ctx, ret)
   # Navigate to result.
-  return ok(s)
+  return ok(res)
 
 proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
   var repaint = buffer.restoreFocus()

@@ -2,6 +2,7 @@ import std/options
 import std/strutils
 import std/tables
 
+import chagashi/decoder
 import html/catom
 import html/dom
 import html/event
@@ -169,7 +170,8 @@ proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
 
 # Forward declaration hack
 var windowFetch*: proc(window: Window; input: JSValue;
-  init = none(RequestInit)): JSResult[FetchPromise] {.nimcall.} = nil
+  init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
+  {.nimcall.} = nil
 
 proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
   this.readyState = xhrsDone
@@ -211,15 +213,16 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): DOMResult[void]
     body = JS_NULL
   let request = newRequest(this.requestURL, this.requestMethod, this.headers)
   if not JS_IsNull(body):
-    let document = fromJS[Document](ctx, body)
-    if document.isSome:
-      #TODO replace surrogates
-      let document = document.get
-      request.body = RequestBody(t: rbtString, s: document.serializeFragment())
+    var document: Document = nil
+    if ctx.fromJS(body, document).isSome:
+      request.body = RequestBody(
+        t: rbtString,
+        s: document.serializeFragment().toValidUTF8() # replace surrogates
+      )
     #TODO else...
     if "Content-Type" in this.headers:
       request.headers["Content-Type"].setContentTypeAttr("charset", "UTF-8")
-    elif document.isSome:
+    elif document != nil:
       request.headers["Content-Type"] = "text/html;charset=UTF-8"
   let jsRequest = JSRequest(
     #TODO unsafe request flag, client, cors credentials mode,
@@ -326,7 +329,8 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
     {.cdecl.} =
   if JS_IsFunction(ctx, val):
     let atom = ReflectMap[magic]
-    let target = fromJS[EventTarget](ctx, this).get
+    var target: EventTarget
+    assert ctx.fromJS(this, target).isSome
     ctx.definePropertyC(this, "on" & $atom, JS_DupValue(ctx, val))
     #TODO I haven't checked but this might also be wrong
     doAssert ctx.addEventListener(target, ctx.toAtom(atom), val).isSome

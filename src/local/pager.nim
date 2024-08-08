@@ -1152,13 +1152,13 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       let fun = sc.rewrite_url.get
       var arg0 = ctx.toJS(url)
       let ret = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
-      let nu = fromJS[URL](ctx, ret)
-      if nu.isSome:
-        if nu.get != nil:
-          url = nu.get
-      elif JS_IsException(ret):
+      var nu: URL
+      if ctx.fromJS(ret, nu).isSome:
+        if nu != nil:
+          url = nu
+      else:
         #TODO should writeException the message to console
-        pager.alert("Error rewriting URL: " & ctx.getExceptionMsg(nu.error))
+        pager.alert("Error rewriting URL: " & ctx.getExceptionMsg())
       JS_FreeValue(ctx, arg0)
       JS_FreeValue(ctx, ret)
     if sc.cookie.isSome:
@@ -1254,13 +1254,13 @@ proc omniRewrite(pager: Pager; s: string): string =
       let ctx = pager.jsctx
       var arg0 = ctx.toJS(s)
       let jsRet = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
-      let ret = fromJS[string](ctx, jsRet)
-      JS_FreeValue(ctx, jsRet)
-      JS_FreeValue(ctx, arg0)
-      if ret.isSome:
-        return ret.get
+      defer: JS_FreeValue(ctx, jsRet)
+      defer: JS_FreeValue(ctx, arg0)
+      var res: string
+      if ctx.fromJS(jsRet, res).isSome:
+        return res
       pager.alert("Error in substitution of " & $rule.match & " for " & s &
-        ": " & ctx.getExceptionMsg(ret.error))
+        ": " & ctx.getExceptionMsg())
   return s
 
 # When the user has passed a partial URL as an argument, they might've meant
@@ -1480,18 +1480,22 @@ proc load(pager: Pager; s = "") {.jsfunc.} =
 
 # Go to specific URL (for JS)
 type GotoURLDict = object of JSDict
-  contentType: Option[string]
-  replace: Container
+  contentType {.jsdefault.}: Option[string]
+  replace {.jsdefault.}: Container
 
 proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
     {.jsfunc: "gotoURL".} =
-  let request = if (let x = fromJS[JSRequest](pager.jsctx, v); x.isSome):
-    x.get.request
-  elif (let x = fromJS[URL](pager.jsctx, v); x.isSome):
-    newRequest(x.get)
+  var request: Request = nil
+  var jsRequest: JSRequest = nil
+  if pager.jsctx.fromJS(v, jsRequest).isSome:
+    request = jsRequest.request
   else:
-    let s = ?fromJS[string](pager.jsctx, v)
-    newRequest(?newURL(s))
+    var url: URL = nil
+    if pager.jsctx.fromJS(v, url).isNone:
+      var s: string
+      ?pager.jsctx.fromJS(v, s)
+      url = ?newURL(s)
+    request = newRequest(url)
   discard pager.gotoURL(request, contentType = t.contentType,
     replace = t.replace)
   return ok()
@@ -1508,27 +1512,27 @@ proc setEnvVars(pager: Pager) {.jsfunc.} =
   except OSError:
     pager.alert("Warning: failed to set some environment variables")
 
-#TODO use default values instead...
 type ExternDict = object of JSDict
-  setenv: Option[bool]
-  suspend: Option[bool]
-  wait: bool
+  setenv {.jsdefault: true.}: bool
+  suspend {.jsdefault: true.}: bool
+  wait {.jsdefault: false.}: bool
 
 #TODO we should have versions with retval as int?
-proc extern(pager: Pager; cmd: string; t = ExternDict()): bool {.jsfunc.} =
-  if t.setenv.get(true):
+proc extern(pager: Pager; cmd: string;
+    t = ExternDict(setenv: true, suspend: true)): bool {.jsfunc.} =
+  if t.setenv:
     pager.setEnvVars()
-  if t.suspend.get(true):
+  if t.suspend:
     return runProcess(pager.term, cmd, t.wait)
   else:
     return runProcess(cmd)
 
-proc externCapture(pager: Pager; cmd: string): Opt[string] {.jsfunc.} =
+proc externCapture(pager: Pager; cmd: string): Option[string] {.jsfunc.} =
   pager.setEnvVars()
   var s: string
   if not runProcessCapture(cmd, s):
-    return err()
-  return ok(s)
+    return none(string)
+  return some(s)
 
 proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
   pager.setEnvVars()

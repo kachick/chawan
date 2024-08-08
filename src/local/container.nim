@@ -1583,7 +1583,7 @@ proc cursorPrevMatch*(container: Container; regex: Regex; wrap, refresh: bool;
 
 type
   SelectionOptions = object of JSDict
-    selectionType: SelectionType
+    selectionType {.jsdefault.}: SelectionType
 
 proc cursorToggleSelection(container: Container; n = 1;
     opts = SelectionOptions()): Highlight {.jsfunc.} =

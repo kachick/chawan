@@ -95,7 +95,8 @@ either make them `ref`, or use manual RVO (return bool, set var param).
 #### "result" variable
 
 The implicit "result" variable is great until you need to change the
-procedure signature or manually inline a proc. Avoid it when possible.
+procedure signature or manually inline a proc. Avoid it when possible,
+except in short accumulator-style procedures.
 
 #### Implicit initialization
 
@@ -133,7 +134,7 @@ Similarly, `varargs[string]` works, but is less efficient than
 `varargs[JSValue]`. (The former is first converted into a seq, while the
 latter is just a slice.)
 
-Use `?fromJS[T](ctx, val)` on JSValues manually instead.
+Use `?ctx.fromJS(ctx, val, res)` on JSValues manually instead.
 
 ### Fixing cyclic imports
 

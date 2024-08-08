@@ -2,7 +2,6 @@ import std/strutils
 
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/quickjs
 import monoucha/tojs
 import types/color
@@ -10,12 +9,12 @@ import types/opt
 import utils/charcategory
 import utils/twtstr
 
-func parseLegacyColor*(s: string): JSResult[RGBColor] =
+func parseLegacyColor*(s: string): Result[RGBColor, cstring] =
   if s == "":
-    return errTypeError("Color value must not be the empty string")
+    return err(cstring"color value must not be the empty string")
   let s = s.strip(chars = AsciiWhitespace).toLowerAscii()
   if s == "transparent":
-    return errTypeError("Color must not be transparent")
+    return err(cstring"color must not be transparent")
   return ok(parseLegacyColor0(s))
 
 proc toJS*(ctx: JSContext; rgb: RGBColor): JSValue =
@@ -25,8 +24,15 @@ proc toJS*(ctx: JSContext; rgb: RGBColor): JSValue =
   res.pushHex(rgb.b)
   return toJS(ctx, res)
 
-proc fromJSRGBColor*(ctx: JSContext; val: JSValue): JSResult[RGBColor] =
-  return parseLegacyColor(?fromJS[string](ctx, val))
+proc fromJS*(ctx: JSContext; val: JSValue; res: var RGBColor): Err[void] =
+  var s: string
+  ?ctx.fromJS(val, s)
+  let x = parseLegacyColor(s)
+  if x.isNone:
+    JS_ThrowTypeError(ctx, x.error)
+    return err()
+  res = x.get
+  return ok()
 
 proc toJS*(ctx: JSContext; rgba: ARGBColor): JSValue =
   var res = "#"
@@ -36,12 +42,16 @@ proc toJS*(ctx: JSContext; rgba: ARGBColor): JSValue =
   res.pushHex(rgba.a)
   return toJS(ctx, res)
 
-proc fromJSARGBColor*(ctx: JSContext; val: JSValue): JSResult[ARGBColor] =
+proc fromJS*(ctx: JSContext; val: JSValue; res: var ARGBColor): Err[void] =
   if JS_IsNumber(val):
     # as hex
-    return ok(ARGBColor(?fromJS[uint32](ctx, val)))
+    ?ctx.fromJS(val, uint32(res))
+    return ok()
   # parse
-  let x = parseARGBColor(?fromJS[string](ctx, val))
-  if x.isSome:
-    return ok(x.get)
-  return errTypeError("Unrecognized color")
+  var s: string
+  ?ctx.fromJS(val, s)
+  if (let x = parseARGBColor(s); x.isSome):
+    res = x.get
+    return ok()
+  JS_ThrowTypeError(ctx, "unrecognized color")
+  return err()

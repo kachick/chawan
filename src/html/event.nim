@@ -68,17 +68,17 @@ jsDestructor(EventTarget)
 # Forward declaration hack
 var isDefaultPassive*: proc(target: EventTarget): bool {.nimcall,
   noSideEffect.} = nil
-var getParent*: proc(ctx: JSContext; target: EventTarget, event: Event):
+var getParent*: proc(ctx: JSContext; target: EventTarget; event: Event):
   EventTarget {.nimcall.}
 
 type
   EventInit* = object of JSDict
-    bubbles: bool
-    cancelable: bool
-    composed: bool
+    bubbles* {.jsdefault.}: bool
+    cancelable* {.jsdefault.}: bool
+    composed* {.jsdefault.}: bool
 
   CustomEventInit = object of EventInit
-    detail: JSValue
+    detail* {.jsdefault: JS_NULL.}: JSValue
 
 # Event
 proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
@@ -161,11 +161,11 @@ func composed(this: Event): bool {.jsfget.} =
   return efComposed in this.flags
 
 # CustomEvent
-proc newCustomEvent(ctype: CAtom; eventInitDict = CustomEventInit()):
-    JSResult[CustomEvent] {.jsctor.} =
+proc newCustomEvent(ctx: JSContext; ctype: CAtom;
+    eventInitDict = CustomEventInit()): JSResult[CustomEvent] {.jsctor.} =
   let event = CustomEvent()
   event.innerEventCreationSteps(eventInitDict)
-  event.detail = eventInitDict.detail
+  event.detail = JS_DupValue(ctx, eventInitDict.detail)
   event.ctype = ctype
   return ok(event)
 
@@ -240,12 +240,13 @@ proc removeAnEventListener(eventTarget: EventTarget; ctx: JSContext; i: int) =
   eventTarget.eventListeners.delete(i)
 
 proc flatten(ctx: JSContext; options: JSValue): bool =
+  result = false
   if JS_IsBool(options):
-    return fromJS[bool](ctx, options).get(false)
+    discard ctx.fromJS(options, result)
   if JS_IsObject(options):
     let x = JS_GetPropertyStr(ctx, options, "capture")
-    return fromJS[bool](ctx, x).get(false)
-  return false
+    discard ctx.fromJS(x, result)
+    JS_FreeValue(ctx, x)
 
 proc flattenMore(ctx: JSContext; options: JSValue):
     tuple[
@@ -254,20 +255,18 @@ proc flattenMore(ctx: JSContext; options: JSValue):
       passive: Option[bool]
       #TODO signals
     ] =
-  if JS_IsUndefined(options):
-    return
   let capture = flatten(ctx, options)
   var once = false
-  var passive: Option[bool]
+  var passive = none(bool)
   if JS_IsObject(options):
     let jsOnce = JS_GetPropertyStr(ctx, options, "once")
-    once = fromJS[bool](ctx, jsOnce).get(false)
+    discard ctx.fromJS(jsOnce, once)
     JS_FreeValue(ctx, jsOnce)
     let jsPassive = JS_GetPropertyStr(ctx, options, "passive")
-    let x = fromJS[bool](ctx, jsPassive)
+    var x: bool
+    if ctx.fromJS(jsPassive, x).isSome:
+      passive = some(x)
     JS_FreeValue(ctx, jsPassive)
-    if x.isSome:
-      passive = some(x.get)
   return (capture, once, passive)
 
 proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;

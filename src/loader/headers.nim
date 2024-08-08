@@ -34,21 +34,23 @@ jsDestructor(Headers)
 
 const HTTPWhitespace = {'\n', '\r', '\t', ' '}
 
-proc fromJSHeadersInit(ctx: JSContext; val: JSValue): JSResult[HeadersInit] =
+proc fromJS(ctx: JSContext; val: JSValue; res: var HeadersInit): Err[void] =
   if JS_IsUndefined(val) or JS_IsNull(val):
-    return err(nil)
-  if (let x = fromJS[Headers](ctx, val); x.isSome):
-    var s: seq[(string, string)] = @[]
-    for k, v in x.get.table:
+    return err()
+  var headers: Headers
+  if ctx.fromJS(val, headers).isSome:
+    res = HeadersInit(t: hitSequence, s: @[])
+    for k, v in headers.table:
       for vv in v:
-        s.add((k, vv))
-    return ok(HeadersInit(t: hitSequence, s: s))
+        res.s.add((k, vv))
+    return ok()
   if ctx.isSequence(val):
-    let x = fromJS[seq[(string, string)]](ctx, val)
-    if x.isSome:
-      return ok(HeadersInit(t: hitSequence, s: x.get))
-  let x = ?fromJS[Table[string, string]](ctx, val)
-  return ok(HeadersInit(t: hitTable, tab: x))
+    res = HeadersInit(t: hitSequence)
+    if ctx.fromJS(val, res.s).isSome:
+      return ok()
+  res = HeadersInit(t: hitTable)
+  ?ctx.fromJS(val, res.tab)
+  return ok()
 
 const TokenChars = {
   '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'

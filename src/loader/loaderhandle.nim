@@ -56,11 +56,10 @@ type
     when defined(debug):
       url*: URL
 
-{.warning[Deprecated]:off.}:
-  proc `=destroy`(buffer: var LoaderBufferObj) =
-    if buffer.page != nil:
-      dealloc(buffer.page)
-      buffer.page = nil
+proc `=destroy`(buffer: var LoaderBufferObj) =
+  if buffer.page != nil:
+    dealloc(buffer.page)
+    buffer.page = nil
 
 # for debugging
 when defined(debug):

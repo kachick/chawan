@@ -21,11 +21,10 @@ type BufferedWriter* = object
   bufLen: int
   sendAux: seq[FileHandle]
 
-{.warning[Deprecated]: off.}:
-  proc `=destroy`(writer: var BufferedWriter) =
-    if writer.buffer != nil:
-      dealloc(writer.buffer)
-      writer.buffer = nil
+proc `=destroy`(writer: var BufferedWriter) =
+  if writer.buffer != nil:
+    dealloc(writer.buffer)
+    writer.buffer = nil
 
 proc swrite*(writer: var BufferedWriter; n: SomeNumber)
 proc swrite*[T](writer: var BufferedWriter; s: set[T])

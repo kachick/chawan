@@ -166,8 +166,9 @@ proc addNavigatorModule*(ctx: JSContext) =
   ctx.registerType(History)
   ctx.registerType(Storage)
 
-proc fetch(window: Window; input: JSValue; init = none(RequestInit)):
-    JSResult[FetchPromise] {.jsfunc.} =
+proc fetch(window: Window; input: JSValue;
+    init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
+    {.jsfunc.} =
   let input = ?newRequest(window.jsctx, input, init)
   #TODO cors requests?
   if not window.settings.origin.isSameOrigin(input.request.url.origin):

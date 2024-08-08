@@ -1,5 +1,3 @@
-import std/tables
-
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/quickjs

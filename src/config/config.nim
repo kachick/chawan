@@ -13,7 +13,6 @@ import js/jscolor
 import loader/headers
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jspropenumlist
 import monoucha/jsregex
 import monoucha/jstypes
@@ -195,9 +194,8 @@ jsDestructor(Config)
 converter toStr*(p: ChaPathResolved): string {.inline.} =
   return string(p)
 
-proc fromJSChaPathResolved(ctx: JSContext; val: JSValue):
-    JSResult[ChaPathResolved] =
-  return cast[JSResult[ChaPathResolved]](fromJS[string](ctx, val))
+proc fromJS(ctx: JSContext; val: JSValue; res: var ChaPathResolved): Opt[void] =
+  return ctx.fromJS(val, string(res))
 
 proc `[]=`(a: var ActionMap; b, c: string) =
   a.t[b] = c
