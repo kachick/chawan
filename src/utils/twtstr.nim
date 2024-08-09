@@ -551,7 +551,7 @@ func strictParseEnum*[T: enum](s: string): Option[T] =
     return x[0].cmp(y)
   )
   if i != -1:
-    return some(cast[T](IdentMap[i].n))
+    return some(T(IdentMap[i].n))
   return none(T)
 
 func parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): Opt[int] =
@@ -564,7 +564,7 @@ func parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): Opt[int] =
 
 func parseEnumNoCase*[T: enum](s: string): Opt[T] =
   const IdentMap = getIdentMap(T)
-  return ok(cast[T](?IdentMap.parseEnumNoCase0(s)))
+  return ok(T(?IdentMap.parseEnumNoCase0(s)))
 
 proc getContentTypeAttr*(contentType, attrname: string): string =
   var i = contentType.find(';')
