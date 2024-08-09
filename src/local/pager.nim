@@ -596,6 +596,8 @@ proc draw*(pager: Pager) =
       container.redraw = false
       pager.display.redraw = true
       imageRedraw = true
+      if container.select != nil:
+        container.select.redraw = true
     if (let select = container.select; select != nil and select.redraw):
       select.drawSelect(pager.display.grid)
       select.redraw = false

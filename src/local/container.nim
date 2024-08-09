@@ -1849,7 +1849,7 @@ proc displaySelect(container: Container; selectResult: SelectResult) =
     opt.mnormalize()
     container.select.maxw = max(container.select.maxw, opt.width())
   container.select.windowChange(container.height)
-  container.queueDraw()
+  container.select.queueDraw()
 
 proc onclick(container: Container; res: ClickResult; save: bool) =
   if res.repaint:
