@@ -170,6 +170,7 @@ elif SandboxMode == stLibSeccomp:
       "timerfd_create", # used by Nim selectors
       "timerfd_gettime", # not actually used by Nim but may be in the future
       "timerfd_settime", # used by Nim selectors
+      "ugetrlimit", # glibc uses it after fork it seems
       "write" # for writing to sockets
     ]
     for it in allowList:
