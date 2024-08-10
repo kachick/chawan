@@ -1024,6 +1024,20 @@ company or their product in any way.)</td>
 </tr>
 
 <tr>
+<td>`cmd.pager.nextBuffer`, `cmd.pager.prevBuffer`,
+`cmd.pager.prevSiblingBuffer`, `cmd.pager.nextSiblingBufer`,
+`cmd.pager.parentBuffer`</td>
+<td>Traverse the buffer tree.<br>
+`nextBuffer` and `prevBuffer` are the most intuitive, traversing the tree as if
+it were a linked list.<br>
+`prevSiblingBuffer` and `nextSiblingBuffer` cycle through the buffers opened
+from the same buffer.<br>
+Finally, `parentBuffer` always returns to the buffer the current buffer was
+opened from, even if e.g. the user returns and opens another page "in between".
+</td>
+</tr>
+
+<tr>
 <td>`cmd.pager.dupeBuffer`</td>
 <td>Duplicate the current buffer by loading its source to a new buffer.</td>
 </tr>

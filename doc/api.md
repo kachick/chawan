@@ -120,6 +120,16 @@ Use this for loading automatically retrieved (i.e. non-user-provided) URLs.</td>
 </tr>
 
 <tr>
+<td>`nextBuffer()`, `prevBuffer()`, `nextSiblingBufer()`, `prevSiblingBuffer()`,
+`parentBuffer()`</td>
+<td>Traverse the buffer tree.<br>
+`nextBuffer()`, `prevBuffer()` do a depth-first traversal;
+``nextSiblingBufer()`, `prevSiblingBuffer()` cycle through siblings, and
+`parentBuffer()` returns to the parent.
+</td>
+</tr>
+
+<tr>
 <td>`dupeBuffer()`</td>
 <td>Duplicate the current buffer by loading its source to a new buffer.</td>
 </tr>
