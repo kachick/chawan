@@ -1154,9 +1154,12 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       let fun = sc.rewrite_url.get
       var arg0 = ctx.toJS(url)
       let ret = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
-      var nu: URL
-      if ctx.fromJS(ret, nu).isSome:
-        if nu != nil:
+      if not JS_IsException(ret):
+        # Warning: we must only print exceptions if the *call* returned one.
+        # Conversion may simply error out because the function didn't return a
+        # new URL, and that's fine.
+        var nu: URL
+        if ctx.fromJS(ret, nu).isSome and nu != nil:
           url = nu
       else:
         #TODO should writeException the message to console
