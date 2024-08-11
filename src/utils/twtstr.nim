@@ -158,6 +158,9 @@ func untilLower*(s: string; c: set[char]; starti = 0): string =
 func until*(s: string; c: char; starti = 0): string =
   return s.until({c}, starti)
 
+func untilLower*(s: string; c: char; starti = 0): string =
+  return s.untilLower({c}, starti)
+
 func after*(s: string; c: set[char]): string =
   let i = s.find(c)
   if i != -1:

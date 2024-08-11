@@ -3035,12 +3035,15 @@ proc loadResource(window: Window; image: HTMLImageElement) =
           return newResolvedPromise()
         let response = res.get
         let contentType = response.getContentType("image/x-unknown")
-        if contentType.until('/') != "image":
+        if not contentType.startsWith("image/"):
           return newResolvedPromise()
         let cacheId = window.loader.addCacheFile(response.outputId,
           window.loader.clientPid)
+        let url = newURL("img-codec+" & contentType.after('/') & ":decode")
+        if url.isNone:
+          return newResolvedPromise()
         let request = newRequest(
-          newURL("img-codec+" & contentType.after('/') & ":decode").get,
+          url.get,
           httpMethod = hmPost,
           headers = newHeaders({"Cha-Image-Info-Only": "1"}),
           body = RequestBody(t: rbtOutput, outputId: response.outputId),

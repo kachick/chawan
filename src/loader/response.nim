@@ -97,9 +97,8 @@ func getCharset*(this: Response; fallback: Charset): Charset =
 
 func getContentType*(this: Response; fallback = "application/octet-stream"):
     string =
-  if "Content-Type" in this.headers.table:
-    let header = this.headers.table["Content-Type"][0].toLowerAscii()
-    return header.until(';').strip()
+  this.headers.table.withValue("Content-Type", p):
+    return p[][0].untilLower(';').strip()
   # also use DefaultGuess for container, so that local mime.types cannot
   # override buffer mime.types
   return DefaultGuess.guessContentType(this.url.pathname, fallback)
