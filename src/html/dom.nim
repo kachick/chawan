@@ -1302,40 +1302,41 @@ proc update(tokenList: DOMTokenList) =
     return
   tokenList.element.attr(tokenList.localName, $tokenList)
 
-func validateDOMToken(tok: string): Err[DOMException] =
-  if tok == "":
+func validateDOMToken(ctx: JSContext; document: Document; tok: JSValue):
+    DOMResult[CAtom] =
+  var res: string
+  ?ctx.fromJS(tok, res)
+  if res == "":
     return errDOMException("Got an empty string", "SyntaxError")
-  if AsciiWhitespace in tok:
+  if AsciiWhitespace in res:
     return errDOMException("Got a string containing whitespace",
       "InvalidCharacterError")
-  return ok()
+  return ok(document.toAtom(res))
 
-proc add(tokenList: DOMTokenList; tokens: varargs[string]): Err[DOMException]
-    {.jsfunc.} =
+proc add(ctx: JSContext; tokenList: DOMTokenList; tokens: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
+  var toks: seq[CAtom] = @[]
   for tok in tokens:
-    ?validateDOMToken(tok)
-  for tok in tokens:
-    let tok = tokenList.element.document.toAtom(tok)
-    tokenList.toks.add(tok)
+    toks.add(?ctx.validateDOMToken(tokenList.element.document, tok))
+  tokenList.toks.add(toks)
   tokenList.update()
   return ok()
 
-proc remove(tokenList: DOMTokenList; tokens: varargs[string]):
+proc remove(ctx: JSContext; tokenList: DOMTokenList; tokens: varargs[JSValue]):
     Err[DOMException] {.jsfunc.} =
+  var toks: seq[CAtom] = @[]
   for tok in tokens:
-    ?validateDOMToken(tok)
-  for tok in tokens:
-    let tok = tokenList.element.document.toAtom(tok)
+    toks.add(?ctx.validateDOMToken(tokenList.element.document, tok))
+  for tok in toks:
     let i = tokenList.toks.find(tok)
     if i != -1:
       tokenList.toks.delete(i)
   tokenList.update()
   return ok()
 
-proc toggle(tokenList: DOMTokenList; token: string; force = none(bool)):
-    DOMResult[bool] {.jsfunc.} =
-  ?validateDOMToken(token)
-  let token = tokenList.element.document.toAtom(token)
+proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: JSValue;
+    force = none(bool)): DOMResult[bool] {.jsfunc.} =
+  let token = ?ctx.validateDOMToken(tokenList.element.document, token)
   let i = tokenList.toks.find(token)
   if i != -1:
     if not force.get(false):
@@ -1349,15 +1350,13 @@ proc toggle(tokenList: DOMTokenList; token: string; force = none(bool)):
     return ok(true)
   return ok(false)
 
-proc replace(tokenList: DOMTokenList; token, newToken: string):
+proc replace(ctx: JSContext; tokenList: DOMTokenList; token, newToken: JSValue):
     DOMResult[bool] {.jsfunc.} =
-  ?validateDOMToken(token)
-  ?validateDOMToken(newToken)
-  let token = tokenList.element.document.toAtom(token)
+  let token = ?ctx.validateDOMToken(tokenList.element.document, token)
+  let newToken = ?ctx.validateDOMToken(tokenList.element.document, newToken)
   let i = tokenList.toks.find(token)
   if i == -1:
     return ok(false)
-  let newToken = tokenList.element.document.toAtom(newToken)
   tokenList.toks[i] = newToken
   tokenList.update()
   return ok(true)
@@ -1520,6 +1519,7 @@ func item(collection: HTMLAllCollection; i: uint32): Element {.jsfunc.} =
   let i = int(i)
   if i < collection.len:
     return Element(collection.snapshot[i])
+  return nil
 
 func getter(collection: HTMLAllCollection; i: uint32): Option[Element]
     {.jsgetprop.} =
@@ -1780,40 +1780,43 @@ func getAttributeNS(element: Element; namespace, localName: string):
     return some(element.attrs[i].value)
   return none(string)
 
-proc getNamedItem(map: NamedNodeMap; qualifiedName: string): Option[Attr]
+proc getNamedItem(map: NamedNodeMap; qualifiedName: string): Attr
     {.jsfunc.} =
   let i = map.element.findAttr(qualifiedName)
   if i != -1:
-    return some(map.getAttr(i))
-  return none(Attr)
+    return map.getAttr(i)
+  return nil
 
 proc getNamedItemNS(map: NamedNodeMap; namespace, localName: string):
-    Option[Attr] {.jsfunc.} =
+    Attr {.jsfunc.} =
   let i = map.element.findAttrNS(namespace, localName)
   if i != -1:
-    return some(map.getAttr(i))
-  return none(Attr)
+    return map.getAttr(i)
+  return nil
 
 func length(map: NamedNodeMap): uint32 {.jsfget.} =
   return uint32(map.element.attrs.len)
 
-proc item(map: NamedNodeMap; i: uint32): Option[Attr] {.jsfunc.} =
+proc item(map: NamedNodeMap; i: uint32): Attr {.jsfunc.} =
   if int(i) < map.element.attrs.len:
-    return some(map.getAttr(int(i)))
-  return none(Attr)
+    return map.getAttr(int(i))
+  return nil
 
-func hasprop[T: uint32|string](map: NamedNodeMap; i: T): bool {.jshasprop.} =
-  when T is uint32:
-    return int(i) < map.element.attrs.len
-  else:
-    return map.getNamedItem(i).isSome
-
-func getter[T: uint32|string](map: NamedNodeMap; i: T): Option[Attr]
+func getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): Opt[Attr]
     {.jsgetprop.} =
-  when T is uint32:
-    return map.item(i)
-  else:
-    return map.getNamedItem(i)
+  var u: uint32
+  if ctx.fromJS(atom, u).isSome:
+    return ok(map.item(u))
+  var s: string
+  ?ctx.fromJS(atom, s)
+  return ok(map.getNamedItem(s))
+
+func hasprop(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): cint
+    {.jshasprop.} =
+  var x = ctx.getter(map, atom)
+  if x.isNone:
+    return -1
+  return cint(x.get != nil)
 
 func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
     {.jspropnames.} =
@@ -1912,8 +1915,8 @@ template toOA*(writeBuffer: DocumentWriteBuffer): openArray[char] =
 proc CDB_parseDocumentWriteChunk(wrapper: pointer) {.importc.}
 
 # https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
-proc write(document: Document; text: varargs[string]): Err[DOMException]
-    {.jsfunc.} =
+proc write(ctx: JSContext; document: Document; args: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
   if document.isxml:
     return errDOMException("document.write not supported in XML documents",
       "InvalidStateError")
@@ -1927,8 +1930,12 @@ proc write(document: Document; text: varargs[string]): Err[DOMException]
   if document.writeBuffers.len == 0:
     return ok() #TODO (probably covered by open above)
   let buffer = document.writeBuffers[^1]
-  for s in text:
-    buffer.data &= s
+  var text = ""
+  for arg in args:
+    var s: string
+    ?ctx.fromJS(arg, s)
+    text &= s
+  buffer.data &= text
   if document.parserBlockingScript == nil:
     CDB_parseDocumentWriteChunk(document.parser)
   return ok()
@@ -2917,17 +2924,20 @@ func IDLAttributeToCSSProperty(s: string; dashPrefix = false): string =
     else:
       result &= c
 
-proc getter[T: uint32|string](this: CSSStyleDeclaration; u: T):
-    Option[string] {.jsgetprop.} =
-  when T is uint32:
-    return this.item(u)
-  else:
-    if u.isSupportedProperty():
-      return some(this.getPropertyValue(u))
-    let u = IDLAttributeToCSSProperty(u)
-    if u.isSupportedProperty():
-      return some(this.getPropertyValue(u))
-    return none(string)
+proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
+    JSValue {.jsgetprop.} =
+  var u: uint32
+  if ctx.fromJS(atom, u).isSome:
+    return ctx.toJS(this.item(u))
+  var s: string
+  if ctx.fromJS(atom, s).isNone:
+    return JS_EXCEPTION
+  if s.isSupportedProperty():
+    return ctx.toJS(this.getPropertyValue(s))
+  s = IDLAttributeToCSSProperty(s)
+  if s.isSupportedProperty():
+    return ctx.toJS(this.getPropertyValue(s))
+  return JS_NULL #TODO eh?
 
 proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
     Err[void] =
@@ -2938,23 +2948,28 @@ proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
   this.decls[i].value = cvals
   return ok()
 
-proc setter[T: uint32|string](this: CSSStyleDeclaration; u: T;
-    value: string) {.jssetprop.} =
+proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
+    value: string): Opt[void] {.jssetprop.} =
   let cvals = parseComponentValues(value)
-  when u is uint32:
+  var u: uint32
+  if ctx.fromJS(atom, u).isSome:
     if this.setValue(int(u), cvals).isNone:
-      return
+      return ok()
   else:
-    if (let i = this.find(u); i != -1):
+    var s: string
+    ?ctx.fromJS(atom, s)
+    if (let i = this.find(s); i != -1):
       if this.setValue(i, cvals).isNone:
-        return
+        # not err! this does not throw.
+        return ok()
     else:
       var dummy: seq[CSSComputedEntry]
-      let val0 = parseComputedValues(dummy, u, cvals)
+      let val0 = parseComputedValues(dummy, s, cvals)
       if val0.isNone:
-        return
-      this.decls.add(CSSDeclaration(name: u, value: cvals))
+        return ok()
+      this.decls.add(CSSDeclaration(name: s, value: cvals))
   this.element.attr(satStyle, $this.decls)
+  ok()
 
 proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.cachedStyle == nil:

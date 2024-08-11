@@ -312,12 +312,17 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.markPos0()
   pager.setLineEdit(lmISearchB)
 
-proc gotoLine[T: string|int](pager: Pager; s: T = "") {.jsfunc.} =
-  when s is string:
-    if s == "":
-      pager.setLineEdit(lmGotoLine)
-      return
-  pager.container.gotoLine(s)
+proc gotoLine(ctx: JSContext; pager: Pager; val = JS_UNDEFINED): Opt[void]
+    {.jsfunc.} =
+  var n: int
+  if ctx.fromJS(val, n).isSome:
+    pager.container.gotoLine(n)
+  elif JS_IsUndefined(val):
+    pager.setLineEdit(lmGotoLine)
+  else:
+    var s: string
+    ?ctx.fromJS(val, s)
+    pager.container.gotoLine(s)
 
 proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:

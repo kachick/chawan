@@ -821,7 +821,7 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     factory: newCAtomFactory(),
     loader: loader
   )
-  jsrt.setInterruptHandler(interruptHandler, cast[pointer](client))
+  JS_SetInterruptHandler(jsrt, interruptHandler, cast[pointer](client))
   let global = JS_GetGlobalObject(jsctx)
   jsctx.setGlobal(client)
   jsctx.definePropertyE(global, "cmd", config.cmd.jsObj)

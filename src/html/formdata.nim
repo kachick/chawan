@@ -5,6 +5,7 @@ import html/enums
 import io/dynstream
 import js/base64
 import js/domexception
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/tojs
 import types/blob
@@ -26,7 +27,10 @@ proc generateBoundary(): string =
 proc newFormData0*(): FormData =
   return FormData(boundary: generateBoundary())
 
-proc newFormData*(form: HTMLFormElement = nil; submitter: HTMLElement = nil):
+proc newFormData0*(entries: seq[FormDataEntry]): FormData =
+  return FormData(boundary: generateBoundary(), entries: entries)
+
+proc newFormData(form: HTMLFormElement = nil; submitter: HTMLElement = nil):
     DOMResult[FormData] {.jsctor.} =
   let this = newFormData0()
   if form != nil:
@@ -43,27 +47,28 @@ proc newFormData*(form: HTMLFormElement = nil; submitter: HTMLElement = nil):
 
 #TODO filename should not be allowed for string entries
 # in other words, this should be an overloaded function, not just an or type
-proc append*[T: string|Blob](this: FormData; name: string; value: T;
-    filename = none(string)) {.jsfunc.} =
-  when T is Blob:
+proc append*(ctx: JSContext; this: FormData; name: string; val: JSValue;
+    filename = none(string)): Opt[void] {.jsfunc.} =
+  var blob: Blob
+  if ctx.fromJS(val, blob).isSome:
     let filename = if filename.isSome:
       filename.get
-    elif value of WebFile:
-      WebFile(value).name
+    elif blob of WebFile:
+      WebFile(blob).name
     else:
       "blob"
     this.entries.add(FormDataEntry(
       name: name,
       isstr: false,
-      value: value,
+      value: blob,
       filename: filename
     ))
-  else: # string
-    this.entries.add(FormDataEntry(
-      name: name,
-      isstr: true,
-      svalue: value
-    ))
+    ok()
+  else:
+    var s: string
+    ?ctx.fromJS(val, s)
+    this.entries.add(FormDataEntry(name: name, isstr: true, svalue: s))
+    ok()
 
 proc delete(this: FormData; name: string) {.jsfunc.} =
   for i in countdown(this.entries.high, 0):

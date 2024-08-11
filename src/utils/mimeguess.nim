@@ -19,8 +19,7 @@ func guessContentType*(mimeTypes: MimeTypes; path: string;
       break
   if n > 0:
     let ext = path.substr(n + 1)
-    if ext in mimeTypes:
-      return mimeTypes[ext]
+    return mimeTypes.getOrDefault(ext, fallback)
   return fallback
 
 const JavaScriptTypes = [

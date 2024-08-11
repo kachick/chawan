@@ -1194,14 +1194,9 @@ proc cancel*(buffer: Buffer) {.proxy.} =
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc serializeMultipart(entries: seq[FormDataEntry]): FormData =
-  let formData = newFormData0()
-  for entry in entries:
-    let name = makeCRLF(entry.name)
-    if entry.isstr:
-      let value = makeCRLF(entry.svalue)
-      formData.append(name, value)
-    else:
-      formData.append(name, entry.value, some(entry.filename))
+  let formData = newFormData0(entries)
+  for entry in formData.entries.mitems:
+    entry.name = makeCRLF(entry.name)
   return formData
 
 proc serializePlainTextFormData(kvs: seq[(string, string)]): string =

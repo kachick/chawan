@@ -6,9 +6,11 @@ import std/tables
 import std/unicode
 
 import lib/punycode
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/libunicode
+import monoucha/quickjs
 import types/blob
 import types/opt
 import utils/luwrap
@@ -1103,27 +1105,27 @@ proc serializeFormURLEncoded*(kvs: seq[(string, string)]; spaceAsPlus = true):
     result &= '='
     result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
 
-proc newURLSearchParams[
-      T: seq[(string, string)]|
-      Table[string, string]|
-      string
-    ](init: T = ""): URLSearchParams {.jsctor.} =
-  result = URLSearchParams()
-  when T is seq[(string, string)]:
-    result.list = init
-  elif T is Table[string, string]:
-    for k, v in init:
-      result.list.add((k, v))
-  elif T is string:
-    let init = if init.len > 0 and init[0] == '?':
-      init.substr(1)
+proc newURLSearchParams(ctx: JSContext; init: varargs[JSValue]):
+    Opt[URLSearchParams] {.jsctor.} =
+  let params = URLSearchParams()
+  if init.len > 0:
+    let val = init[0]
+    if ctx.fromJS(val, params.list).isSome:
+      discard
+    elif (var t: Table[string, string]; ctx.fromJS(val, t).isSome):
+      for k, v in t:
+        params.list.add((k, v))
     else:
-      init
-    result.list = parseFromURLEncoded(init)
+      var res: string
+      ?ctx.fromJS(val, res)
+      if res.len > 0 and res[0] == '?':
+        res.delete(0..0)
+      params.list = parseFromURLEncoded(res)
+  return ok(params)
 
 proc searchParams(url: URL): URLSearchParams {.jsfget.} =
   if url.searchParamsInternal == nil:
-    let params = newURLSearchParams(url.query.get(""))
+    let params = URLSearchParams(list: parseFromURLEncoded(url.query.get("")))
     params.url = url
     url.searchParamsInternal = params
   return url.searchParamsInternal

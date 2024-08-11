@@ -6,8 +6,8 @@ import utils/twtstr
 # extension -> type
 type MimeTypes* = distinct Table[string, string]
 
-template `[]`*(mimeTypes: MimeTypes; k: string): string =
-  Table[string, string](mimeTypes)[k]
+template getOrDefault*(mimeTypes: MimeTypes; k, fallback: string): string =
+  Table[string, string](mimeTypes).getOrDefault(k, fallback)
 
 template contains*(mimeTypes: MimeTypes; k: string): bool =
   k in Table[string, string](mimeTypes)
