@@ -1,11 +1,12 @@
-# Percent-encode input received on stdin with a specified percent-encoding set.
+# Percent-encode or decode input received on stdin with a specified
+# percent-encoding set.
 #TODO a streaming implementation of this could be useful
 
 import std/os
 
 import utils/twtstr
 
-proc usage() =
+proc usage() {.noreturn.} =
   stderr.write("""
 Usage: urlenc [set]
 The input to be decoded is read from stdin.
@@ -18,24 +19,25 @@ The input to be decoded is read from stdin.
     component
     application-x-www-form-urlencoded
 """)
+  quit(1)
 
 proc main() =
-  if paramCount() != 1:
+  let isdec = paramStr(0).afterLast('/') == "urldec"
+  if not isdec and paramCount() != 1:
     usage()
-    quit(1)
   let s = stdin.readAll()
-  let enc = case paramStr(1)
-  of "control": percentEncode(s, ControlPercentEncodeSet)
-  of "fragment": percentEncode(s, FragmentPercentEncodeSet)
-  of "query": percentEncode(s, QueryPercentEncodeSet)
-  of "path": percentEncode(s, PathPercentEncodeSet)
-  of "userinfo": percentEncode(s, UserInfoPercentEncodeSet)
-  of "component": percentEncode(s, ComponentPercentEncodeSet)
-  of "application-x-www-form-urlencoded":
-    percentEncode(s, ApplicationXWWWFormUrlEncodedSet)
+  if isdec:
+    stdout.write(s.percentDecode())
   else:
-    usage()
-    quit(1)
-  stdout.write(enc)
+    let set = case paramStr(1)
+    of "control": ControlPercentEncodeSet
+    of "fragment": FragmentPercentEncodeSet
+    of "query": QueryPercentEncodeSet
+    of "path": PathPercentEncodeSet
+    of "userinfo": UserInfoPercentEncodeSet
+    of "component": ComponentPercentEncodeSet
+    of "application-x-www-form-urlencoded": ApplicationXWWWFormUrlEncodedSet
+    else: usage()
+    stdout.write(s.percentEncode(set))
 
 main()

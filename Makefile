@@ -54,6 +54,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc \
 	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
+	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
 $(OUTDIR_BIN)/cha: src/*.nim src/**/*.nim src/**/*.c res/* res/**/* \
 		res/map/idna_gen.nim nim.cfg
@@ -61,7 +62,6 @@ $(OUTDIR_BIN)/cha: src/*.nim src/**/*.nim src/**/*.c res/* res/**/* \
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
                 -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) $(FLAGS) \
 		-o:"$(OUTDIR_BIN)/cha" src/main.nim
-	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
 $(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim
 	@mkdir -p "$(OUTDIR_BIN)"
@@ -109,7 +109,6 @@ $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h src/utils/sandbox.nim
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h \
 		src/utils/sandbox.nim
-$(OUTDIR_LIBEXEC)/urldec: $(twtstr)
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/gophertypes.nim $(twtstr)
 $(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim $(twtstr)
@@ -138,6 +137,9 @@ $(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_LIBEXEC)/,,$@)" \
 		-o:"$@" $<
 
+$(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
+	(cd "$(OUTDIR_LIBEXEC)"; ln -sf urlenc urldec)
+
 $(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 	@mkdir -p "$(OBJDIR)/man"
 	./md2manpreproc $< > $@
@@ -164,7 +166,7 @@ manpage: $(manpages:%=doc/%)
 
 protocols = http about file ftp gopher gmifetch cha-finger man spartan stbi jebp
 converters = gopher2html md2html ansi2html gmi2html
-tools = urldec urlenc
+tools = urlenc
 
 .PHONY: install
 install:
@@ -173,10 +175,14 @@ install:
 	install -m755 "$(OUTDIR_BIN)/mancha" "$(DESTDIR)$(PREFIX)/bin"
 # intentionally not quoted
 	mkdir -p $(LIBEXECDIR_CHAWAN)/cgi-bin
-	for f in $(protocols); \
-	do install -m755 "$(OUTDIR_CGI_BIN)/$$f" $(LIBEXECDIR_CHAWAN)/cgi-bin; done
+	for f in $(protocols); do \
+	install -m755 "$(OUTDIR_CGI_BIN)/$$f" $(LIBEXECDIR_CHAWAN)/cgi-bin; \
+	done
 	for f in $(converters) $(tools); \
-	do install -m755 "$(OUTDIR_LIBEXEC)/$$f" $(LIBEXECDIR_CHAWAN); done
+	do install -m755 "$(OUTDIR_LIBEXEC)/$$f" $(LIBEXECDIR_CHAWAN); \
+	done
+# urldec is just a symlink to urlenc
+	(cd $(LIBEXECDIR_CHAWAN); ln -sf urlenc urldec)
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"
 	for f in $(manpages1); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX1)"; done
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"
