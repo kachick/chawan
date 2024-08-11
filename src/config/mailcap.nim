@@ -15,17 +15,17 @@ type
     buf: char
     line: int
 
-  MailcapFlags* = enum
-    NEEDSTERMINAL = "needsterminal"
-    COPIOUSOUTPUT = "copiousoutput"
-    HTMLOUTPUT = "x-htmloutput" # from w3m
-    ANSIOUTPUT = "x-ansioutput" # Chawan extension
+  MailcapFlag* = enum
+    mfNeedsterminal = "needsterminal"
+    mfCopiousoutput = "copiousoutput"
+    mfHtmloutput = "x-htmloutput" # from w3m
+    mfAnsioutput = "x-ansioutput" # Chawan extension
 
   MailcapEntry* = object
     mt*: string
     subt*: string
     cmd*: string
-    flags*: set[MailcapFlags]
+    flags*: set[MailcapFlag]
     nametemplate*: string
     edit*: string
     test*: string
@@ -123,58 +123,47 @@ proc consumeCommand(state: var MailcapParser): Result[string, string] =
   return ok(s)
 
 type NamedField = enum
-  NO_NAMED_FIELD, NAMED_FIELD_TEST, NAMED_FIELD_NAMETEMPLATE, NAMED_FIELD_EDIT
+  nmNone = "none"
+  nmTest = "test"
+  nmNametemplate = "nametemplate"
+  nmEdit = "edit"
 
 proc parseFieldKey(entry: var MailcapEntry; k: string): NamedField =
-  case k
-  of "needsterminal":
-    entry.flags.incl(NEEDSTERMINAL)
-  of "copiousoutput":
-    entry.flags.incl(COPIOUSOUTPUT)
-  of "x-htmloutput":
-    entry.flags.incl(HTMLOUTPUT)
-  of "x-ansioutput":
-    entry.flags.incl(ANSIOUTPUT)
-  of "test":
-    return NAMED_FIELD_TEST
-  of "nametemplate":
-    return NAMED_FIELD_NAMETEMPLATE
-  of "edit":
-    return NAMED_FIELD_EDIT
-  return NO_NAMED_FIELD
+  if (let x = parseEnumNoCase[MailcapFlag](k); x.isSome):
+    entry.flags.incl(x.get)
+    return nmNone
+  if (let x = parseEnumNoCase[NamedField](k); x.isSome):
+    return x.get
+  return nmNone
 
 proc consumeField(state: var MailcapParser; entry: var MailcapEntry):
     Result[bool, string] =
   state.skipBlanks()
-  if not state.has():
-    return ok(false)
   var buf = ""
+  var res = false
   while state.has():
-    let c = state.consume()
-    case c
+    case (let c = state.consume(); c)
     of ';', '\n':
-      if parseFieldKey(entry, buf) != NO_NAMED_FIELD:
-        return err("Expected command")
-      return ok(c == ';')
+      res = c == ';'
+      break
     of '\r':
       continue
     of '=':
       let f = parseFieldKey(entry, buf)
       let cmd = ?state.consumeCommand()
       case f
-      of NO_NAMED_FIELD:
-        discard
-      of NAMED_FIELD_TEST:
-        entry.test = cmd
-      of NAMED_FIELD_NAMETEMPLATE:
-        entry.nametemplate = cmd
-      of NAMED_FIELD_EDIT:
-        entry.edit = cmd
+      of nmNone: discard
+      of nmTest: entry.test = cmd
+      of nmNametemplate: entry.nametemplate = cmd
+      of nmEdit: entry.edit = cmd
       return ok(state.consume() == ';')
     else:
       if c in Controls:
         return err("line " & $state.line & ": invalid character in field: " & c)
       buf &= c
+  if parseFieldKey(entry, buf) != nmNone:
+    return err("Expected command")
+  return ok(res)
 
 proc parseMailcap*(stream: Stream): Result[Mailcap, string] =
   var state = MailcapParser(stream: stream, line: 1)

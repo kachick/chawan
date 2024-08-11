@@ -1603,7 +1603,7 @@ proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; fdin: cint): cint =
   else:
     discard close(pipefdOutAnsi[1])
     discard close(fdin)
-    ishtml = HTMLOUTPUT in entry.flags
+    ishtml = mfHtmloutput in entry.flags
     return pipefdOutAnsi[0]
 
 # Pipe input into the mailcap command, then read its output into a buffer.
@@ -1800,11 +1800,11 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
     tempfile
   var canpipe = true
   let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, canpipe)
-  var ishtml = HTMLOUTPUT in entry.flags
-  let needsterminal = NEEDSTERMINAL in entry.flags
+  var ishtml = mfHtmloutput in entry.flags
+  let needsterminal = mfNeedsterminal in entry.flags
   putEnv("MAILCAP_URL", $url)
   block needsConnect:
-    if entry.flags * {COPIOUSOUTPUT, HTMLOUTPUT, ANSIOUTPUT} == {}:
+    if entry.flags * {mfCopiousoutput, mfHtmloutput, mfAnsioutput} == {}:
       # No output. Resume here, so that blocking needsterminal filters work.
       pager.loader.resume(istreamOutputId)
       if canpipe:
@@ -1823,7 +1823,7 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
     else:
       pager.runMailcapReadFile(stream, cmd, outpath, pipefdOut)
     discard close(pipefdOut[1]) # close write
-    let fdout = if not ishtml and ANSIOUTPUT in entry.flags:
+    let fdout = if not ishtml and mfAnsioutput in entry.flags:
       pager.ansiDecode(url, ishtml, pipefdOut[0])
     else:
       pipefdOut[0]
