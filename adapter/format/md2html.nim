@@ -209,7 +209,8 @@ proc parseHash(line: openArray[char]): bool =
       break
   H = max(L - 1, H)
   let id = line.toOpenArray(L, H).getId()
-  stdout.write("<H" & $n & " id='" & id & "'>")
+  stdout.write("<H" & $n & " id='" & id & "'><A HREF='#" & id & "'>" &
+    '#'.repeat(n) & "</A> ")
   line.toOpenArray(L, H).parseInline()
   stdout.write("</H" & $n & ">\n")
   return true
