@@ -36,6 +36,8 @@ func toHeaderCase*(s: string): string =
   for c in result.mitems:
     if flip:
       c = c.toUpperAscii()
+    else:
+      c = c.toLowerAscii()
     flip = c == '-'
 
 func snakeToKebabCase*(s: string): string =

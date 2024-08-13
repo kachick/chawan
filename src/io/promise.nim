@@ -59,12 +59,11 @@ proc resolve*(promise: EmptyPromise) =
     promise.next = nil
 
 proc resolve*[T](promise: Promise[T]; res: T) =
-  if promise.cb != nil:
-    if promise.get != nil:
-      promise.get(promise.opaque, promise.res)
-      promise.get = nil
-    promise.res = res
-    promise.resolve()
+  if promise.get != nil:
+    promise.get(promise.opaque, promise.res)
+    promise.get = nil
+  promise.res = res
+  promise.resolve()
 
 proc resolve*(map: var PromiseMap; promiseid: int) =
   var promise: EmptyPromise

@@ -5,6 +5,7 @@ import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/quickjs
+import monoucha/tojs
 import types/opt
 import utils/twtstr
 
@@ -99,7 +100,8 @@ func isForbiddenRequestHeader*(name, value: string): bool =
   return false
 
 func isForbiddenResponseHeaderName*(name: string): bool =
-  return name in ["Set-Cookie", "Set-Cookie2"]
+  return name.equalsIgnoreCase("Set-Cookie") or
+    name.equalsIgnoreCase("Set-Cookie2")
 
 proc validate(this: Headers; name, value: string): JSResult[bool] =
   if not name.isValidHeaderName() or not value.isValidHeaderValue():
@@ -117,7 +119,6 @@ func isNoCorsSafelistedName(name: string): bool =
     name.equalsIgnoreCase("Accept-Language") or
     name.equalsIgnoreCase("Content-Language") or
     name.equalsIgnoreCase("Content-Type")
-
 
 const CorsUnsafeRequestByte = {
   char(0x00)..char(0x08), char(0x10)..char(0x1F), '"', '(', ')', ':', '<', '>',
@@ -145,12 +146,14 @@ func isNoCorsSafelisted(name, value: string): bool =
 func get0(this: Headers; name: string): string =
   return this.table[name].join(", ")
 
-proc get(this: Headers; name: string): JSResult[Option[string]] {.jsfunc.} =
+proc get*(ctx: JSContext; this: Headers; name: string): JSValue {.jsfunc.} =
   if not name.isValidHeaderName():
-    return errTypeError("Invalid header name")
+    JS_ThrowTypeError(ctx, "Invalid header name")
+    return JS_EXCEPTION
+  let name = name.toHeaderCase()
   if name notin this.table:
-    return ok(none(string))
-  return ok(some(this.get0(name)))
+    return JS_NULL
+  return ctx.toJS(this.get0(name))
 
 proc removeRange(this: Headers) =
   if this.guard == hgRequestNoCors:
@@ -162,18 +165,21 @@ proc append(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
   let value = value.strip(chars = HTTPWhitespace)
   if not ?this.validate(name, value):
     return ok()
+  let name = name.toHeaderCase()
   if this.guard == hgRequestNoCors:
     if name in this.table:
       let tmp = this.get0(name) & ", " & value
       if not name.isNoCorsSafelisted(tmp):
         return ok()
-      this.table[name].add(value)
-    else:
-      this.table[name] = @[value]
+  if name in this.table:
+    this.table[name].add(value)
+  else:
+    this.table[name] = @[value]
   this.removeRange()
   ok()
 
 proc delete(this: Headers; name: string): JSResult[void] {.jsfunc.} =
+  let name = name.toHeaderCase()
   if not ?this.validate(name, "") or name notin this.table:
     return ok()
   if not name.isNoCorsSafelistedName() and not name.equalsIgnoreCase("Range"):
@@ -185,6 +191,7 @@ proc delete(this: Headers; name: string): JSResult[void] {.jsfunc.} =
 proc has(this: Headers; name: string): JSResult[bool] {.jsfunc.} =
   if not name.isValidHeaderName():
     return errTypeError("Invalid header name")
+  let name = name.toHeaderCase()
   return ok(name in this.table)
 
 proc set(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
@@ -193,8 +200,7 @@ proc set(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
     return
   if this.guard == hgRequestNoCors and not name.isNoCorsSafelisted(value):
     return
-  #TODO do this case insensitively
-  this.table[name] = @[value]
+  this.table[name.toHeaderCase()] = @[value]
   this.removeRange()
 
 proc fill(headers: Headers; s: seq[(string, string)]): JSResult[void] =

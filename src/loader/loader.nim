@@ -1140,21 +1140,17 @@ proc onRead*(loader: FileLoader; fd: int) =
   if response != nil:
     response.onRead(response)
     if response.body.isend:
-      response.bodyRead.resolve()
-      response.bodyRead = nil
+      if response.onFinish != nil:
+        response.onFinish(response, true)
+      response.onFinish = nil
       response.unregisterFun()
 
 proc onError*(loader: FileLoader; fd: int) =
   let response = loader.ongoing.getOrDefault(fd)
   if response != nil:
-    when defined(debug):
-      var lbuf {.noinit.}: array[BufferSize, char]
-      if not response.body.isend:
-        let n = response.body.recvData(lbuf)
-        assert n == 0
-      assert response.body.isend
-    response.bodyRead.resolve()
-    response.bodyRead = nil
+    if response.onFinish != nil:
+      response.onFinish(response, false)
+    response.onFinish = nil
     response.unregisterFun()
 
 # Note: this blocks until headers are received.

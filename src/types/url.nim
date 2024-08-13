@@ -1246,12 +1246,12 @@ proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
   discard basicParseURL(s & ':', url = url,
     stateOverride = some(usSchemeStart))
 
-proc setUsername(url: URL; username: string) {.jsfset: "username".} =
+proc setUsername*(url: URL; username: string) {.jsfset: "username".} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.username = username.percentEncode(UserInfoPercentEncodeSet)
 
-proc setPassword(url: URL; password: string) {.jsfset: "password".} =
+proc setPassword*(url: URL; password: string) {.jsfset: "password".} =
   if not url.canHaveUsernamePasswordPort:
     return
   url.password = password.percentEncode(UserInfoPercentEncodeSet)

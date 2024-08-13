@@ -7,6 +7,7 @@ import html/catom
 import html/dom
 import html/event
 import html/script
+import io/dynstream
 import io/promise
 import js/domexception
 import loader/headers
@@ -55,16 +56,17 @@ type
     response: Response
     responseType {.jsget.}: XMLHttpRequestResponseType
     timeout {.jsget.}: uint32
+    received: string
 
   ProgressEvent = ref object of Event
     lengthComputable {.jsget.}: bool
-    loaded {.jsget.}: uint32
-    total {.jsget.}: uint32
+    loaded {.jsget.}: int64 #TODO should be uint64
+    total {.jsget.}: int64 #TODO ditto
 
   ProgressEventInit = object of EventInit
     lengthComputable: bool
-    loaded: uint32
-    total: uint32
+    loaded: int64
+    total: int64
 
 jsDestructor(XMLHttpRequestEventTarget)
 jsDestructor(XMLHttpRequestUpload)
@@ -106,16 +108,25 @@ proc parseMethod(s: string): DOMResult[HttpMethod] =
   else:
     errDOMException("Invalid method", "SyntaxError")
 
-#TODO the standard says that no async should be treated differently from
-# undefined. idk if (and where) this actually matters.
 proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
-    async = true; username = ""; password = ""): Err[DOMException] {.jsfunc.} =
+    misc: varargs[JSValue]): Err[DOMException] {.jsfunc.} =
   let httpMethod = ?parseMethod(httpMethod)
   let global = ctx.getGlobal()
   let x = parseURL(url, some(global.document.baseURL))
   if x.isNone:
     return errDOMException("Invalid URL", "SyntaxError")
   let parsedURL = x.get
+  var async = true
+  if misc.len > 0: # standard weirdness
+    ?ctx.fromJS(misc[0], async)
+    if misc.len > 1 and not JS_IsNull(misc[1]):
+      var username: string
+      ?ctx.fromJS(misc[1], username)
+      parsedURL.setUsername(username)
+    if misc.len > 2 and not JS_IsNull(misc[2]):
+      var password: string
+      ?ctx.fromJS(misc[2], password)
+      parsedURL.setPassword(password)
   if not async and ctx.getWindow() != nil and
       (this.timeout != 0 or this.responseType != xhrtUnknown):
     return errDOMException("Today's horoscope: don't go outside",
@@ -160,7 +171,7 @@ proc setRequestHeader(this: XMLHttpRequest; name, value: string):
   ok()
 
 proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
-    loaded, length: uint32) =
+    loaded, length: int64) =
   let event = newProgressEvent(window.factory.toAtom(name), ProgressEventInit(
     loaded: loaded,
     total: length,
@@ -177,15 +188,15 @@ proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
   this.readyState = xhrsDone
   this.response = makeNetworkError()
   this.flags.excl(xhrfSend)
-  #TODO sync?
-  window.fireEvent(satReadystatechange, this)
-  if xhrfUploadComplete notin this.flags:
-    this.flags.incl(xhrfUploadComplete)
-    if xhrfUploadListener in this.flags:
-      window.fireProgressEvent(this.upload, name, 0, 0)
-      window.fireProgressEvent(this.upload, satLoadend, 0, 0)
-  window.fireProgressEvent(this, name, 0, 0)
-  window.fireProgressEvent(this, satLoadend, 0, 0)
+  if xhrfSync notin this.flags:
+    window.fireEvent(satReadystatechange, this)
+    if xhrfUploadComplete notin this.flags:
+      this.flags.incl(xhrfUploadComplete)
+      if xhrfUploadListener in this.flags:
+        window.fireProgressEvent(this.upload, name, 0, 0)
+        window.fireProgressEvent(this.upload, satLoadend, 0, 0)
+    window.fireProgressEvent(this, name, 0, 0)
+    window.fireProgressEvent(this, satLoadend, 0, 0)
 
 proc handleErrors(window: Window; this: XMLHttpRequest): DOMException =
   if xhrfSend notin this.flags:
@@ -204,7 +215,52 @@ proc handleErrors(window: Window; this: XMLHttpRequest): DOMException =
       return newDOMException("Network error in XHR", "NetworkError")
   return nil
 
-proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): DOMResult[void]
+type XHROpaque = ref object of RootObj
+  this: XMLHttpRequest
+  window: Window
+  len: int64 #TODO should be uint64
+
+proc onReadXHR(response: Response) =
+  const BufferSize = 4096
+  let opaque = XHROpaque(response.opaque)
+  let this = opaque.this
+  let window = opaque.window
+  while true:
+    try:
+      let olen = this.received.len
+      this.received.setLen(olen + BufferSize)
+      let n = response.body.recvData(addr this.received[olen], BufferSize)
+      if n < BufferSize:
+        this.received.setLen(olen + n)
+      if n == 0:
+        break
+    except ErrorAgain:
+      break
+  if this.readyState == xhrsHeadersReceived:
+    this.readyState = xhrsLoading
+  window.fireEvent(satReadystatechange, this)
+  window.fireProgressEvent(this, satProgress, int64(this.received.len),
+    opaque.len)
+
+proc onFinishXHR(response: Response; success: bool) =
+  let opaque = XHROpaque(response.opaque)
+  let this = opaque.this
+  let window = opaque.window
+  if success:
+    discard window.handleErrors(this)
+    if response.responseType != rtError:
+      let recvLen = int64(this.received.len)
+      window.fireProgressEvent(this, satProgress, recvLen, opaque.len)
+      this.readyState = xhrsDone
+      this.flags.excl(xhrfSend)
+      window.fireEvent(satReadystatechange, this)
+      window.fireProgressEvent(this, satLoad, recvLen, opaque.len)
+      window.fireProgressEvent(this, satLoadend, recvLen, opaque.len)
+  else:
+    this.response = makeNetworkError()
+    discard window.handleErrors(this)
+
+proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): JSResult[void]
     {.jsfunc.} =
   ?this.checkOpened()
   ?this.checkSendFlag()
@@ -243,19 +299,44 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): DOMResult[void]
     let v = ctx.toJS(jsRequest)
     let p = window.windowFetch(v)
     JS_FreeValue(ctx, v)
-    if p.isSome:
-      p.get.then(proc(res: JSResult[Response]) =
-        if res.isNone:
-          this.response = makeNetworkError()
-          discard window.handleErrors(this)
-          return
-        let response = res.get
-        this.response = response
-        this.readyState = xhrsHeadersReceived
-        window.fireEvent(satReadystatechange, this)
-      )
+    if p.isNone:
+      return err(p.error)
+    p.get.then(proc(res: JSResult[Response]) =
+      if res.isNone:
+        this.response = makeNetworkError()
+        discard window.handleErrors(this)
+        return
+      let response = res.get
+      this.response = response
+      this.readyState = xhrsHeadersReceived
+      window.fireEvent(satReadystatechange, this)
+      if this.readyState != xhrsHeadersReceived:
+        return
+      let len = max(response.getContentLength(), 0)
+      response.opaque = XHROpaque(this: this, window: window, len: len)
+      response.onRead = onReadXHR
+      response.onFinish = onFinishXHR
+      #TODO timeout
+    )
   else: # sync
-    discard #TODO
+    #TODO cors requests?
+    if window.settings.origin.isSameOrigin(request.url.origin):
+      let response = window.loader.doRequest(request)
+      if response.res == 0:
+        #TODO timeout
+        try:
+          this.received = response.body.recvAll()
+          #TODO report timing
+          let len = max(response.getContentLength(), 0)
+          response.opaque = XHROpaque(this: this, window: window, len: len)
+          response.onFinishXHR(true)
+          return ok()
+        except IOError:
+          discard
+    let ex = window.handleErrors(this)
+    this.response = makeNetworkError()
+    if ex != nil:
+      return err(ex)
   ok()
 
 #TODO abort
@@ -269,9 +350,10 @@ proc status(this: XMLHttpRequest): uint16 {.jsfget.} =
 proc statusText(this: XMLHttpRequest): string {.jsfget.} =
   return ""
 
-proc getResponseHeader(this: XMLHttpRequest; name: string): string {.jsfunc.} =
-  #TODO ?
-  return this.response.headers.table.getOrDefault(name)[0]
+proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest; name: string):
+    JSValue {.jsfunc.} =
+  #TODO this can throw, but I don't think the standard allows that?
+  return ctx.get(this.response.headers, name)
 
 #TODO getAllResponseHeaders
 
