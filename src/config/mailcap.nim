@@ -123,18 +123,9 @@ proc consumeCommand(state: var MailcapParser): Result[string, string] =
   return ok(s)
 
 type NamedField = enum
-  nmNone = "none"
   nmTest = "test"
   nmNametemplate = "nametemplate"
   nmEdit = "edit"
-
-proc parseFieldKey(entry: var MailcapEntry; k: string): NamedField =
-  if (let x = parseEnumNoCase[MailcapFlag](k); x.isSome):
-    entry.flags.incl(x.get)
-    return nmNone
-  if (let x = parseEnumNoCase[NamedField](k); x.isSome):
-    return x.get
-  return nmNone
 
 proc consumeField(state: var MailcapParser; entry: var MailcapEntry):
     Result[bool, string] =
@@ -149,20 +140,23 @@ proc consumeField(state: var MailcapParser; entry: var MailcapEntry):
     of '\r':
       continue
     of '=':
-      let f = parseFieldKey(entry, buf)
       let cmd = ?state.consumeCommand()
-      case f
-      of nmNone: discard
-      of nmTest: entry.test = cmd
-      of nmNametemplate: entry.nametemplate = cmd
-      of nmEdit: entry.edit = cmd
+      while buf.len > 0 and buf[^1] in AsciiWhitespace:
+        buf.setLen(buf.len - 1)
+      if (let x = parseEnumNoCase[NamedField](buf); x.isSome):
+        case x.get
+        of nmTest: entry.test = cmd
+        of nmNametemplate: entry.nametemplate = cmd
+        of nmEdit: entry.edit = cmd
       return ok(state.consume() == ';')
+    elif c in Controls:
+      return err("line " & $state.line & ": invalid character in field: " & c)
     else:
-      if c in Controls:
-        return err("line " & $state.line & ": invalid character in field: " & c)
       buf &= c
-  if parseFieldKey(entry, buf) != nmNone:
-    return err("Expected command")
+  while buf.len > 0 and buf[^1] in AsciiWhitespace:
+    buf.setLen(buf.len - 1)
+  if (let x = parseEnumNoCase[MailcapFlag](buf); x.isSome):
+    entry.flags.incl(x.get)
   return ok(res)
 
 proc parseMailcap*(stream: Stream): Result[Mailcap, string] =
