@@ -1740,11 +1740,6 @@ proc extractCookies(response: Response): seq[Cookie] =
       if cookie.isSome:
         result.add(cookie.get)
 
-proc extractReferrerPolicy(response: Response): Option[ReferrerPolicy] =
-  if "Referrer-Policy" in response.headers:
-    return strictParseEnum[ReferrerPolicy](response.headers["Referrer-Policy"])
-  return none(ReferrerPolicy)
-
 # Apply data received in response.
 # Note: pager must call this before checkMailcap.
 proc applyResponse*(container: Container; response: Response;
@@ -1755,7 +1750,7 @@ proc applyResponse*(container: Container; response: Response;
   if cookieJar != nil:
     cookieJar.add(response.extractCookies())
   # set referrer policy, if any
-  let referrerPolicy = response.extractReferrerPolicy()
+  let referrerPolicy = response.getReferrerPolicy()
   if container.config.refererFrom:
     if referrerPolicy.isSome:
       container.loaderConfig.referrerPolicy = referrerPolicy.get

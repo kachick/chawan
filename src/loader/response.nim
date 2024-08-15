@@ -15,6 +15,7 @@ import monoucha/tojs
 import types/blob
 import types/color
 import types/opt
+import types/referrer
 import types/url
 import utils/mimeguess
 import utils/twtstr
@@ -111,6 +112,10 @@ func getContentLength*(this: Response): int64 =
       if u.isSome and u.get <= uint64(int64.high):
         return int64(u.get)
   return -1
+
+func getReferrerPolicy*(this: Response): Option[ReferrerPolicy] =
+  this.headers.table.withValue("Referrer-Policy", p):
+    return strictParseEnum[ReferrerPolicy](p[][0])
 
 type TextOpaque = ref object of RootObj
   buf: string

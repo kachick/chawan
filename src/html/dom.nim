@@ -903,6 +903,21 @@ func baseURL*(document: Document): URL
 proc delAttr(element: Element; i: int; keep = false)
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 
+# Forward declaration hacks
+# set in css/cascade
+var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
+  {.nimcall, noSideEffect.}
+# set in css/match
+var doqsa*: proc (node: Node; q: string): seq[Element] {.nimcall.} = nil
+var doqs*: proc (node: Node; q: string): Element {.nimcall.} = nil
+# set in html/chadombuilder
+var domParseHTMLFragment*: proc(element: Element; s: string): seq[Node]
+  {.nimcall.}
+# set in html/env
+var windowFetch*: proc(window: Window; input: JSValue;
+  init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
+  {.nimcall.} = nil
+
 # For now, these are the same; on an API level however, getGlobal is guaranteed
 # to be non-null, while getWindow may return null in the future. (This is in
 # preparation for Worker support.)
@@ -2992,10 +3007,6 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
     element.cachedStyle = CSSStyleDeclaration(element: element)
   return element.cachedStyle
 
-# Forward declaration hack
-var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
-  {.nimcall, noSideEffect.}
-
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window; link: HTMLLinkElement) =
@@ -3811,17 +3822,6 @@ proc markAsReady(element: HTMLScriptElement; res: ScriptResult) =
     element.onReady = nil
   element.delayingTheLoadEvent = false
 
-proc createClassicScript(ctx: JSContext; source: string; baseURL: URL;
-    options: ScriptOptions; mutedErrors = false): Script =
-  let urls = baseURL.serialize(excludepassword = true)
-  let record = compileScript(ctx, source, urls)
-  return Script(
-    record: record,
-    baseURL: baseURL,
-    options: options,
-    mutedErrors: mutedErrors
-  )
-
 type OnCompleteProc = proc(element: HTMLScriptElement, res: ScriptResult)
 
 proc fetchClassicScript(element: HTMLScriptElement; url: URL;
@@ -3843,8 +3843,8 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
   let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
   let source = s.decodeAll(cs)
   response.body.sclose()
-  let script = window.jsctx.createClassicScript(source, url, options, false)
-  element.onComplete(ScriptResult(t: srtScript, script: script))
+  let script = window.jsctx.newClassicScript(source, url, options, false)
+  element.onComplete(script)
 
 #TODO settings object
 proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
@@ -3883,10 +3883,10 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
     destination: RequestDestination; options: ScriptOptions,
     referrer: URL; isTopLevel: bool; onComplete: OnCompleteProc) =
   discard #TODO implement
-  #[
   let moduleType = "javascript"
   #TODO moduleRequest
-  let settings = element.document.window.settings
+  let window = element.document.window
+  let settings = window.settings
   let i = settings.moduleMap.find(url, moduleType)
   if i != -1:
     if settings.moduleMap[i].value.t == srtFetching:
@@ -3894,21 +3894,55 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
       assert false
     element.onComplete(settings.moduleMap[i].value)
     return
-  let destination = fetchDestinationFromModuleType(destination, moduleType)
+  let destination = moduleType.moduleTypeToRequestDest(destination)
   let mode = if destination in {rdWorker, rdSharedworker, rdServiceworker}:
     rmSameOrigin
   else:
     rmCors
   #TODO client
   #TODO initiator type
-  let request = newRequest(
-    url,
-    mode = mode,
-    referrer = referrer,
-    destination = destination
+  let request = JSRequest(
+    request: newRequest(
+      url,
+      referrer = referrer,
+    ),
+    destination: destination,
+    mode: mode
   )
-  discard request #TODO
-  ]#
+  #TODO set up module script request
+  #TODO performFetch
+  let ctx = window.jsctx
+  let v = ctx.toJS(request)
+  let p = window.windowFetch(v)
+  JS_FreeValue(ctx, v)
+  if p.isSome:
+    p.get.then(proc(res: JSResult[Response]) =
+      if res.isNone:
+        let res = ScriptResult(t: srtNull)
+        settings.moduleMap.set(url, moduleType, res, ctx)
+        element.onComplete(res)
+        return
+      let res = res.get
+      let contentType = res.getContentType()
+      let referrerPolicy = res.getReferrerPolicy()
+      res.text().then(proc(s: JSResult[string]) =
+        if s.isNone:
+          let res = ScriptResult(t: srtNull)
+          settings.moduleMap.set(url, moduleType, res, ctx)
+          element.onComplete(res)
+          return
+        if contentType.isJavaScriptType():
+          let res = ctx.newJSModuleScript(s.get, element.document.baseURL,
+            options)
+          if referrerPolicy.isSome:
+            res.script.options.referrerPolicy = referrerPolicy
+          settings.moduleMap.set(url, moduleType, res, ctx)
+          element.onComplete(res)
+        else:
+          #TODO non-JS modules
+          discard
+      )
+    )
 
 proc execute*(element: HTMLScriptElement) =
   let document = element.document
@@ -4042,8 +4076,8 @@ proc prepare*(element: HTMLScriptElement) =
     let baseURL = element.document.baseURL
     if element.ctype == stClassic:
       let ctx = element.document.window.jsctx
-      let script = ctx.createClassicScript(sourceText, baseURL, options)
-      element.markAsReady(ScriptResult(t: srtScript, script: script))
+      let script = ctx.newClassicScript(sourceText, baseURL, options)
+      element.markAsReady(script)
     else:
       #TODO stModule, stImportMap
       element.markAsReady(ScriptResult(t: srtNull))
@@ -4290,10 +4324,6 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
 func isSameNode(node, other: Node): bool {.jsfunc.} =
   return node == other
 
-# Forward declaration hack (these are set in selectors.nim)
-var doqsa*: proc (node: Node; q: string): seq[Element] {.nimcall.} = nil
-var doqs*: proc (node: Node; q: string): Element {.nimcall.} = nil
-
 proc querySelectorAll(node: Node; q: string): seq[Element] {.jsfunc.} =
   return doqsa(node, q)
 
@@ -4497,10 +4527,6 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
     )
   )
   return JS_UNDEFINED
-
-# Forward declaration hack
-var domParseHTMLFragment*: proc(element: Element; s: string): seq[Node]
-  {.nimcall.}
 
 # https://w3c.github.io/DOM-Parsing/#dfn-fragment-parsing-algorithm
 proc fragmentParsingAlgorithm*(element: Element; s: string): DocumentFragment =

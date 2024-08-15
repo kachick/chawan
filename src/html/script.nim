@@ -46,7 +46,7 @@ type
     moduleMap*: ModuleMap
     origin*: Origin
 
-  Script* = object
+  Script* = ref object
     #TODO setings
     baseURL*: URL
     options*: ScriptOptions
@@ -77,6 +77,10 @@ type
 
   ModuleMap* = seq[ModuleMapEntry]
 
+# Forward declaration hack
+# set in html/dom
+var windowConsoleError*: proc(ctx: JSContext; ss: varargs[string]) {.nimcall.}
+
 proc find*(moduleMap: ModuleMap; url: URL; moduleType: string): int =
   let surl = $url
   for i, entry in moduleMap:
@@ -84,15 +88,50 @@ proc find*(moduleMap: ModuleMap; url: URL; moduleType: string): int =
       return i
   return -1
 
-func fetchDestinationFromModuleType*(default: RequestDestination;
-    moduleType: string): RequestDestination =
+proc set*(moduleMap: var ModuleMap; url: URL; moduleType: string;
+    value: ScriptResult; ctx: JSContext) =
+  let i = moduleMap.find(url, moduleType)
+  if i != -1:
+    if moduleMap[i].value.t == srtScript:
+      JS_FreeValue(ctx, moduleMap[i].value.script.record)
+    moduleMap[i].value = value
+  else:
+    moduleMap.add(ModuleMapEntry(key: ($url, moduleType), value: value))
+
+func moduleTypeToRequestDest*(moduleType: string; default: RequestDestination):
+    RequestDestination =
   if moduleType == "json":
     return rdJson
   if moduleType == "css":
     return rdStyle
   return default
 
-var windowConsoleError*: proc(ctx: JSContext; ss: varargs[string]) {.nimcall.}
+proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
+    options: ScriptOptions; mutedErrors = false): ScriptResult =
+  let urls = baseURL.serialize(excludepassword = true)
+  let record = ctx.compileScript(source, urls)
+  return ScriptResult(
+    t: srtScript,
+    script: Script(
+      record: record,
+      baseURL: baseURL,
+      options: options,
+      mutedErrors: mutedErrors
+    )
+  )
+
+proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
+    options: ScriptOptions): ScriptResult =
+  let urls = baseURL.serialize(excludepassword = true)
+  let record = ctx.compileModule(source, urls)
+  return ScriptResult(
+    t: srtScript,
+    script: Script(
+      record: record,
+      baseURL: baseURL,
+      options: options
+    )
+  )
 
 proc logException*(ctx: JSContext) =
   windowConsoleError(ctx, ctx.getExceptionMsg())

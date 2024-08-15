@@ -196,11 +196,6 @@ proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
   ))
   discard window.jsctx.dispatch(target, event)
 
-# Forward declaration hack
-var windowFetch*: proc(window: Window; input: JSValue;
-  init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
-  {.nimcall.} = nil
-
 proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
   this.readyState = xhrsDone
   this.response = makeNetworkError()
@@ -425,13 +420,14 @@ func getContentType(this: XMLHttpRequest): string =
     return this.contentTypeOverride
   return this.response.getContentType()
 
-proc ptrify(s: var string): pointer =
+proc ptrify(s: var string):
+    tuple[opaque: pointer; p: ptr UncheckedArray[uint8]] =
   if s.len == 0:
-    return nil
+    return (nil, nil)
   var sr = new(string)
   sr[] = move(s)
   GC_ref(sr)
-  return cast[pointer](sr)
+  return (cast[pointer](sr), cast[ptr UncheckedArray[uint8]](addr sr[0]))
 
 proc deallocPtrified(p: pointer) =
   if p != nil:
@@ -453,14 +449,12 @@ proc response(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
     case this.responseType
     of xhrtArraybuffer:
       let len = csize_t(this.received.len)
-      let p = cast[ptr UncheckedArray[uint8]](cstring(this.received))
-      let opaque = this.received.ptrify()
+      let (opaque, p) = this.received.ptrify()
       this.responseObject = JS_NewArrayBuffer(ctx, p, len, abufFree, opaque,
         false)
     of xhrtBlob:
       let len = this.received.len
-      let p = cast[ptr UncheckedArray[uint8]](cstring(this.received))
-      let opaque = this.received.ptrify()
+      let (opaque, p) = this.received.ptrify()
       let blob = newBlob(p, len, this.getContentType(), blobFree, opaque)
       this.responseObject = ctx.toJS(blob)
     of xhrtDocument:
