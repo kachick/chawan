@@ -1167,6 +1167,8 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
     r.sread(response.headers) # packet 3
     # Only a stream of the response body may arrive after this point.
     response.body = stream
+    response.resumeFun = proc(outputId: int) =
+      loader.resume(outputId)
   else:
     var msg: string
     r.sread(msg) # packet 1

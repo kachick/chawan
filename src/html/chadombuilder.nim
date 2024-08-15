@@ -349,10 +349,10 @@ proc finish*(wrapper: HTML5ParserWrapper) =
     r.parser = nil
   wrapper.refs.setLen(0)
 
-proc newDOMParser(): DOMParser {.jsctor.} =
+proc newDOMParser*(): DOMParser {.jsctor.} =
   return DOMParser()
 
-proc parseFromString(ctx: JSContext; parser: DOMParser; str, t: string):
+proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
     JSResult[Document] {.jsfunc.} =
   case t
   of "text/html":
@@ -361,7 +361,6 @@ proc parseFromString(ctx: JSContext; parser: DOMParser; str, t: string):
       window.document.url
     else:
       newURL("about:blank").get
-    #TODO this is probably broken in client (or at least sub-optimal)
     let builder = newChaDOMBuilder(url, window, window.factory, ccIrrelevant)
     var parser = initHTML5Parser(builder, HTML5ParserOpts[Node, CAtom]())
     let res = parser.parseChunk(str)

@@ -464,7 +464,7 @@ proc resetState(state: var DrawingState) =
   state.path = newPath()
 
 proc create2DContext*(jctx: JSContext; target: HTMLCanvasElement;
-    options: Option[JSValue]): CanvasRenderingContext2D =
+    options = JS_UNDEFINED): CanvasRenderingContext2D =
   let ctx = CanvasRenderingContext2D(
     bitmap: target.bitmap,
     canvas: target
@@ -1273,10 +1273,10 @@ func childNodes(node: Node): NodeList {.jsfget.} =
 func length(tokenList: DOMTokenList): uint32 {.jsfget.} =
   return uint32(tokenList.toks.len)
 
-func item(tokenList: DOMTokenList; i: int): Option[string] {.jsfunc.} =
+proc item(ctx: JSContext; tokenList: DOMTokenList; i: int): JSValue {.jsfunc.} =
   if i < tokenList.toks.len:
-    return some(tokenList.element.document.toStr(tokenList.toks[i]))
-  return none(string)
+    return ctx.toJS(tokenList.toks[i])
+  return JS_NULL
 
 func contains*(tokenList: DOMTokenList; a: CAtom): bool =
   return a in tokenList.toks
@@ -1381,8 +1381,12 @@ func supports(tokenList: DOMTokenList; token: string):
 func value(tokenList: DOMTokenList): string {.jsfget.} =
   return $tokenList
 
-func getter(tokenList: DOMTokenList; i: uint32): Option[string] {.jsgetprop.} =
-  return tokenList.item(int(i))
+proc getter(ctx: JSContext; this: DOMTokenList; atom: JSAtom): JSValue
+    {.jsgetprop.} =
+  var u: uint32
+  if ctx.fromJS(atom, u).isSome:
+    return ctx.item(this, int(u))
+  return JS_NULL
 
 # DOMStringMap
 func validateAttributeName(name: string): Err[DOMException] =
@@ -1450,9 +1454,14 @@ func hasprop(nodeList: NodeList; i: uint32): bool {.jshasprop.} =
 func item(nodeList: NodeList; i: int): Node {.jsfunc.} =
   if i < nodeList.len:
     return nodeList.snapshot[i]
+  return nil
 
-func getter(nodeList: NodeList; i: uint32): Option[Node] {.jsgetprop.} =
-  return option(nodeList.item(int(i)))
+func getter(ctx: JSContext; nodeList: NodeList; atom: JSAtom): Node
+    {.jsgetprop.} =
+  var u: uint32
+  if ctx.fromJS(atom, u).isSome:
+    return nodeList.item(int(u))
+  return nil
 
 func names(ctx: JSContext; nodeList: NodeList): JSPropertyEnumList
     {.jspropnames.} =
@@ -1482,21 +1491,21 @@ func namedItem(collection: HTMLCollection; s: string): Element {.jsfunc.} =
       return it
   return nil
 
-func getter(ctx: JSContext; collection: HTMLCollection; atom: JSAtom):
-    Opt[Option[Element]] {.jsgetprop.} =
+func getter(ctx: JSContext; collection: HTMLCollection; atom: JSAtom): Element
+    {.jsgetprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return ok(option(collection.item(u)))
+    return collection.item(u)
   var s: string
   if ctx.fromJS(atom, s).isSome:
-    return ok(option(collection.namedItem(s)))
-  return err()
+    return collection.namedItem(s)
+  return nil
 
 func names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
   let L = collection.length
   var list = newJSPropertyEnumList(ctx, L)
-  var ids: OrderedSet[CAtom]
+  var ids = initOrderedSet[CAtom]()
   for u in 0 ..< L:
     list.add(u)
     let elem = collection.item(u)
@@ -1509,25 +1518,32 @@ func names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
   return list
 
 # HTMLAllCollection
-proc length(collection: HTMLAllCollection): uint32 {.jsfget.} =
-  return uint32(collection.len)
+proc length(this: HTMLAllCollection): uint32 {.jsfget.} =
+  return uint32(this.len)
 
-func hasprop(collection: HTMLAllCollection; i: uint32): bool {.jshasprop.} =
-  return int(i) < collection.len
+func hasprop(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): bool
+    {.jshasprop.} =
+  var u: uint32
+  if ctx.fromJS(atom, u).isSome:
+    return int(u) < this.len
+  return false
 
-func item(collection: HTMLAllCollection; i: uint32): Element {.jsfunc.} =
-  let i = int(i)
-  if i < collection.len:
-    return Element(collection.snapshot[i])
+func item(this: HTMLAllCollection; u: uint32): Element {.jsfunc.} =
+  let i = int(u)
+  if i < this.len:
+    return Element(this.snapshot[i])
   return nil
 
-func getter(collection: HTMLAllCollection; i: uint32): Option[Element]
+func getter(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): Element
     {.jsgetprop.} =
-  return option(collection.item(i))
+  var u: uint32
+  if ctx.fromJS(atom, u).isSome:
+    return this.item(u)
+  return nil
 
-func names(ctx: JSContext; collection: HTMLAllCollection): JSPropertyEnumList
+func names(ctx: JSContext; this: HTMLAllCollection): JSPropertyEnumList
     {.jspropnames.} =
-  let L = collection.length
+  let L = this.length
   var list = newJSPropertyEnumList(ctx, L)
   for u in 0 ..< L:
     list.add(u)
@@ -3822,7 +3838,7 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
   if response.res != 0:
     element.onComplete(ScriptResult(t: srtNull))
     return
-  window.loader.resume(response.outputId)
+  response.resume()
   let s = response.body.recvAll()
   let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
   let source = s.decodeAll(cs)
@@ -4409,7 +4425,7 @@ func getElementReflectFunctions(): seq[TabGetSet] =
     ))
 
 proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
-    options = none(JSValue)): RenderingContext {.jsfunc.} =
+    options = JS_UNDEFINED): RenderingContext {.jsfunc.} =
   if contextId == "2d":
     if this.ctx2d != nil:
       return this.ctx2d

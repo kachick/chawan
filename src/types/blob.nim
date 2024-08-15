@@ -8,12 +8,13 @@ import monoucha/jstypes
 import utils/mimeguess
 
 type
-  DeallocFun = proc(blob: Blob) {.closure, raises: [].}
+  DeallocFun = proc(opaque, p: pointer) {.nimcall, raises: [].}
 
   Blob* = ref object of RootObj
     size* {.jsget.}: uint64
     ctype* {.jsget: "type".}: string
     buffer*: pointer
+    opaque*: pointer
     deallocFun*: DeallocFun
     fd*: Option[FileHandle]
 
@@ -25,19 +26,24 @@ jsDestructor(Blob)
 jsDestructor(WebFile)
 
 proc newBlob*(buffer: pointer; size: int; ctype: string;
-    deallocFun: DeallocFun): Blob =
+    deallocFun: DeallocFun; opaque: pointer = nil): Blob =
   return Blob(
     buffer: buffer,
     size: uint64(size),
     ctype: ctype,
-    deallocFun: deallocFun
+    deallocFun: deallocFun,
+    opaque: opaque
   )
+
+proc deallocBlob*(opaque, p: pointer) =
+  if p != nil:
+    dealloc(p)
 
 proc finalize(blob: Blob) {.jsfin.} =
   if blob.fd.isSome:
     discard close(blob.fd.get)
-  if blob.deallocFun != nil and blob.buffer != nil:
-    blob.deallocFun(blob)
+  if blob.deallocFun != nil:
+    blob.deallocFun(blob.opaque, blob.buffer)
     blob.buffer = nil
 
 proc finalize(file: WebFile) {.jsfin.} =
@@ -57,11 +63,6 @@ type
 
   FilePropertyBag = object of BlobPropertyBag
     #TODO lastModified: int64
-
-proc deallocBlob*(blob: Blob) =
-  if blob.buffer != nil:
-    dealloc(blob.buffer)
-    blob.buffer = nil
 
 proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
     options = FilePropertyBag()): WebFile {.jsctor.} =

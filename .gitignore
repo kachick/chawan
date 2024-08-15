@@ -1,4 +1,5 @@
-a
-cha
-target/
-.obj/
+/a
+/cha
+/target/
+/.obj/
+/test/net/run

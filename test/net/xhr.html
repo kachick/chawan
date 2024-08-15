@@ -6,12 +6,15 @@
 const x = new XMLHttpRequest();
 assert(x.onreadystatechange === null);
 function myFunction() {
-	console.log("change");
+	;
 }
 x.onreadystatechange = myFunction;
 assert(myFunction === x.onreadystatechange);
 assert(x.readyState === XMLHttpRequest.UNSENT);
-x.open("GET", "");
-document.getElementById("x").textContent = "Success";
+x.open("GET", "ping", false);
+assert_throws("x.responseType = 'document'");
 x.send();
+assert_equals(x.readyState, XMLHttpRequest.DONE);
+assert_equals(x.responseText.trim(), "pong");
+document.getElementById("x").textContent = "Success";
 </script>

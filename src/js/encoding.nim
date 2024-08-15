@@ -40,31 +40,29 @@ func newJSTextDecoder(label = "utf-8"; options = TextDecoderOptions()):
 func fatal(this: JSTextDecoder): bool {.jsfget.} =
   return this.errorMode == demFatal
 
-proc decode0(this: JSTextDecoder; ctx: JSContext; input: JSArrayBufferView;
-    stream: bool): JSResult[JSValue] =
-  let H = int(input.abuf.len) - 1
-  var oq = ""
-  for chunk in this.tdctx.decode(input.abuf.p.toOpenArray(0, H), not stream):
-    oq &= chunk
-  if this.tdctx.failed:
-    this.tdctx.failed = false
-    return errTypeError("Failed to decode string")
-  return ok(JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len)))
-
 type TextDecodeOptions = object of JSDict
   stream {.jsdefault.}: bool
 
 #TODO AllowSharedBufferSource
 proc decode(ctx: JSContext; this: JSTextDecoder;
-    input = none(JSArrayBufferView); options = TextDecodeOptions()):
-    JSResult[JSValue] {.jsfunc.} =
+    input = none(JSArrayBufferView); options = TextDecodeOptions()): JSValue
+    {.jsfunc.} =
   if not this.stream:
     this.tdctx = initTextDecoderContext(this.encoding, this.errorMode)
     this.bomSeen = false
   this.stream = options.stream
   if input.isSome:
-    return this.decode0(ctx, input.get, options.stream)
-  return ok(JS_NewString(ctx, ""))
+    let input = input.get
+    let H = int(input.abuf.len) - 1
+    var oq = ""
+    let stream = this.stream
+    for chunk in this.tdctx.decode(input.abuf.p.toOpenArray(0, H), not stream):
+      oq &= chunk
+    if this.tdctx.failed:
+      this.tdctx.failed = false
+      return JS_ThrowTypeError(ctx, "failed to decode string")
+    return JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len))
+  return JS_NewString(ctx, "")
 
 func jencoding(this: JSTextDecoder): string {.jsfget: "encoding".} =
   return $this.encoding

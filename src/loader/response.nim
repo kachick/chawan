@@ -89,13 +89,12 @@ proc close*(response: Response) {.jsfunc.} =
     response.body = nil
 
 func getCharset*(this: Response; fallback: Charset): Charset =
-  if "Content-Type" notin this.headers.table:
-    return fallback
-  let header = this.headers.table["Content-Type"][0].toLowerAscii()
-  let cs = header.getContentTypeAttr("charset").getCharset()
-  if cs == CHARSET_UNKNOWN:
-    return fallback
-  return cs
+  this.headers.table.withValue("Content-Type", p):
+    let header = p[][0].toLowerAscii()
+    let cs = header.getContentTypeAttr("charset").getCharset()
+    if cs != CHARSET_UNKNOWN:
+      return cs
+  return fallback
 
 func getContentType*(this: Response; fallback = "application/octet-stream"):
     string =

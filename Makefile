@@ -208,7 +208,18 @@ uninstall:
 submodule:
 	git submodule update --init
 
-.PHONY: test
-test:
+test/net/run: test/net/run.nim
+	$(NIMC) test/net/run.nim
+
+.PHONY: test_js
+test_js:
 	(cd test/js; ./run_js_tests.sh)
+
+test_layout:
 	(cd test/layout; ./run_layout_tests.sh)
+
+test_net: test/net/run
+	(cd test/net; ./run)
+
+.PHONY: test
+test: test_js test_layout test_net

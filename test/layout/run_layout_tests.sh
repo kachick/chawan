@@ -1,6 +1,6 @@
 #!/bin/sh
-if test -z "$CHA_TEST_BIN"
-then	test -f ../../cha && CHA_TEST_BIN=../../cha || CHA_TEST_BIN=cha
+if test -z "$CHA"
+then	test -f ../../cha && CHA=../../cha || CHA=cha
 fi
 failed=0
 for h in *.html
@@ -8,12 +8,12 @@ do	printf '%s\r' "$h"
 	expected="$(basename "$h" .html).expected"
 	color_expected="$(basename "$h" .html).color.expected"
 	if test -f "$expected"
-	then	if ! "$CHA_TEST_BIN" -C config.toml "$h" | diff "$expected" -
+	then	if ! "$CHA" -C config.toml "$h" | diff "$expected" -
 		then	failed=$(($failed+1))
 			printf 'FAIL: %s\n' "$h"
 		fi
 	elif test -f "$color_expected"
-	then	if ! "$CHA_TEST_BIN" -C config.color.toml "$h" | diff "$color_expected" -
+	then	if ! "$CHA" -C config.color.toml "$h" | diff "$color_expected" -
 		then	failed=$(($failed+1))
 			printf 'FAIL: %s\n' "$h"
 		fi

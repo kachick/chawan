@@ -2,8 +2,10 @@ import std/options
 import std/strutils
 import std/tables
 
+import chagashi/charset
 import chagashi/decoder
 import html/catom
+import html/chadombuilder
 import html/dom
 import html/event
 import html/script
@@ -19,6 +21,7 @@ import monoucha/javascript
 import monoucha/jserror
 import monoucha/quickjs
 import monoucha/tojs
+import types/blob
 import types/opt
 import types/url
 import utils/twtstr
@@ -56,7 +59,9 @@ type
     response: Response
     responseType {.jsget.}: XMLHttpRequestResponseType
     timeout {.jsget.}: uint32
+    responseObject: JSValue
     received: string
+    contentTypeOverride: string
 
   ProgressEvent = ref object of Event
     lengthComputable {.jsget.}: bool
@@ -77,8 +82,12 @@ func newXMLHttpRequest(): XMLHttpRequest {.jsctor.} =
   let upload = XMLHttpRequestUpload()
   return XMLHttpRequest(
     upload: upload,
-    headers: newHeaders()
+    headers: newHeaders(),
+    responseObject: JS_UNDEFINED
   )
+
+proc finalize(rt: JSRuntime; this: XMLHttpRequest) {.jsfin.} =
+  JS_FreeValueRT(rt, this.responseObject)
 
 proc newProgressEvent(ctype: CAtom; init = ProgressEventInit()): ProgressEvent
     {.jsctor.} =
@@ -168,6 +177,14 @@ proc setRequestHeader(this: XMLHttpRequest; name, value: string):
   if isForbiddenRequestHeader(name, value):
     return ok()
   this.headers.table[name.toHeaderCase()] = @[value]
+  ok()
+
+proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32):
+    Err[DOMException] {.jsfset: "timeout".} =
+  if ctx.getWindow() != nil and xhrfSync in this.flags:
+    return errDOMException("timeout may not be set on synchronous XHR",
+      "InvalidAccessError")
+  this.timeout = value
   ok()
 
 proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
@@ -316,6 +333,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): JSResult[void]
       response.opaque = XHROpaque(this: this, window: window, len: len)
       response.onRead = onReadXHR
       response.onFinish = onFinishXHR
+      response.resume()
       #TODO timeout
     )
   else: # sync
@@ -324,6 +342,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): JSResult[void]
       let response = window.loader.doRequest(request)
       if response.res == 0:
         #TODO timeout
+        response.resume()
         try:
           this.received = response.body.recvAll()
           #TODO report timing
@@ -352,10 +371,39 @@ proc statusText(this: XMLHttpRequest): string {.jsfget.} =
 
 proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest; name: string):
     JSValue {.jsfunc.} =
-  #TODO this can throw, but I don't think the standard allows that?
-  return ctx.get(this.response.headers, name)
+  let res = ctx.get(this.response.headers, name)
+  if JS_IsException(res):
+    return JS_NULL
+  return res
 
 #TODO getAllResponseHeaders
+
+func getCharset(this: XMLHttpRequest): Charset =
+  let override = this.contentTypeOverride.toLowerAscii()
+  let cs = override.getContentTypeAttr("charset").getCharset()
+  if cs != CHARSET_UNKNOWN:
+    return cs
+  return this.response.getCharset(CHARSET_UTF_8)
+
+proc responseText(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
+  if this.responseType notin {xhrtUnknown, xhrtText}:
+    let ex = newDOMException("response type was expected to be '' or 'text'",
+      "InvalidStateError")
+    return JS_Throw(ctx, ctx.toJS(ex))
+  if this.readyState notin {xhrsLoading, xhrsDone}:
+    return ctx.toJS("")
+  let charset = this.getCharset()
+  #TODO XML encoding stuff?
+  return ctx.toJS(this.received.decodeAll(charset))
+
+proc overrideMimeType(this: XMLHttpRequest; s: string): DOMResult[void]
+    {.jsfunc.} =
+  if this.readyState notin {xhrsLoading, xhrsDone}:
+    return errDOMException("readyState must not be loading or done",
+      "InvalidStateError")
+  #TODO parse
+  this.contentTypeOverride = s
+  return ok()
 
 proc setResponseType(ctx: JSContext; this: XMLHttpRequest;
     value: XMLHttpRequestResponseType): Err[DOMException]
@@ -372,13 +420,60 @@ proc setResponseType(ctx: JSContext; this: XMLHttpRequest;
   this.responseType = value
   ok()
 
-proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32):
-    Err[DOMException] {.jsfset: "timeout".} =
-  if ctx.getWindow() != nil and xhrfSync in this.flags:
-    return errDOMException("timeout may not be set on synchronous XHR",
-      "InvalidAccessError")
-  this.timeout = value
-  ok()
+func getContentType(this: XMLHttpRequest): string =
+  if this.contentTypeOverride != "":
+    return this.contentTypeOverride
+  return this.response.getContentType()
+
+proc ptrify(s: var string): pointer =
+  if s.len == 0:
+    return nil
+  var sr = new(string)
+  sr[] = move(s)
+  GC_ref(sr)
+  return cast[pointer](sr)
+
+proc deallocPtrified(p: pointer) =
+  if p != nil:
+    let sr = cast[ref string](p)
+    GC_unref(sr)
+
+proc abufFree(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
+  deallocPtrified(opaque)
+
+proc blobFree(opaque, p: pointer) {.nimcall.} =
+  deallocPtrified(opaque)
+
+proc response(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
+  if this.responseType in {xhrtText, xhrtUnknown}:
+    return ctx.responseText(this)
+  if this.readyState != xhrsDone:
+    return JS_NULL
+  if JS_IsUndefined(this.responseObject):
+    case this.responseType
+    of xhrtArraybuffer:
+      let len = csize_t(this.received.len)
+      let p = cast[ptr UncheckedArray[uint8]](cstring(this.received))
+      let opaque = this.received.ptrify()
+      this.responseObject = JS_NewArrayBuffer(ctx, p, len, abufFree, opaque,
+        false)
+    of xhrtBlob:
+      let len = this.received.len
+      let p = cast[ptr UncheckedArray[uint8]](cstring(this.received))
+      let opaque = this.received.ptrify()
+      let blob = newBlob(p, len, this.getContentType(), blobFree, opaque)
+      this.responseObject = ctx.toJS(blob)
+    of xhrtDocument:
+      #TODO this is certainly not compliant
+      let res = ctx.parseFromString(newDOMParser(), this.received, "text/html")
+      this.responseObject = ctx.toJS(res)
+    of xhrtJSON:
+      this.responseObject = JS_ParseJSON(ctx, cstring(this.received),
+        csize_t(this.received.len), cstring"<input>")
+    else: discard
+  if JS_IsException(this.responseObject):
+    this.responseObject = JS_UNDEFINED
+  return this.responseObject
 
 # Event reflection
 

@@ -71,12 +71,11 @@ proc item(pluginArray: var PluginArray): JSValue {.jsfunc.} = JS_NULL
 proc length(pluginArray: var PluginArray): uint32 {.jsfget.} = 0
 proc item(mimeTypeArray: var MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
 proc length(mimeTypeArray: var MimeTypeArray): uint32 {.jsfget.} = 0
-proc getter(pluginArray: var PluginArray; i: uint32): Option[JSValue]
+proc getter(pluginArray: var PluginArray; atom: JSAtom): JSValue {.jsgetprop.} =
+  return JS_NULL
+proc getter(mimeTypeArray: var MimeTypeArray; atom: JSAtom): JSValue
     {.jsgetprop.} =
-  discard
-proc getter(mimeTypeArray: var MimeTypeArray; i: uint32): Option[JSValue]
-    {.jsgetprop.} =
-  discard
+  return JS_NULL
 
 # Screen
 proc availWidth(screen: var Screen): int64 {.jsfget.} =
@@ -116,8 +115,7 @@ func key(this: var Storage; i: uint32): Option[string] {.jsfunc.} =
     return some(this.map[int(i)].value)
   return none(string)
 
-func getItem(this: var Storage; s: string): Option[string]
-    {.jsfunc.} =
+func getItem(this: var Storage; s: string): Option[string] {.jsfunc.} =
   let i = this.find(s)
   if i != -1:
     return some(this.map[i].value)

@@ -234,10 +234,9 @@ proc reflect(ctx: JSContext; this_val: JSValue; argc: cint;
   let fun = func_data[1]
   return JS_Call(ctx, fun, obj, argc, argv)
 
-proc getter(ctx: JSContext; pager: Pager; a: JSAtom): Option[JSValue]
-    {.jsgetprop.} =
+proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetprop.} =
   if pager.container != nil:
-    let cval = toJS(ctx, pager.container)
+    let cval = ctx.toJS(pager.container)
     let val = JS_GetProperty(ctx, cval, a)
     if JS_IsFunction(ctx, val):
       let func_data = @[cval, val]
@@ -245,11 +244,11 @@ proc getter(ctx: JSContext; pager: Pager; a: JSAtom): Option[JSValue]
         func_data.toJSValueArray())
       JS_FreeValue(ctx, cval)
       JS_FreeValue(ctx, val)
-      return some(fun)
+      return fun
     JS_FreeValue(ctx, cval)
     if not JS_IsUndefined(val):
-      return some(val)
-  return none(JSValue)
+      return val
+  return JS_NULL
 
 proc searchNext(pager: Pager; n = 1) {.jsfunc.} =
   if pager.regex.isSome:
