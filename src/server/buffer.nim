@@ -855,7 +855,7 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
     {.proxy.} =
   if cursory >= buffer.lines.len:
     return UpdateHoverResult()
-  var thisnode: StyledNode
+  var thisnode: StyledNode = nil
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
     thisnode = buffer.lines[cursory].formats[i].node
@@ -864,22 +864,22 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
   let prevnode = buffer.prevnode
   if thisnode != prevnode and (thisnode == nil or prevnode == nil or
       thisnode.node != prevnode.node):
-    for styledNode in thisnode.branch:
+    for styledNode in prevnode.branch:
       if styledNode.t == stElement and styledNode.node != nil:
         let elem = Element(styledNode.node)
-        if not elem.hover:
-          elem.setHover(true)
+        if elem.hover:
+          elem.setHover(false)
           repaint = true
     for ht in HoverType:
       let s = HoverFun[ht](buffer, thisnode)
       if buffer.hoverText[ht] != s:
         hover.add((ht, s))
         buffer.hoverText[ht] = s
-    for styledNode in prevnode.branch:
+    for styledNode in thisnode.branch:
       if styledNode.t == stElement and styledNode.node != nil:
         let elem = Element(styledNode.node)
-        if elem.hover:
-          elem.setHover(false)
+        if not elem.hover:
+          elem.setHover(true)
           repaint = true
   if repaint:
     buffer.reshape()
