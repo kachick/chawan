@@ -1,5 +1,6 @@
 import std/os
-const termlib = (proc(): string =
+
+const Termlib* = (proc(): string =
   const libs = [
     "terminfo", "mytinfo", "termlib", "termcap", "tinfo", "ncurses", "curses"
   ]
@@ -15,18 +16,18 @@ const termlib = (proc(): string =
     for dir in dirs:
       if fileExists(dir & "/lib" & lib & ".a"):
         return "-l" & lib
+  return ""
 )()
-when termlib != "":
-  {.passl: termlib.}
+
+const TermcapFound* = Termlib != ""
+
+when TermcapFound:
+  {.passl: Termlib.}
   {.push importc, cdecl.}
-  const termcap_found* = true
-  proc tgetent*(bp: cstring; name: cstring): cint
+  proc tgetent*(bp, name: cstring): cint
   proc tgetnum*(id: cstring): cint
   proc tgetflag*(id: cstring): cint
   proc tgetstr*(id: cstring; area: ptr cstring): cstring
   proc tgoto*(cap: cstring; x, y: cint): cstring
-  proc tputs*(str: cstring; len: cint; putc: proc(c: char): cint {.cdecl.}):
-    cint
+  proc tputs*(s: cstring; len: cint; putc: proc(c: char): cint {.cdecl.}): cint
   {.pop.}
-else:
-  const termcap_found* = false

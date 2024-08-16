@@ -88,11 +88,10 @@ type
     imageMode*: ImageMode
     smcup: bool
     tc: Termcap
-    tname: string
-    set_title: bool
+    setTitle: bool
     stdinUnblocked: bool
     stdinWasUnblocked: bool
-    orig_termios: Termios
+    origTermios: Termios
     defaultBackground: RGBColor
     defaultForeground: RGBColor
     ibuf*: string # buffer for chars when we can't process them
@@ -137,6 +136,22 @@ const XTNUMREGS = XTSMGRAPHICS(1, 1, 0)
 # image dimensions
 const XTIMGDIMS = XTSMGRAPHICS(2, 1, 0)
 
+# horizontal & vertical position
+template HVP(s: varargs[string, `$`]): string =
+  CSI(s) & "f"
+
+# erase line
+template EL(): string =
+  CSI() & "K"
+
+# erase display
+template ED(): string =
+  CSI() & "J"
+
+# select graphic rendition
+template SGR*(s: varargs[string, `$`]): string =
+  CSI(s) & "m"
+
 # device control string
 const DCSSTART = "\eP"
 
@@ -179,6 +194,10 @@ const RMCUP = DECRST(1049)
 const SGRMOUSEBTNON = DECSET(1002, 1006)
 const SGRMOUSEBTNOFF = DECRST(1002, 1006)
 
+# show/hide cursor
+const CNORM = DECSET(25)
+const CIVIS = DECRST(25)
+
 # application program command
 
 # This is only used in kitty images, and join()'ing kilobytes of base64
@@ -188,19 +207,7 @@ const ST = "\e\\"
 
 const KITTYQUERY = APC & "Gi=1,a=q;" & ST
 
-when not termcap_found:
-  const CNORM = DECSET(25)
-  const CIVIS = DECRST(25)
-  template HVP(s: varargs[string, `$`]): string =
-    CSI(s) & "f"
-  template EL(): string =
-    CSI() & "K"
-  template ED(): string =
-    CSI() & "J"
-
-  proc write(term: Terminal; s: string) =
-    term.outfile.write(s)
-else:
+when TermcapFound:
   func hascap(term: Terminal; c: TermcapCap): bool = term.tc.caps[c] != nil
   func cap(term: Terminal; c: TermcapCap): string = $term.tc.caps[c]
   func ccap(term: Terminal; c: TermcapCap): cstring = term.tc.caps[c]
@@ -213,7 +220,13 @@ else:
     discard tputs(s, 1, putc)
 
   proc write(term: Terminal; s: string) =
-    term.write(cstring(s))
+    if term.tc != nil:
+      term.write(cstring(s))
+    else:
+      term.outfile.write(s)
+else:
+  proc write(term: Terminal; s: string) =
+    term.outfile.write(s)
 
 proc readChar*(term: Terminal): char =
   if term.ibuf.len == 0:
@@ -222,29 +235,26 @@ proc readChar*(term: Terminal): char =
     result = term.ibuf[0]
     term.ibuf.delete(0..0)
 
-template SGR*(s: varargs[string, `$`]): string =
-  CSI(s) & "m"
-
 proc flush*(term: Terminal) =
   term.outfile.flushFile()
 
 proc cursorGoto(term: Terminal; x, y: int): string =
-  when termcap_found:
-    return $tgoto(term.ccap cm, cint(x), cint(y))
-  else:
-    return HVP(y + 1, x + 1)
+  when TermcapFound:
+    if term.tc != nil:
+      return $tgoto(term.ccap cm, cint(x), cint(y))
+  return HVP(y + 1, x + 1)
 
 proc clearEnd(term: Terminal): string =
-  when termcap_found:
-    return term.cap ce
-  else:
-    return EL()
+  when TermcapFound:
+    if term.tc != nil:
+      return term.cap ce
+  return EL()
 
 proc clearDisplay(term: Terminal): string =
-  when termcap_found:
-    return term.cap cd
-  else:
-    return ED()
+  when TermcapFound:
+    if term.tc != nil:
+      return term.cap cd
+  return ED()
 
 proc isatty*(file: File): bool =
   return file.getFileHandle().isatty() != 0
@@ -260,14 +270,14 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]") =
     discard term.istream.sreadChar()
 
 proc resetFormat(term: Terminal): string =
-  when termcap_found:
-    if term.isatty():
+  when TermcapFound:
+    if term.tc != nil:
       return term.cap me
   return SGR()
 
 proc startFormat(term: Terminal; flag: FormatFlag): string =
-  when termcap_found:
-    if term.isatty():
+  when TermcapFound:
+    if term.tc != nil:
       case flag
       of ffBold: return term.cap md
       of ffUnderline: return term.cap us
@@ -278,8 +288,8 @@ proc startFormat(term: Terminal; flag: FormatFlag): string =
   return SGR(FormatCodes[flag].s)
 
 proc endFormat(term: Terminal; flag: FormatFlag): string =
-  when termcap_found:
-    if term.isatty():
+  when TermcapFound:
+    if term.tc != nil:
       case flag
       of ffUnderline: return term.cap ue
       of ffItalic: return term.cap ZR
@@ -294,14 +304,14 @@ proc setCursor*(term: Terminal; x, y: int) =
     term.cursory = y
 
 proc enableAltScreen(term: Terminal): string =
-  when termcap_found:
-    if term.hascap ti:
+  when TermcapFound:
+    if term.tc != nil and term.hascap ti:
       return term.cap ti
   return SMCUP
 
 proc disableAltScreen(term: Terminal): string =
-  when termcap_found:
-    if term.hascap te:
+  when TermcapFound:
+    if term.tc != nil and term.hascap te:
       return term.cap te
   return RMCUP
 
@@ -472,7 +482,7 @@ proc processFormat*(term: Terminal; format: var Format; cellf: Format): string =
   format = cellf
 
 proc setTitle*(term: Terminal; title: string) =
-  if term.set_title:
+  if term.setTitle:
     term.outfile.write(XTSETTITLE(title.replaceControls()))
 
 proc enableMouse*(term: Terminal) =
@@ -546,16 +556,18 @@ proc generateSwapOutput(term: Terminal): string =
       term.lineDamage[y] = term.attrs.width
 
 proc hideCursor*(term: Terminal) =
-  when termcap_found:
-    term.write(term.ccap vi)
-  else:
-    term.write(CIVIS)
+  when TermcapFound:
+    if term.tc != nil:
+      term.write(term.ccap vi)
+      return
+  term.write(CIVIS)
 
 proc showCursor*(term: Terminal) =
-  when termcap_found:
-    term.write(term.ccap ve)
-  else:
-    term.write(CNORM)
+  when TermcapFound:
+    if term.tc != nil:
+      term.write(term.ccap ve)
+      return
+  term.write(CNORM)
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
   for ly in y ..< y + grid.height:
@@ -603,7 +615,7 @@ proc applyConfig(term: Terminal) =
   if term.isatty():
     if term.config.display.alt_screen.isSome:
       term.smcup = term.config.display.alt_screen.get
-    term.set_title = term.config.display.set_title
+    term.setTitle = term.config.display.set_title
   if term.config.display.default_background_color.isSome:
     term.defaultBackground = term.config.display.default_background_color.get
   if term.config.display.default_foreground_color.isSome:
@@ -882,11 +894,11 @@ proc clearCanvas*(term: Terminal) =
 
 # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 proc disableRawMode(term: Terminal) =
-  discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.orig_termios)
+  discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.origTermios)
 
 proc enableRawMode(term: Terminal) =
-  discard tcGetAttr(term.istream.fd, addr term.orig_termios)
-  var raw = term.orig_termios
+  discard tcGetAttr(term.istream.fd, addr term.origTermios)
+  var raw = term.origTermios
   raw.c_iflag = raw.c_iflag and not (BRKINT or ICRNL or INPCK or ISTRIP or IXON)
   raw.c_oflag = raw.c_oflag and not (OPOST)
   raw.c_cflag = raw.c_cflag or CS8
@@ -913,7 +925,7 @@ proc quit*(term: Terminal) =
     else:
       term.write(term.cursorGoto(0, term.attrs.height - 1) &
         term.resetFormat() & "\n")
-    if term.set_title:
+    if term.setTitle:
       term.write(XTPOPTITLE)
     term.showCursor()
     term.clearCanvas()
@@ -922,20 +934,23 @@ proc quit*(term: Terminal) =
       term.stdinWasUnblocked = true
   term.flush()
 
-when termcap_found:
+when TermcapFound:
   proc loadTermcap(term: Terminal) =
-    assert goutfile == nil
-    goutfile = term.outfile
-    let tc = new Termcap
-    if tgetent(cast[cstring](addr tc.bp), cstring(term.tname)) == 1:
+    var tname = getEnv("TERM")
+    if tname == "":
+      tname = "dosansi"
+    let tc = Termcap()
+    var res = tgetent(cast[cstring](addr tc.bp), cstring(tname))
+    if res == 0: # retry as dosansi
+      res = tgetent(cast[cstring](addr tc.bp), "dosansi")
+    if res > 0: # success
+      assert goutfile == nil
+      goutfile = term.outfile
       term.tc = tc
       for id in TermcapCap:
         tc.caps[id] = tgetstr(cstring($id), cast[ptr cstring](addr tc.funcstr))
       for id in TermcapCapNumeric:
         tc.numCaps[id] = tgetnum(cstring($id))
-    else:
-      raise newException(Defect,
-        "Failed to load termcap description for terminal " & term.tname)
 
 type
   QueryAttrs = enum
@@ -1152,12 +1167,9 @@ type TermStartResult* = enum
 
 # when windowOnly, only refresh window size.
 proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
-  result = tsrSuccess
-  term.tname = getEnv("TERM")
-  if term.tname == "":
-    term.tname = "dosansi"
+  var res = tsrSuccess
   if not term.isatty():
-    return
+    return res
   var win: IOctl_WinSize
   if ioctl(term.istream.fd, TIOCGWINSZ, addr win) != -1:
     term.attrs.width = int(win.ws_col)
@@ -1203,14 +1215,14 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
     else:
       # something went horribly wrong. set result to DA1 fail, pager will
       # alert the user
-      result = tsrDA1Fail
+      res = tsrDA1Fail
   if windowOnly:
-    return
+    return res
   if term.colorMode != cmTrueColor:
     let colorterm = getEnv("COLORTERM")
     if colorterm in ["24bit", "truecolor"]:
       term.colorMode = cmTrueColor
-  when termcap_found:
+  when TermcapFound:
     term.loadTermcap()
     if term.tc != nil:
       term.smcup = term.hascap ti
@@ -1229,9 +1241,10 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.formatMode.incl(ffReverse)
       if term.hascap mb:
         term.formatMode.incl(ffBlink)
-  else:
-    term.smcup = true
-    term.formatMode = {FormatFlag.low..FormatFlag.high}
+      return res
+  term.smcup = true
+  term.formatMode = {FormatFlag.low..FormatFlag.high}
+  return res
 
 type
   MouseInputType* = enum
@@ -1319,7 +1332,7 @@ proc windowChange*(term: Terminal) =
 
 proc initScreen(term: Terminal) =
   # note: deinit happens in quit()
-  if term.set_title:
+  if term.setTitle:
     term.write(XTPUSHTITLE)
   if term.smcup:
     term.write(term.enableAltScreen())
