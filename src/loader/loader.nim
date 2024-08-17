@@ -414,10 +414,17 @@ proc loadDataSend(ctx: LoaderContext; handle: LoaderHandle; s, ct: string) =
   handle.sendResult(0)
   handle.sendStatus(200)
   handle.sendHeaders(newHeaders({"Content-Type": ct}))
+  let output = handle.output
+  if s.len == 0:
+    if output.suspended:
+      output.istreamAtEnd = true
+      ctx.outputMap[output.ostream.fd] = output
+    else:
+      output.oclose()
+    return
   let buffer = newLoaderBuffer(size = s.len)
   buffer.len = s.len
   copyMem(buffer.page, unsafeAddr s[0], s.len)
-  let output = handle.output
   case ctx.pushBuffer(output, buffer, 0)
   of pbrUnregister:
     if output.registered:
