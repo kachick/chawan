@@ -526,7 +526,9 @@ proc putAtom(state: var LineBoxState; atom: InlineAtom;
 proc addSpacing(ictx: var InlineContext; width: LayoutUnit; state: InlineState;
     hang = false) =
   let fragment = ictx.whitespaceFragment
-  if fragment.state.atoms.len == 0 or fragment.state.atoms[^1].t != iatWord:
+  if fragment.state.atoms.len == 0 or ictx.lbstate.atoms.len == 0 or
+      (let oatom = fragment.state.atoms[^1];
+        oatom.t != iatWord or oatom != ictx.lbstate.atoms[^1]):
     let atom = InlineAtom(
       t: iatWord,
       size: size(w = 0, h = ictx.cellHeight),
