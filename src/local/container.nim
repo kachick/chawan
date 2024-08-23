@@ -1893,7 +1893,7 @@ proc windowChange*(container: Container; attrs: WindowAttributes) =
       var attrs = attrs
       # subtract status line height
       attrs.height -= 1
-      attrs.height_px -= attrs.ppl
+      attrs.heightPx -= attrs.ppl
       container.iface.windowChange(attrs).then(proc() =
         container.needslines = true
       )

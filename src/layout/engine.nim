@@ -3230,8 +3230,8 @@ proc buildTable(ctx: var InnerBlockContext) =
 
 proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   let space = availableSpace(
-    w = stretch(attrsp[].width_px),
-    h = stretch(attrsp[].height_px)
+    w = stretch(attrsp[].widthPx),
+    h = stretch(attrsp[].heightPx)
   )
   let lctx = LayoutContext(
     attrsp: attrsp,

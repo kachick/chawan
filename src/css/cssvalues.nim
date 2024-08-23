@@ -582,12 +582,12 @@ func px*(l: CSSLength; window: WindowAttributes; p: LayoutUnit): LayoutUnit =
   of cuIn: toLayoutUnit(l.num * 96)
   of cuPc: toLayoutUnit(l.num * 16)
   of cuPt: toLayoutUnit(l.num * 4 / 3)
-  of cuVw: toLayoutUnit(float64(window.width_px) * l.num / 100)
-  of cuVh: toLayoutUnit(float64(window.height_px) * l.num / 100)
+  of cuVw: toLayoutUnit(float64(window.widthPx) * l.num / 100)
+  of cuVh: toLayoutUnit(float64(window.heightPx) * l.num / 100)
   of cuVmin:
-    toLayoutUnit(min(window.width_px, window.height_px) / 100 * l.num)
+    toLayoutUnit(min(window.widthPx, window.heightPx) / 100 * l.num)
   of cuVmax:
-    toLayoutUnit(max(window.width_px, window.height_px) / 100 * l.num)
+    toLayoutUnit(max(window.widthPx, window.heightPx) / 100 * l.num)
 
 func blockify*(display: CSSDisplay): CSSDisplay =
   case display

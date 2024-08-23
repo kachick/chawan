@@ -1942,7 +1942,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
     var attrs = pager.attrs
     # subtract status line height
     attrs.height -= 1
-    attrs.height_px -= attrs.ppl
+    attrs.heightPx -= attrs.ppl
     container.process = pager.forkserver.forkBuffer(
       container.config,
       container.url,

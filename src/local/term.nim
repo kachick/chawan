@@ -593,13 +593,13 @@ proc applyConfigDimensions(term: Terminal) =
     term.attrs.ppc = int(term.config.display.pixels_per_column)
   if term.attrs.ppl == 0 or term.config.display.force_pixels_per_line:
     term.attrs.ppl = int(term.config.display.pixels_per_line)
-  term.attrs.width_px = term.attrs.ppc * term.attrs.width
-  term.attrs.height_px = term.attrs.ppl * term.attrs.height
+  term.attrs.widthPx = term.attrs.ppc * term.attrs.width
+  term.attrs.heightPx = term.attrs.ppl * term.attrs.height
   if term.imageMode == imSixel:
     if term.sixelMaxWidth == 0:
-      term.sixelMaxWidth = term.attrs.width_px
+      term.sixelMaxWidth = term.attrs.widthPx
     if term.sixelMaxHeight == 0:
-      term.sixelMaxHeight = term.attrs.height_px
+      term.sixelMaxHeight = term.attrs.heightPx
 
 proc applyConfig(term: Terminal) =
   # colors, formatting

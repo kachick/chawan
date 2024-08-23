@@ -46,9 +46,9 @@ func applies(feature: MediaFeature; window: Window): bool =
   of mftPrefersColorScheme:
     return feature.b
   of mftWidth:
-    return feature.appliesLR(window, toLayoutUnit(window.attrs.width_px))
+    return feature.appliesLR(window, window.attrs.widthPx.toLayoutUnit)
   of mftHeight:
-    return feature.appliesLR(window, toLayoutUnit(window.attrs.height_px))
+    return feature.appliesLR(window, window.attrs.heightPx.toLayoutUnit)
   of mftScripting:
     return feature.b == window.settings.scripting
 
