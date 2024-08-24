@@ -67,6 +67,8 @@ type
     marked*: bool
     kittyId: int
     bmp: Bitmap
+    # 0 if kitty
+    erry: int
     # absolute x, y in container
     rx: int
     ry: int
@@ -92,10 +94,10 @@ type
     stdinUnblocked: bool
     stdinWasUnblocked: bool
     origTermios: Termios
-    defaultBackground: RGBColor
+    defaultBackground*: RGBColor
     defaultForeground: RGBColor
     ibuf*: string # buffer for chars when we can't process them
-    sixelRegisterNum: int
+    sixelRegisterNum*: int
     sixelMaxWidth: int
     sixelMaxHeight: int
     kittyId: int # counter for kitty image (*not* placement) ids.
@@ -212,21 +214,16 @@ when TermcapFound:
   func cap(term: Terminal; c: TermcapCap): string = $term.tc.caps[c]
   func ccap(term: Terminal; c: TermcapCap): cstring = term.tc.caps[c]
 
-  var goutfile: File
-  proc putc(c: char): cint {.cdecl.} =
-    goutfile.write(c)
+proc write(term: Terminal; s: openArray[char]) =
+  # write() calls $ on s, so we must writeBuffer
+  if s.len > 0:
+    discard term.outfile.writeBuffer(unsafeAddr s[0], s.len)
 
-  proc write(term: Terminal; s: cstring) =
-    discard tputs(s, 1, putc)
+proc write(term: Terminal; s: string) =
+  term.outfile.write(s)
 
-  proc write(term: Terminal; s: string) =
-    if term.tc != nil:
-      term.write(cstring(s))
-    else:
-      term.outfile.write(s)
-else:
-  proc write(term: Terminal; s: string) =
-    term.outfile.write(s)
+proc write(term: Terminal; s: cstring) =
+  term.outfile.write(s)
 
 proc readChar*(term: Terminal): char =
   if term.ibuf.len == 0:
@@ -645,12 +642,14 @@ proc outputGrid*(term: Terminal) =
   term.cursorx = -1
   term.cursory = -1
 
-func findImage(term: Terminal; pid, imageId: int; bmp: Bitmap; rx, ry: int):
-    CanvasImage =
+func findImage(term: Terminal; pid, imageId: int; bmp: Bitmap;
+    rx, ry, erry, offx, dispw: int): CanvasImage =
   for it in term.canvasImages:
     if it.pid == pid and it.imageId == imageId and
         it.bmp.width == bmp.width and it.bmp.height == bmp.height and
-        it.rx == rx and it.ry == ry:
+        it.rx == rx and it.ry == ry and
+        (term.imageMode != imSixel or it.erry == erry and it.dispw == dispw and
+          it.offx == offx):
       return it
   return nil
 
@@ -700,8 +699,9 @@ proc clearImages*(term: Terminal; maxh: int) =
     image.marked = false
 
 proc loadImage*(term: Terminal; bmp: Bitmap; data: Blob; pid, imageId,
-    x, y, rx, ry, maxw, maxh: int): CanvasImage =
-  if (let image = term.findImage(pid, imageId, bmp, rx, ry); image != nil):
+    x, y, rx, ry, maxw, maxh, erry, offx, dispw: int): CanvasImage =
+  if (let image = term.findImage(pid, imageId, bmp, rx, ry, erry, offx, dispw);
+      image != nil):
     # reuse image on screen
     if image.x != x or image.y != y:
       # only clear sixels; with kitty we just move the existing image
@@ -729,45 +729,23 @@ proc loadImage*(term: Terminal; bmp: Bitmap; data: Blob; pid, imageId,
     imageId: imageId,
     data: data,
     rx: rx,
-    ry: ry
+    ry: ry,
+    erry: erry
   )
   if term.positionImage(image, x, y, maxw, maxh):
     return image
   # no longer on screen
   return nil
 
-# data is binary 0..63; the output is the final ASCII form.
-proc compressSixel(data: openArray[uint8]): string =
-  var outs = newStringOfCap(data.len div 4)
-  var n = 0
-  var c = char(0)
-  for u in data:
-    let cc = char(u + 0x3F)
-    if c != cc:
-      if n > 3:
-        outs &= '!' & $n & c
-      else: # for char(0) n is also 0, so it is ignored.
-        outs &= c.repeat(n)
-      c = cc
-      n = 0
-    inc n
-  if n > 3:
-    outs &= '!' & $n & c
-  else:
-    outs &= c.repeat(n)
-  return outs
+func getOffYIdx(data: openArray[char]; y, starti: int): int32 =
+  let i = starti + (y div 6) * 4
+  return int32(data[i]) or
+    (int32(data[i + 1]) shl 8) or
+    (int32(data[i + 2]) shl 16) or
+    (int32(data[i + 3]) shl 24)
 
-type SixelBand = object
- c: uint8
- data: seq[uint8]
-
-func find(bands: seq[SixelBand]; c: uint8): int =
-  for i, band in bands:
-    if band.c == c:
-      return i
-  -1
-
-proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
+proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
+    data: openArray[char]) =
   let offx = image.offx
   let offy = image.offy
   let dispw = image.dispw
@@ -776,53 +754,62 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
   var outs = term.cursorGoto(x, y)
   outs &= DCSSTART & 'q'
   # set raster attributes
-  outs &= "\"1;1;" & $(dispw - offx) & ';' & $(disph - offy)
-  for b in 16 ..< 256:
-    # laziest possible register allocation scheme
-    #TODO obviously this produces sub-optimal results
-    let rgb = EightBitColor(b).toRGB()
-    let rgbq = RGBColor(uint32(rgb).fastmul(100))
-    let n = b - 15
-    # 2 is RGB
-    outs &= '#' & $n & ";2;" & $rgbq.r & ';' & $rgbq.g & ';' & $rgbq.b
-  var n = offy * int(bmp.width) # start at offy
-  let H = disph * int(bmp.width) # end at disph
-  var m = y * term.attrs.width * term.attrs.ppl # track absolute y
   let realw = dispw - offx
-  let cx0 = x * term.attrs.ppc
-  while n < H:
-    var bands = newSeq[SixelBand]()
-    for i in 0 ..< 6:
-      if n >= H:
-        break
-      let mask = 1u8 shl i
-      let my = m div term.attrs.ppl
-      for bx in 0 ..< realw:
-        let cx = (cx0 + bx) div term.attrs.ppc
-        var c0 = bmp.px[n + bx + offx]
-        if c0.a != 255:
-          let bgcolor0 = term.canvas[my + cx].format.bgcolor
-          let bgcolor = term.getRGB(bgcolor0, term.defaultBackground)
-          let c1 = bgcolor.blend(c0)
-          c0 = RGBAColorBE(r: c1.r, g: c1.g, b: c1.b, a: c1.a)
-        let c = uint8(c0.toEightBit())
-        if (let j = bands.find(c); j != -1):
-          bands[j].data[bx] = bands[j].data[bx] or mask
-        else:
-          bands.add(SixelBand(c: c, data: newSeq[uint8](realw)))
-          bands[^1].data[^1] = mask
-      n += int(bmp.width)
-      m += term.attrs.width
-    term.write(outs)
-    outs = ""
-    for i, band in bands:
-      let t = if i != bands.high: '$' else: '-'
-      let n = band.c - 15
-      outs &= '#' & $n & band.data.compressSixel() & t
-  if outs.len > 0 and outs[^1] == '-':
-    outs.setLen(outs.len - 1)
-  outs &= ST
+  var realh = disph - offy
+  #if disph < int(bmp.height):
+  #  realh -= image.erry
+  outs &= "\"1;1;" & $realw & ';' & $realh
   term.write(outs)
+  let sraLen = uint32(data[0]) or
+    (uint32(data[1]) shl 8) or
+    (uint32(data[2]) shl 16) or
+    (uint32(data[3]) shl 24)
+  let preludeLen = int(sraLen + 4)
+  term.write(data.toOpenArray(4, 4 + int(sraLen) - 1))
+  let lookupTableLen = ((int(bmp.height) + 5) div 6 + 1) * 4
+  let L = data.len - lookupTableLen
+  # Note: we only crop images when it is possible to do so in near constant
+  # time. Otherwise, the image is re-coded in a cropped form.
+  if realh == int(bmp.height):
+    term.write(data.toOpenArray(preludeLen, L - 1))
+  else:
+    let offyi = data.getOffYIdx(offy, L)
+    var e = disph
+    if disph < int(bmp.height):
+      e -= image.erry
+    let endyi = data.getOffYIdx(e, L)
+    if endyi <= offyi:
+      return
+    let si = preludeLen + int(offyi)
+    let ei = preludeLen + int(endyi) - 1
+    assert offyi < endyi
+    assert ei <= data.len - lookupTableLen
+    term.write(data.toOpenArray(si, ei - 1))
+    var ndash = 0
+    for c in data.toOpenArray(si, ei - 1):
+      if c == '-':
+        inc ndash
+    let herry = realh - (realh div 6) * 6
+    if herry > 0 and disph < int(bmp.height):
+      # can't write out the last row completely; mask off the bottom part.
+      let mask = (1u8 shl herry) - 1
+      var s = "-"
+      var i = ei + 1
+      inc ndash
+      while i < L and (let c = data[i]; c notin {'-', '\e'}): # newline or ST
+        let u = uint8(c) - 0x3F # may underflow, but that's no problem
+        if u < 0x40:
+          s &= char((u and mask) + 0x3F)
+        else:
+          s &= c
+        inc i
+      term.write(s)
+    term.write(ST)
+
+proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
+  var p = cast[ptr UncheckedArray[char]](image.data.buffer)
+  let H = int(image.data.size - 1)
+  term.outputSixelImage(x, y, image, p.toOpenArray(0, H))
 
 proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   var outs = term.cursorGoto(x, y) &
@@ -944,8 +931,6 @@ when TermcapFound:
     if res == 0: # retry as dosansi
       res = tgetent(cast[cstring](addr tc.bp), "dosansi")
     if res > 0: # success
-      assert goutfile == nil
-      goutfile = term.outfile
       term.tc = tc
       for id in TermcapCap:
         tc.caps[id] = tgetstr(cstring($id), cast[ptr cstring](addr tc.funcstr))
@@ -1213,6 +1198,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       for (n, rgb) in r.colorMap:
         term.colorMap[n] = rgb
     else:
+      term.sixelRegisterNum = 256
       # something went horribly wrong. set result to DA1 fail, pager will
       # alert the user
       res = tsrDA1Fail

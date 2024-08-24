@@ -482,14 +482,18 @@ proc redraw(pager: Pager) {.jsfunc.} =
     if pager.container.select != nil:
       pager.container.select.redraw = true
 
-proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap) =
+proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
+    offx, erry, dispw: int) =
   let bmp = NetworkBitmap()
   bmp[] = NetworkBitmap(image.bmp)[]
   let request = newRequest(newURL("cache:" & $bmp.cacheId).get)
   let cachedImage = CachedImage(
     bmp: bmp,
     width: image.width,
-    height: image.height
+    height: image.height,
+    offx: offx,
+    erry: erry,
+    dispw: dispw
   )
   pager.loader.shareCachedItem(bmp.cacheId, pager.loader.clientPid,
     container.process)
@@ -523,38 +527,44 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap) =
     # take target sizes
     bmp.width = uint64(image.width)
     bmp.height = uint64(image.height)
+    let headers = newHeaders({
+      "Cha-Image-Dimensions": $image.width & 'x' & $image.height
+    })
+    var url: URL = nil
     case imageMode
     of imSixel:
-      #TODO we should only cache the final output in memory, not the full
-      # bitmap.
-      response.saveToBitmap(bmp).then(proc() =
-        container.redraw = true
-        cachedImage.loaded = true
-        pager.loader.removeCachedItem(bmp.cacheId)
-      )
+      url = newURL("img-codec+x-sixel:encode").get
+      headers.add("Cha-Image-Sixel-Halfdump", "1")
+      headers.add("Cha-Image-Sixel-Palette", $pager.term.sixelRegisterNum)
+      headers.add("Cha-Image-Background-Color", $pager.term.defaultBackground)
+      headers.add("Cha-Image-Offset", $offx & 'x' & $erry)
+      headers.add("Cha-Image-Crop-Width", $dispw)
     of imKitty:
-      let headers = newHeaders({
-        "Cha-Image-Dimensions": $image.width & 'x' & $image.height
-      })
-      let request = newRequest(
-        newURL("img-codec+png:encode").get,
-        httpMethod = hmPost,
-        headers = headers,
-        body = RequestBody(t: rbtOutput, outputId: response.outputId),
-      )
-      let r = pager.loader.fetch(request)
-      response.resume()
-      response.unregisterFun()
-      response.body.sclose()
-      r.then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
-        return res.get.blob()
-      ).then(proc(res: JSResult[Blob]) =
+      url = newURL("img-codec+png:encode").get
+    of imNone: assert false
+    let request = newRequest(
+      url,
+      httpMethod = hmPost,
+      headers = headers,
+      body = RequestBody(t: rbtOutput, outputId: response.outputId),
+    )
+    let r = pager.loader.fetch(request)
+    response.resume()
+    response.unregisterFun()
+    response.body.sclose()
+    r.then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
+      if res.isNone:
+        let p = newPromise[JSResult[Blob]]()
+        p.resolve(JSResult[Blob].err(res.error))
+        return p
+      return res.get.blob()
+    ).then(proc(res: JSResult[Blob]) =
+      if res.isSome:
         container.redraw = true
         cachedImage.data = res.get
         cachedImage.loaded = true
-        pager.loader.removeCachedItem(bmp.cacheId)
-      )
-    of imNone: assert false
+      pager.loader.removeCachedItem(bmp.cacheId)
+    )
   )
   container.cachedImages.add(cachedImage)
 
@@ -564,12 +574,22 @@ proc initImages(pager: Pager; container: Container) =
     var imageId = -1
     var data: Blob = nil
     var bmp0 = image.bmp
+    var erry = 0
+    var offx = 0
+    var dispw = 0
     if image.bmp of NetworkBitmap:
       let bmp = NetworkBitmap(image.bmp)
-      let cached = container.findCachedImage(image)
+      if pager.term.imageMode == imSixel:
+        let xpx = (image.x - container.fromx) * pager.attrs.ppc
+        offx = -min(xpx, 0)
+        let maxwpx = pager.bufWidth * pager.attrs.ppc
+        dispw = min(int(image.width) + xpx, maxwpx) - xpx
+        let ypx = (image.y - container.fromy) * pager.attrs.ppl
+        erry = -min(ypx, 0) mod 6
+      let cached = container.findCachedImage(image, offx, erry, dispw)
       imageId = bmp.imageId
       if cached == nil:
-        pager.loadCachedImage(container, image)
+        pager.loadCachedImage(container, image, offx, erry, dispw)
         continue
       bmp0 = cached.bmp
       data = cached.data
@@ -580,7 +600,7 @@ proc initImages(pager: Pager; container: Container) =
       inc pager.imageId
     let canvasImage = pager.term.loadImage(bmp0, data, container.process,
       imageId, image.x - container.fromx, image.y - container.fromy,
-      image.x, image.y, pager.bufWidth, pager.bufHeight)
+      image.x, image.y, pager.bufWidth, pager.bufHeight, erry, offx, dispw)
     if canvasImage != nil:
       newImages.add(canvasImage)
   pager.term.clearImages(pager.bufHeight)

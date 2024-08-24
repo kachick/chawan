@@ -106,6 +106,16 @@ type
     height*: int
     data*: Blob
     bmp*: NetworkBitmap
+    # Following variables are always 0 in kitty mode; they exist to support
+    # sixel cropping.
+    # We can easily crop images where we just have to exclude some lines prior
+    # to/after the image, but we must re-encode if
+    # * offx > 0, dispw < width or
+    # * offy % 6 != previous offy % 6 (currently only happens when cell height
+    #   is not a multiple of 6).
+    offx*: int # same as CanvasImage.offx
+    dispw*: int # same as CanvasImage.dispw
+    erry*: int # same as CanvasImage.offy % 6
 
   Container* = ref object
     # note: this is not the same as source.request.url (but should be synced
@@ -2058,11 +2068,13 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
       hlformat.bgcolor = hlcolor
       display[y * display.width + x].format = hlformat
 
-func findCachedImage*(container: Container; image: PosBitmap): CachedImage =
+func findCachedImage*(container: Container; image: PosBitmap;
+    offx, erry, dispw: int): CachedImage =
   let imageId = NetworkBitmap(image.bmp).imageId
   for it in container.cachedImages:
     if it.bmp.imageId == imageId and it.width == image.width and
-        it.height == image.height:
+        it.height == image.height and it.offx == offx and it.erry == erry and
+        it.dispw == dispw:
       return it
   return nil
 
