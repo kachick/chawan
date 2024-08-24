@@ -200,6 +200,8 @@ uninstall:
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
+# urldec is just a symlink to urlenc
+	rm -f $(LIBEXECDIR_CHAWAN)/urldec
 	rmdir $(LIBEXECDIR_CHAWAN) || true
 	for f in $(manpages5); do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
 	for f in $(manpages1); do rm -f "$(DESTDIR)$(MANPREFIX1)/$$f"; done
@@ -215,9 +217,11 @@ test/net/run: test/net/run.nim
 test_js:
 	(cd test/js; ./run_js_tests.sh)
 
+.PHONY: test_layout
 test_layout:
 	(cd test/layout; ./run_layout_tests.sh)
 
+.PHONY: test_net
 test_net: test/net/run
 	(cd test/net; ./run)
 
