@@ -4465,7 +4465,7 @@ proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
 # Note: the standard says quality should be converted in a strange way for
 # backwards compat, but I don't care.
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
-    contentType = "image/png"; quality = none(float64)): JSValue {.jsfunc.} =
+    contentType = "image/png"; quality = none(float64)) {.jsfunc.} =
   if not contentType.startsWith("image/"):
     return
   let url = newURL("img-codec+" & contentType.after('/') & ":encode")
@@ -4473,7 +4473,8 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
     return
   #TODO this is dumb (and slow)
   var s = newString(this.bitmap.px.len * 4)
-  copyMem(addr s[0], addr this.bitmap.px[0], this.bitmap.px.len * 4)
+  if s.len > 0:
+    copyMem(addr s[0], addr this.bitmap.px[0], s.len)
   let headers = newHeaders({
     "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
   })
@@ -4491,32 +4492,19 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
   let callback = JS_DupValue(ctx, callback)
   let window = this.document.window
   let contentType = contentType.toLowerAscii()
-  window.loader.fetch(request).then(proc(res: JSResult[Response]):
-      EmptyPromise =
+  window.loader.fetch(request).then(proc(res: JSResult[Response]) =
     if res.isNone:
       if contentType != "image/png":
         # redo as PNG.
         # Note: this sounds dumb, and is dumb, but also standard mandated so
         # whatever.
-        discard ctx.toBlob(this, callback, "image/png", quality)
+        ctx.toBlob(this, callback, "image/png") # PNG doesn't understand quality
       else: # the png encoder doesn't work...
         window.console.error("missing/broken PNG encoder")
       JS_FreeValue(ctx, callback)
       return
-    let response = res.get
-    if "Cha-Image-Dimensions" notin response.headers.table:
-      window.console.error("Cha-Image-Dimensions missing")
-      JS_FreeValue(ctx, callback)
-      return
-    let dims = response.headers.table["Cha-Image-Dimensions"][0]
-    let width = parseUInt64(dims.until('x'), allowSign = false)
-    let height = parseUInt64(dims.after('x'), allowSign = false)
-    if width.isNone or height.isNone:
-      window.console.error("wrong Cha-Image-Dimensions")
-      JS_FreeValue(ctx, callback)
-      return
-    response.blob().then(proc(blob: JSResult[Blob]) =
-      let jsBlob = toJS(ctx, blob)
+    res.get.blob().then(proc(blob: JSResult[Blob]) =
+      let jsBlob = ctx.toJS(blob)
       let res = JS_Call(ctx, callback, JS_UNDEFINED, 1, jsBlob.toJSValueArray())
       if JS_IsException(res):
         window.console.error("Exception in canvas toBlob:",
@@ -4526,7 +4514,6 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
       JS_FreeValue(ctx, callback)
     )
   )
-  return JS_UNDEFINED
 
 # https://w3c.github.io/DOM-Parsing/#dfn-fragment-parsing-algorithm
 proc fragmentParsingAlgorithm*(element: Element; s: string): DocumentFragment =
