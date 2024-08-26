@@ -23,8 +23,20 @@ type
     earlyhint: EarlyHintState
     slist: curl_slist
 
+const STDIN_FILENO = 0
+const STDOUT_FILENO = 1
+
+proc writeAll(data: pointer; size: int) =
+  var n = 0
+  while n < size:
+    let i = write(STDOUT_FILENO, addr cast[ptr UncheckedArray[uint8]](data)[n],
+      int(size) - n)
+    assert i >= 0
+    n += i
+
 proc puts(s: string) =
-  discard write(1, unsafeAddr s[0], s.len)
+  if s.len > 0:
+    writeAll(unsafeAddr s[0], s.len)
 
 proc curlWriteHeader(p: cstring; size, nitems: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
@@ -63,12 +75,12 @@ proc curlWriteHeader(p: cstring; size, nitems: csize_t; userdata: pointer):
 # From the documentation: size is always 1.
 proc curlWriteBody(p: cstring; size, nmemb: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
-  return csize_t(write(stdout.getFileHandle(), p, int(nmemb)))
+  return csize_t(write(STDOUT_FILENO, p, int(nmemb)))
 
 # From the documentation: size is always 1.
 proc readFromStdin(p: pointer; size, nitems: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
-  return csize_t(read(0, p, int(nitems)))
+  return csize_t(read(STDIN_FILENO, p, int(nitems)))
 
 proc curlPreRequest(clientp: pointer; conn_primary_ip, conn_local_ip: cstring;
     conn_primary_port, conn_local_port: cint): cint {.cdecl.} =
