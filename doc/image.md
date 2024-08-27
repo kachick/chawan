@@ -28,7 +28,7 @@ such terminals, you also have to set "display.image-mode" appropriately.
 Supported output formats are:
 
 * The DEC SIXEL format
-* The Kitty terminal grapphics protocol
+* The Kitty terminal graphics protocol
 
 The former is supported because it's ubiquitiously adopted; the latter
 because it is technically superior to all existing alternatives.

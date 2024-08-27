@@ -59,8 +59,7 @@ Currently implemented features are:
 * can load user-defined [protocols](doc/urimethodmap.md) and
   [file formats](doc/mailcap.md)
 * markdown viewer, man page viewer
-* WIP sixel/kitty image support (still somewhat limited; progress tracked at
-  <https://todo.sr.ht/~bptato/chawan/13>)
+* sixel/kitty image support
 * mouse support
 * OS-level sandboxing on FreeBSD, OpenBSD and Linux (through Capsicum, pledge
   and libseccomp)
@@ -78,6 +77,7 @@ Currently implemented features are:
 * urimethodmap: [doc/urimethodmap.md](doc/urimethodmap.md)
 * local CGI: [doc/localcgi.md](doc/localcgi.md)
 * protocols: [doc/protocols.md](doc/protocols.md)
+* inline images: [doc/image.md](doc/image.md)
 * troubleshooting: [doc/troubleshooting.md](doc/troubleshooting.md)
 
 If you're interested in modifying the code:
