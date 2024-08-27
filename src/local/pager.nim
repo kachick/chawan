@@ -1083,6 +1083,7 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
     let container = pager.newContainerFrom(pager.container, contentType)
     if container != nil:
       container.sourcepair = pager.container
+      pager.navDirection = ndNext
       pager.container.sourcepair = container
       pager.addContainer(container)
 
