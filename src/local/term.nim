@@ -65,6 +65,7 @@ type
     disph: int
     damaged: bool
     marked*: bool
+    dead: bool
     kittyId: int
     bmp: Bitmap
     # 0 if kitty
@@ -645,7 +646,7 @@ proc outputGrid*(term: Terminal) =
 func findImage(term: Terminal; pid, imageId: int; bmp: Bitmap;
     rx, ry, erry, offx, dispw: int): CanvasImage =
   for it in term.canvasImages:
-    if it.pid == pid and it.imageId == imageId and
+    if not it.dead and it.pid == pid and it.imageId == imageId and
         it.bmp.width == bmp.width and it.bmp.height == bmp.height and
         it.rx == rx and it.ry == ry and
         (term.imageMode != imSixel or it.erry == erry and it.dispw == dispw and
@@ -709,6 +710,7 @@ proc loadImage*(term: Terminal; bmp: Bitmap; data: Blob; pid, imageId,
         term.clearImage(image, maxh)
       if not term.positionImage(image, x, y, maxw, maxh):
         # no longer on screen
+        image.dead = true
         return nil
     elif term.imageMode == imSixel:
       # check if any line of our image is damaged
