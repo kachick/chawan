@@ -302,10 +302,13 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
         bands[k].data[j] = bands[k].data[j] or mask
       n += W
     outs.setLen(0)
-    for i in 0 ..< bands.high:
+    var i = 0
+    while true:
       outs &= bands[i].compressSixel()
+      inc i
+      if i >= bands.len:
+        break
       outs &= '$'
-    outs &= bands[^1].compressSixel()
     if n >= H:
       outs &= ST
     else:
@@ -314,6 +317,7 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
     stdout.write(outs)
   if halfdump:
     ymap.putU32BE(uint32(totalLen))
+    ymap.putU32BE(uint32(ymap.len))
     stdout.write(ymap)
 
 proc parseDimensions(s: string): (int, int) =

@@ -739,12 +739,11 @@ proc loadImage*(term: Terminal; bmp: Bitmap; data: Blob; pid, imageId,
   # no longer on screen
   return nil
 
-func getOffYIdx(data: openArray[char]; y, starti: int): int32 =
-  let i = starti + (y div 6) * 4
-  return int32(data[i]) or
-    (int32(data[i + 1]) shl 8) or
-    (int32(data[i + 2]) shl 16) or
-    (int32(data[i + 3]) shl 24)
+func getU32BE(data: openArray[char]; i: int): uint32 =
+  return uint32(data[i]) or
+    (uint32(data[i + 1]) shl 8) or
+    (uint32(data[i + 2]) shl 16) or
+    (uint32(data[i + 3]) shl 24)
 
 proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
     data: openArray[char]) =
@@ -757,56 +756,43 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   outs &= DCSSTART & 'q'
   # set raster attributes
   let realw = dispw - offx
-  var realh = disph - offy
-  #if disph < int(bmp.height):
-  #  realh -= image.erry
+  let realh = disph - offy
   outs &= "\"1;1;" & $realw & ';' & $realh
   term.write(outs)
-  let sraLen = uint32(data[0]) or
-    (uint32(data[1]) shl 8) or
-    (uint32(data[2]) shl 16) or
-    (uint32(data[3]) shl 24)
-  let preludeLen = int(sraLen + 4)
-  term.write(data.toOpenArray(4, 4 + int(sraLen) - 1))
-  let lookupTableLen = ((int(bmp.height) + 5) div 6 + 1) * 4
-  let L = data.len - lookupTableLen
+  let sraLen = int(data.getU32BE(0))
+  let preludeLen = sraLen + 4
+  term.write(data.toOpenArray(4, 4 + sraLen - 1))
+  let lookupTableLen = int(data.getU32BE(data.len - 4))
+  let L = data.len - lookupTableLen - 4
   # Note: we only crop images when it is possible to do so in near constant
   # time. Otherwise, the image is re-coded in a cropped form.
-  if realh == int(bmp.height):
+  if realh == int(bmp.height): # don't crop
     term.write(data.toOpenArray(preludeLen, L - 1))
   else:
-    let offyi = data.getOffYIdx(offy, L)
-    var e = disph
-    if disph < int(bmp.height):
-      e -= image.erry
-    let endyi = data.getOffYIdx(e, L)
-    if endyi <= offyi:
-      return
-    let si = preludeLen + int(offyi)
-    let ei = preludeLen + int(endyi) - 1
-    assert offyi < endyi
-    assert ei <= data.len - lookupTableLen
-    term.write(data.toOpenArray(si, ei - 1))
-    var ndash = 0
-    for c in data.toOpenArray(si, ei - 1):
-      if c == '-':
-        inc ndash
-    let herry = realh - (realh div 6) * 6
-    if herry > 0 and disph < int(bmp.height):
-      # can't write out the last row completely; mask off the bottom part.
-      let mask = (1u8 shl herry) - 1
-      var s = "-"
-      var i = ei + 1
-      inc ndash
-      while i < L and (let c = data[i]; c notin {'-', '\e'}): # newline or ST
-        let u = uint8(c) - 0x3F # may underflow, but that's no problem
-        if u < 0x40:
-          s &= char((u and mask) + 0x3F)
-        else:
-          s &= c
-        inc i
-      term.write(s)
-    term.write(ST)
+    let si = preludeLen + int(data.getU32BE(L + (offy div 6) * 4))
+    if disph == int(bmp.height): # crop top only
+      term.write(data.toOpenArray(si, L - 1))
+    else: # crop both top & bottom
+      let ed6 = (disph - image.erry) div 6
+      let ei = preludeLen + int(data.getU32BE(L + ed6 * 4)) - 1
+      term.write(data.toOpenArray(si, ei - 1))
+      # calculate difference between target Y & actual position in the map
+      # note: it must be offset by image.erry; that's where the map starts.
+      let herry = disph - (ed6 * 6 + image.erry)
+      if herry > 0:
+        # can't write out the last row completely; mask off the bottom part.
+        let mask = (1u8 shl herry) - 1
+        var s = "-"
+        var i = ei + 1
+        while i < L and (let c = data[i]; c notin {'-', '\e'}): # newline or ST
+          let u = uint8(c) - 0x3F # may underflow, but that's no problem
+          if u < 0x40:
+            s &= char((u and mask) + 0x3F)
+          else:
+            s &= c
+          inc i
+        term.write(s)
+      term.write(ST)
 
 proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
   var p = cast[ptr UncheckedArray[char]](image.data.buffer)
