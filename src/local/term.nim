@@ -757,7 +757,9 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   # set raster attributes
   let realw = dispw - offx
   let realh = disph - offy
-  outs &= "\"1;1;" & $realw & ';' & $realh
+  # transparent if we want to draw a non-6-divisible number of rows
+  let trans = realh mod 6 != 0
+  outs &= "\"1;" & $int(trans) & ";" & $realw & ';' & $realh
   term.write(outs)
   let sraLen = int(data.getU32BE(0))
   let preludeLen = sraLen + 4

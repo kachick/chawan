@@ -15,11 +15,30 @@
 import std/algorithm
 import std/options
 import std/os
+import std/posix
 import std/strutils
 
 import types/color
 import utils/sandbox
 import utils/twtstr
+
+const STDOUT_FILENO = 1
+
+proc writeAll(data: pointer; size: int) =
+  var n = 0
+  while n < size:
+    let i = write(STDOUT_FILENO, addr cast[ptr UncheckedArray[uint8]](data)[n],
+      int(size) - n)
+    assert i >= 0
+    n += i
+
+proc puts(s: string) =
+  if s.len > 0:
+    writeAll(unsafeAddr s[0], s.len)
+
+proc die(s: string) {.noreturn.} =
+  puts(s)
+  quit(1)
 
 const DCSSTART = "\eP"
 const ST = "\e\\"
@@ -59,11 +78,11 @@ func find(bands: seq[SixelBand]; c: int): int =
       return i
   return -1
 
-proc setU32BE(s: var string; n: uint32) =
-  s[0] = char(n and 0xFF)
-  s[1] = char((n shr 8) and 0xFF)
-  s[2] = char((n shr 16) and 0xFF)
-  s[3] = char((n shr 24) and 0xFF)
+proc setU32BE(s: var string; n: uint32; at: int) =
+  s[at] = char(n and 0xFF)
+  s[at + 1] = char((n shr 8) and 0xFF)
+  s[at + 2] = char((n shr 16) and 0xFF)
+  s[at + 3] = char((n shr 24) and 0xFF)
 
 proc putU32BE(s: var string; n: uint32) =
   s &= char(n and 0xFF)
@@ -199,9 +218,18 @@ proc quantize(s: string; bgcolor: ARGBColor; palette: int): Node =
   return root
 
 type
-  QuantMap = array[4096, seq[tuple[idx: int; c: RGBColor]]]
+  QuantMap = object
+    map: array[4096, seq[tuple[idx: int; c: RGBColor]]]
+    imap: array[4096, int]
 
   ColorPair = tuple[c: RGBColor; n: uint32]
+
+func quantHash(c: RGBColor): int =
+  # take top 4 bits of each component - note this means bits 4..7,
+  # the 8th bit is always 0 (as 100 is the highest color component).
+  return ((int(c.r shr 3) and 0xF) shl 8) or
+    ((int(c.g shr 3) and 0xF) shl 4) or
+    (int(c.b shr 3) and 0xF)
 
 proc flatten(node: Node; map: var QuantMap; cols: var seq[ColorPair]) =
   if node.leaf:
@@ -222,65 +250,68 @@ proc flatten(node: Node; outs: var string; palette: int): QuantMap =
     let c = it.c
     # 2 is RGB
     outs &= '#' & $n & ";2;" & $c.r & ';' & $c.g & ';' & $c.b
-    let i = (int(c.r shr 4) shl 8) or
-      (int(c.g shr 4) shl 4) or
-      (int(c.b shr 4))
-    map[i].add((n, c))
+    let i = quantHash(c)
+    map.map[i].add((n, c))
+  # for empty buckets in the hash map: copy over the closest match
+  var todo: seq[int] = @[]
+  var pi = -9999 # make sure this gets overridden in imap
+  for i, it in map.map.mpairs:
+    if it.len == 0:
+      if pi >= 0:
+        map.imap[i] = pi
+      todo.add(i)
+    else:
+      for j in todo:
+        if abs(j - pi) > abs(j - i):
+          map.imap[j] = i
+      todo.setLen(0)
+      pi = i
   return map
 
 proc getColor(map: QuantMap; c: RGBColor): int =
-  var i = (int(c.r shr 4) shl 8) or
-    (int(c.g shr 4) shl 4) or
-    int(c.b shr 4)
-  if map[i].len == 0:
-    var j = i
-    while true:
-      dec i
-      inc j
-      if i >= 0 and map[i].len > 0:
-        break
-      if j < map.len and map[j].len > 0:
-        i = j
-        break
-      assert i >= 0 or j < map.len # assuming map isn't empty...
+  let i = quantHash(c)
   var minDist = uint32.high
   var resIdx = -1
-  for (idx, ic) in map[i]:
-    var d = uint32(abs(int32(c.r) - int32(ic.r))) +
+  var j = i
+  if map.map[j].len == 0:
+    j = map.imap[i]
+  for (idx, ic) in map.map[j]:
+    let d = uint32(abs(int32(c.r) - int32(ic.r))) +
       uint32(abs(int32(c.g) - int32(ic.g))) +
       uint32(abs(int32(c.b) - int32(ic.b)))
     if d < minDist:
       minDist = d
       resIdx = idx
-  assert resIdx != -1
   return resIdx
 
 proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
     bgcolor: ARGBColor; palette: int) =
-  if width == 0 or height == 0:
-    return # done...
+  # reserve one entry for transparency
+  # (this is necessary so that cropping works properly when the last
+  # sixel would not fit on the screen, and also for images with !(height % 6).)
+  let palette = palette - 1
+  let node = s.quantize(bgcolor, palette)
   # prelude
-  var outs = ""
+  var outs = "Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n"
+  let preludeLenPos = outs.len
   if halfdump: # reserve size for prelude
     outs &= "\0\0\0\0"
   else:
     outs &= DCSSTART & 'q'
     # set raster attributes
     outs &= "\"1;1;" & $width & ';' & $height
-  # reserve one entry for empty lines
-  let node = s.quantize(bgcolor, palette - 1)
   let map = node.flatten(outs, palette)
   if halfdump:
     # prepend prelude size
-    let L = outs.len - 4 # subtract length field
-    outs.setU32BE(uint32(L))
-  stdout.write(outs)
+    let L = outs.len - 4 - preludeLenPos # subtract length field
+    outs.setU32BE(uint32(L), preludeLenPos)
+  puts(outs)
   let W = width * 4
   let H = W * height
   var n = offy * W
   var ymap = ""
   var totalLen = 0
-  while n < H:
+  while true:
     if halfdump:
       ymap.putU32BE(uint32(totalLen))
     var bands = newSeq[SixelBand]()
@@ -311,25 +342,28 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
       outs &= '$'
     if n >= H:
       outs &= ST
+      totalLen += outs.len
+      break
     else:
       outs &= '-'
-    totalLen += outs.len
-    stdout.write(outs)
+      totalLen += outs.len
+      puts(outs)
   if halfdump:
     ymap.putU32BE(uint32(totalLen))
     ymap.putU32BE(uint32(ymap.len))
-    stdout.write(ymap)
+    outs &= ymap
+    puts(outs)
+  else:
+    puts(outs)
 
 proc parseDimensions(s: string): (int, int) =
   let s = s.split('x')
   if s.len != 2:
-    stdout.writeLine("Cha-Control: ConnectionError 1 wrong dimensions")
-    return
+    die("Cha-Control: ConnectionError 1 wrong dimensions\n")
   let w = parseUInt32(s[0], allowSign = false)
   let h = parseUInt32(s[1], allowSign = false)
   if w.isNone or w.isNone:
-    stdout.writeLine("Cha-Control: ConnectionError 1 wrong dimensions")
-    return
+    die("Cha-Control: ConnectionError 1 wrong dimensions\n")
   return (int(w.get), int(h.get))
 
 proc main() =
@@ -337,11 +371,10 @@ proc main() =
   let scheme = getEnv("MAPPED_URI_SCHEME")
   let f = scheme.after('+')
   if f != "x-sixel":
-    stdout.writeLine("Cha-Control: ConnectionError 1 unknown format " & f)
-    return
+    die("Cha-Control: ConnectionError 1 unknown format " & f)
   case getEnv("MAPPED_URI_PATH")
   of "decode":
-    stdout.writeLine("Cha-Control: ConnectionError 1 not implemented")
+    die("Cha-Control: ConnectionError 1 not implemented\n")
   of "encode":
     let headers = getEnv("REQUEST_HEADERS")
     var width = 0
@@ -362,23 +395,25 @@ proc main() =
       of "Cha-Image-Crop-Width":
         let q = parseUInt32(s, allowSign = false)
         if q.isNone:
-          stdout.writeLine("Cha-Control: ConnectionError 1 wrong palette")
-          return
+          die("Cha-Control: ConnectionError 1 wrong palette\n")
         cropw = int(q.get)
       of "Cha-Image-Sixel-Halfdump":
         halfdump = true
       of "Cha-Image-Sixel-Palette":
         let q = parseUInt16(s, allowSign = false)
         if q.isNone:
-          stdout.writeLine("Cha-Control: ConnectionError 1 wrong palette")
-          return
+          die("Cha-Control: ConnectionError 1 wrong palette\n")
         palette = int(q.get)
       of "Cha-Image-Background-Color":
         bgcolor = parseLegacyColor0(s)
     if cropw == -1:
       cropw = width
+    if palette == -1:
+      palette = 16
+    if width == 0 or height == 0:
+      puts("Cha-Image-Dimensions: 0x0\n")
+      quit(0) # done...
     let s = stdin.readAll()
-    stdout.write("Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n")
     s.encode(width, height, offx, offy, cropw, halfdump, bgcolor, palette)
 
 main()
