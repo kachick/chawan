@@ -97,6 +97,7 @@ type Node {.acyclic.} = ref object
   r: uint32
   g: uint32
   b: uint32
+  hashes: seq[int]
   children: array[8, Node]
 
 proc getIdx(c: RGBColor; level: int): uint8 {.inline.} =
@@ -105,6 +106,13 @@ proc getIdx(c: RGBColor; level: int): uint8 {.inline.} =
     (((c.g shr sl) and 1) shl 1) or
     (c.b shr sl) and 1
   return idx
+
+func quantHash(c: RGBColor): int =
+  # take top 3 bits of each component - note this means bits 5..7,
+  # the 8th bit is always 0 (as 100 is the highest color component).
+  return ((int(c.r shr 4) and 7) shl 6) or
+    ((int(c.g shr 4) and 7) shl 3) or
+    (int(c.b shr 4) and 7)
 
 type TrimMap = array[7, seq[Node]]
 
@@ -125,7 +133,8 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap; level = 0;
         n: n,
         r: uint32(c.r) * n,
         g: uint32(c.g) * n,
-        b: uint32(c.b) * n
+        b: uint32(c.b) * n,
+        hashes: @[quantHash(c)]
       )
       return true
     else:
@@ -169,10 +178,16 @@ proc trim(trimMap: var TrimMap; K: var int) =
       g += child.g
       b += child.b
       n += child.n
+      for h in child.hashes:
+        if h notin node.hashes:
+          node.hashes.add(h)
       child = nil
       dec k
   node.leaf = true
   node.c = rgb(uint8(r div n), uint8(g div n), uint8(b div n))
+  let h = quantHash(node.c)
+  if h notin node.hashes:
+    node.hashes.add(h)
   node.r = r
   node.g = g
   node.b = b
@@ -203,10 +218,12 @@ proc quantize(s: string; bgcolor: ARGBColor; palette: int): Node =
   for i in 0 ..< s.len div 4:
     let m = i * 4
     let c0 = s.getPixel(m, bgcolor)
-    inc pcs
     if pc0 != c0:
-      K += int(root.insert(c0, trimMap, n = pcs))
+      if pcs > 0:
+        K += int(root.insert(pc0, trimMap, n = pcs))
       pcs = 0
+      pc0 = c0
+    inc pcs
     while K > palette:
       # trim the tree.
       trimMap.trim(K)
@@ -217,23 +234,11 @@ proc quantize(s: string; bgcolor: ARGBColor; palette: int): Node =
       trimMap.trim(K)
   return root
 
-type
-  QuantMap = object
-    map: array[4096, seq[tuple[idx: int; c: RGBColor]]]
-    imap: array[4096, int]
+type QuantMap = array[512, seq[tuple[idx: int; c: RGBColor]]]
 
-  ColorPair = tuple[c: RGBColor; n: uint32]
-
-func quantHash(c: RGBColor): int =
-  # take top 4 bits of each component - note this means bits 4..7,
-  # the 8th bit is always 0 (as 100 is the highest color component).
-  return ((int(c.r shr 3) and 0xF) shl 8) or
-    ((int(c.g shr 3) and 0xF) shl 4) or
-    (int(c.b shr 3) and 0xF)
-
-proc flatten(node: Node; map: var QuantMap; cols: var seq[ColorPair]) =
+proc flatten(node: Node; map: var QuantMap; cols: var seq[Node]) =
   if node.leaf:
-    cols.add((node.c, node.n))
+    cols.add(node)
   else:
     for child in node.children:
       if child != nil:
@@ -241,41 +246,24 @@ proc flatten(node: Node; map: var QuantMap; cols: var seq[ColorPair]) =
 
 proc flatten(node: Node; outs: var string; palette: int): QuantMap =
   var map: QuantMap
-  var cols = newSeqOfCap[ColorPair](palette)
+  var cols = newSeqOfCap[Node](palette)
   node.flatten(map, cols)
   # try to set the most common colors as the smallest numbers (so we write less)
-  cols.sort(proc(a, b: ColorPair): int = cmp(a.n, b.n), order = Descending)
+  cols.sort(proc(a, b: Node): int = cmp(a.n, b.n), order = Descending)
   for n, it in cols:
-    let n = n + 1
+    let n = n + 1 # skip 0 - that's transparent
     let c = it.c
     # 2 is RGB
     outs &= '#' & $n & ";2;" & $c.r & ';' & $c.g & ';' & $c.b
-    let i = quantHash(c)
-    map.map[i].add((n, c))
-  # for empty buckets in the hash map: copy over the closest match
-  var todo: seq[int] = @[]
-  var pi = -9999 # make sure this gets overridden in imap
-  for i, it in map.map.mpairs:
-    if it.len == 0:
-      if pi >= 0:
-        map.imap[i] = pi
-      todo.add(i)
-    else:
-      for j in todo:
-        if abs(j - pi) > abs(j - i):
-          map.imap[j] = i
-      todo.setLen(0)
-      pi = i
+    for i in it.hashes:
+      map[i].add((n, c))
   return map
 
 proc getColor(map: QuantMap; c: RGBColor): int =
   let i = quantHash(c)
   var minDist = uint32.high
   var resIdx = -1
-  var j = i
-  if map.map[j].len == 0:
-    j = map.imap[i]
-  for (idx, ic) in map.map[j]:
+  for (idx, ic) in map[i]:
     let d = uint32(abs(int32(c.r) - int32(ic.r))) +
       uint32(abs(int32(c.g) - int32(ic.g))) +
       uint32(abs(int32(c.b) - int32(ic.b)))
