@@ -43,6 +43,14 @@ $ cha example.org # open your favorite website directly from the shell
 $ mancha cha # read the cha(1) man page using `mancha'
 ```
 
+## Packages
+
+Alternatively, you can install Chawan from packages maintained by
+volunteers:
+
+* AUR: <https://aur.archlinux.org/packages/chawan-git>
+* NixOS: look for package "chawan"
+
 ## Features
 
 Currently implemented features are:
