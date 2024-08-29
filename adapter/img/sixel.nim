@@ -97,7 +97,7 @@ type Node {.acyclic.} = ref object
   r: uint32
   g: uint32
   b: uint32
-  hashes: seq[int]
+  idx: int
   children: array[8, Node]
 
 proc getIdx(c: RGBColor; level: int): uint8 {.inline.} =
@@ -106,13 +106,6 @@ proc getIdx(c: RGBColor; level: int): uint8 {.inline.} =
     (((c.g shr sl) and 1) shl 1) or
     (c.b shr sl) and 1
   return idx
-
-func quantHash(c: RGBColor): int =
-  # take top 3 bits of each component - note this means bits 5..7,
-  # the 8th bit is always 0 (as 100 is the highest color component).
-  return ((int(c.r shr 4) and 7) shl 6) or
-    ((int(c.g shr 4) and 7) shl 3) or
-    (int(c.b shr 4) and 7)
 
 type TrimMap = array[7, seq[Node]]
 
@@ -133,8 +126,7 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap; level = 0;
         n: n,
         r: uint32(c.r) * n,
         g: uint32(c.g) * n,
-        b: uint32(c.b) * n,
-        hashes: @[quantHash(c)]
+        b: uint32(c.b) * n
       )
       return true
     else:
@@ -178,16 +170,10 @@ proc trim(trimMap: var TrimMap; K: var int) =
       g += child.g
       b += child.b
       n += child.n
-      for h in child.hashes:
-        if h notin node.hashes:
-          node.hashes.add(h)
       child = nil
       dec k
   node.leaf = true
   node.c = rgb(uint8(r div n), uint8(g div n), uint8(b div n))
-  let h = quantHash(node.c)
-  if h notin node.hashes:
-    node.hashes.add(h)
   node.r = r
   node.g = g
   node.b = b
@@ -234,20 +220,17 @@ proc quantize(s: string; bgcolor: ARGBColor; palette: int): Node =
       trimMap.trim(K)
   return root
 
-type QuantMap = array[512, seq[tuple[idx: int; c: RGBColor]]]
-
-proc flatten(node: Node; map: var QuantMap; cols: var seq[Node]) =
+proc flatten(node: Node; cols: var seq[Node]) =
   if node.leaf:
     cols.add(node)
   else:
     for child in node.children:
       if child != nil:
-        child.flatten(map, cols)
+        child.flatten(cols)
 
-proc flatten(node: Node; outs: var string; palette: int): QuantMap =
-  var map: QuantMap
+proc flatten(node: Node; outs: var string; palette: int): seq[Node] =
   var cols = newSeqOfCap[Node](palette)
-  node.flatten(map, cols)
+  node.flatten(cols)
   # try to set the most common colors as the smallest numbers (so we write less)
   cols.sort(proc(a, b: Node): int = cmp(a.n, b.n), order = Descending)
   for n, it in cols:
@@ -255,22 +238,58 @@ proc flatten(node: Node; outs: var string; palette: int): QuantMap =
     let c = it.c
     # 2 is RGB
     outs &= '#' & $n & ";2;" & $c.r & ';' & $c.g & ';' & $c.b
-    for i in it.hashes:
-      map[i].add((n, c))
-  return map
+    it.idx = n
+  return cols
 
-proc getColor(map: QuantMap; c: RGBColor): int =
-  let i = quantHash(c)
-  var minDist = uint32.high
-  var resIdx = -1
-  for (idx, ic) in map[i]:
-    let d = uint32(abs(int32(c.r) - int32(ic.r))) +
-      uint32(abs(int32(c.g) - int32(ic.g))) +
-      uint32(abs(int32(c.b) - int32(ic.b)))
-    if d < minDist:
-      minDist = d
-      resIdx = idx
-  return resIdx
+type
+  DitherDiff = tuple[r, g, b: int32]
+
+  Dither = object
+    d1: seq[DitherDiff]
+    d2: seq[DitherDiff]
+
+proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff;
+    level = 0): Node =
+  if node.leaf:
+    let r = int32(c.r) - int32(node.c.r)
+    let g = int32(c.g) - int32(node.c.g)
+    let b = int32(c.b) - int32(node.c.b)
+    diff = (r, g, b)
+    return node
+  let idx = int(c.getIdx(level))
+  var child = node.children[idx]
+  let nlevel = level + 1
+  if child == nil:
+    var minDist = uint32.high
+    for node in nodes:
+      let rd = int32(c.r) - int32(node.c.r)
+      let gd = int32(c.g) - int32(node.c.g)
+      let bd = int32(c.b) - int32(node.c.b)
+      let d = uint32(abs(rd)) + uint32(abs(gd)) + uint32(abs(bd))
+      if d < minDist:
+        minDist = d
+        child = node
+        diff = (rd, gd, bd)
+    node.children[idx] = child
+    return child
+  return child.getColor(c, nodes, diff, nlevel)
+
+proc correctDither(c: RGBColor; x: int; dither: Dither): RGBColor =
+  let (rd, gd, bd) = dither.d1[x + 1]
+  let r = uint8(clamp(int32(c.r) + rd div 16, 0, 100))
+  let g = uint8(clamp(int32(c.g) + gd div 16, 0, 100))
+  let b = uint8(clamp(int32(c.b) + bd div 16, 0, 100))
+  return rgb(r, g, b)
+
+proc fs(dither: var Dither; x: int; d: DitherDiff) =
+  let x = x + 1 # skip first bounds check
+  template at(p, mul: untyped) =
+    var (rd, gd, bd) = p
+    p = (rd + d.r * mul, gd + d.g * mul, bd + d.b * mul)
+  at(dither.d1[x + 1], 7)
+  at(dither.d2[x - 1], 3)
+  at(dither.d2[x], 5)
+  at(dither.d2[x + 1], 1)
 
 proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
     bgcolor: ARGBColor; palette: int) =
@@ -288,7 +307,7 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
     outs &= DCSSTART & 'q'
     # set raster attributes
     outs &= "\"1;1;" & $width & ';' & $height
-  let map = node.flatten(outs, palette)
+  let nodes = node.flatten(outs, palette)
   if halfdump:
     # prepend prelude size
     let L = outs.len - 4 - preludeLenPos # subtract length field
@@ -299,6 +318,11 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
   var n = offy * W
   var ymap = ""
   var totalLen = 0
+  # add +2 so we don't have to bounds check
+  var dither = Dither(
+    d1: newSeq[DitherDiff](width + 2),
+    d2: newSeq[DitherDiff](width + 2)
+  )
   while true:
     if halfdump:
       ymap.putU32BE(uint32(totalLen))
@@ -309,9 +333,12 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
       let mask = 1u8 shl i
       let realw = cropw - offx
       for j in 0 ..< realw:
-        let m = n + (j + offx) * 4
-        let c0 = s.getPixel(m, bgcolor)
-        let c = map.getColor(c0)
+        let x = offx + j
+        let m = n + x * 4
+        let c0 = s.getPixel(m, bgcolor).correctDither(x, dither)
+        var diff: DitherDiff
+        var c = node.getColor(c0, nodes, diff).idx
+        dither.fs(x, diff)
         #TODO this could be optimized a lot more, by squashing together bands
         # with empty runs at different places.
         var k = bands.find(c)
@@ -320,6 +347,10 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
           k = bands.high
         bands[k].data[j] = bands[k].data[j] or mask
       n += W
+      var tmp = move(dither.d1)
+      dither.d1 = move(dither.d2)
+      dither.d2 = move(tmp)
+      zeroMem(addr dither.d2[0], dither.d2.len * sizeof(dither.d2[0]))
     outs.setLen(0)
     var i = 0
     while true:
