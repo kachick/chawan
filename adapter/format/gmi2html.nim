@@ -23,7 +23,7 @@ a, pre, ul, blockquote, li, h1, h2, h3 { margin-top: 0; margin-bottom: 0 }
   while not stdin.endOfFile:
     let line = stdin.readLine()
     if inpre and not line.startsWith("```"):
-      stdout.write(line.htmlEscape() & "\n")
+      stdout.write(line.htmlEscape() & '\n')
       continue
     if inul and not line.startsWith("* "):
       stdout.write("</ul>")
@@ -64,6 +64,6 @@ a, pre, ul, blockquote, li, h1, h2, h3 { margin-top: 0; margin-bottom: 0 }
       stdout.write(line.substr(1).htmlEscape())
       stdout.write("</blockquote>")
     else:
-      stdout.write(line.htmlEscape() & "\n")
+      stdout.write(line.htmlEscape() & '\n')
 
 main()
