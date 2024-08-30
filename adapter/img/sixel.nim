@@ -361,12 +361,11 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
       let mask = 1u8 shl i
       var chunk: ptr SixelChunk = nil
       for j in 0 ..< realw:
-        let x = offx + j
-        let m = n + x * 4
+        let m = n + (offx + j) * 4
         let c0 = s.getPixel(m, bgcolor).correctDither(j, dither)
         var diff: DitherDiff
         let c = node.getColor(c0, nodes, diff).idx
-        dither.fs(x, diff)
+        dither.fs(j, diff)
         if chunk == nil or chunk.c != c:
           chunk = addr chunkMap[c - 1]
           chunk.c = c
