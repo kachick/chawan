@@ -2041,7 +2041,15 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
     y += tctx.blockSpacing
     y += row.state.size.h
     table.state.size.w = max(row.state.size.w, table.state.size.w)
-  table.state.size.h = applySizeConstraint(y, sizes.space.h)
+  # Note: we can't use applySizeConstraint here; in CSS, "height" on tables just
+  # sets the minimum height.
+  case sizes.space.h.t
+  of scStretch:
+    table.state.size.h = max(sizes.space.h.u, y)
+  of scMinContent, scMaxContent, scFitContent:
+    # I don't think these are ever used here; not that they make much sense for
+    # min-height...
+    table.state.size.h = y
 
 proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
   let space = availableSpace(w = stretch(parent.state.size.w), h = maxContent())
