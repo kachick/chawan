@@ -43,41 +43,6 @@ proc die(s: string) {.noreturn.} =
 const DCSSTART = "\eP"
 const ST = "\e\\"
 
-type SixelBand = object
- c: int
- data: seq[uint8]
-
-# data is binary 0..63; the output is the final ASCII form.
-proc compressSixel(band: SixelBand): string =
-  var outs = newStringOfCap(band.data.len div 4 + 3)
-  outs &= '#'
-  outs &= $band.c
-  var n = 0
-  var c = char(0)
-  for u in band.data:
-    let cc = char(u + 0x3F)
-    if c != cc:
-      if n > 3:
-        outs &= '!' & $n & c
-      else: # for char(0) n is also 0, so it is ignored.
-        for i in 0 ..< n:
-          outs &= c
-      c = cc
-      n = 0
-    inc n
-  if n > 3:
-    outs &= '!' & $n & c
-  else:
-    for i in 0 ..< n:
-      outs &= c
-  return outs
-
-func find(bands: seq[SixelBand]; c: int): int =
-  for i in 0 ..< bands.len:
-    if bands[i].c == c:
-      return i
-  return -1
-
 proc setU32BE(s: var string; n: uint32; at: int) =
   s[at] = char(n and 0xFF)
   s[at + 1] = char((n shr 8) and 0xFF)
@@ -291,6 +256,67 @@ proc fs(dither: var Dither; x: int; d: DitherDiff) =
   at(dither.d2[x], 5)
   at(dither.d2[x + 1], 1)
 
+type
+  SixelBand = seq[ptr SixelChunk]
+
+  SixelChunk = object
+    x: int
+    c: int
+    nrow: int
+    data: seq[uint8]
+
+# data is binary 0..63; the output is the final ASCII form.
+proc compressSixel(outs: var string; band: SixelBand) =
+  var x = 0
+  for chunk in band:
+    outs &= '#'
+    outs &= $chunk.c
+    let diff = chunk.x - x
+    if diff > 3:
+      outs &= '!' & $diff & '?'
+    else:
+      for i in 0 ..< diff:
+        outs &= '?'
+    x = chunk.x + chunk.data.len
+    var n = 0
+    var c = char(0)
+    for u in chunk.data:
+      let cc = char(u + 0x3F)
+      if c != cc:
+        if n > 3:
+          outs &= '!' & $n & c
+        else: # for char(0) n is also 0, so it is ignored.
+          for i in 0 ..< n:
+            outs &= c
+        c = cc
+        n = 0
+      inc n
+    if n > 3:
+      outs &= '!' & $n & c
+    else:
+      for i in 0 ..< n:
+        outs &= c
+
+proc createBands(bands: var seq[SixelBand]; chunkMap: seq[SixelChunk];
+    nrow: int) =
+  for chunk in chunkMap:
+    if chunk.nrow < nrow:
+      continue
+    let x = chunk.x
+    let ex = chunk.x + chunk.data.len
+    var found = false
+    for band in bands.mitems:
+      if band[0].x > ex:
+        band.insert(unsafeAddr chunk, 0)
+        found = true
+        break
+      elif band[^1].x + band[^1].data.len <= x:
+        band.add(unsafeAddr chunk)
+        found = true
+        break
+    if not found:
+      bands.add(@[unsafeAddr chunk])
+
 proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
     bgcolor: ARGBColor; palette: int) =
   # reserve one entry for transparency
@@ -315,50 +341,65 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
   puts(outs)
   let W = width * 4
   let H = W * height
+  let realw = cropw - offx
   var n = offy * W
   var ymap = ""
   var totalLen = 0
   # add +2 so we don't have to bounds check
   var dither = Dither(
-    d1: newSeq[DitherDiff](width + 2),
-    d2: newSeq[DitherDiff](width + 2)
+    d1: newSeq[DitherDiff](realw + 2),
+    d2: newSeq[DitherDiff](realw + 2)
   )
+  var chunkMap = newSeq[SixelChunk](palette)
+  var nrow = 1
   while true:
     if halfdump:
       ymap.putU32BE(uint32(totalLen))
-    var bands = newSeq[SixelBand]()
     for i in 0 ..< 6:
       if n >= H:
         break
       let mask = 1u8 shl i
-      let realw = cropw - offx
+      var chunk: ptr SixelChunk = nil
       for j in 0 ..< realw:
         let x = offx + j
         let m = n + x * 4
-        let c0 = s.getPixel(m, bgcolor).correctDither(x, dither)
+        let c0 = s.getPixel(m, bgcolor).correctDither(j, dither)
         var diff: DitherDiff
-        var c = node.getColor(c0, nodes, diff).idx
+        let c = node.getColor(c0, nodes, diff).idx
         dither.fs(x, diff)
-        #TODO this could be optimized a lot more, by squashing together bands
-        # with empty runs at different places.
-        var k = bands.find(c)
-        if k == -1:
-          bands.add(SixelBand(c: c, data: newSeq[uint8](realw)))
-          k = bands.high
-        bands[k].data[j] = bands[k].data[j] or mask
+        if chunk == nil or chunk.c != c:
+          chunk = addr chunkMap[c - 1]
+          chunk.c = c
+          if chunk.nrow < nrow:
+            chunk.nrow = nrow
+            chunk.x = j
+            chunk.data.setLen(0)
+          elif chunk.x > j:
+            let diff = chunk.x - j
+            chunk.x = j
+            let olen = chunk.data.len
+            chunk.data.setLen(olen + diff)
+            moveMem(addr chunk.data[diff], addr chunk.data[0], olen)
+            zeroMem(addr chunk.data[0], diff)
+          elif chunk.data.len < j - chunk.x:
+            chunk.data.setLen(j - chunk.x)
+        let k = j - chunk.x
+        if k < chunk.data.len:
+          chunk.data[k] = chunk.data[k] or mask
+        else:
+          chunk.data.add(mask)
       n += W
       var tmp = move(dither.d1)
       dither.d1 = move(dither.d2)
       dither.d2 = move(tmp)
       zeroMem(addr dither.d2[0], dither.d2.len * sizeof(dither.d2[0]))
+    var bands: seq[SixelBand] = @[]
+    bands.createBands(chunkMap, nrow)
     outs.setLen(0)
-    var i = 0
-    while true:
-      outs &= bands[i].compressSixel()
-      inc i
-      if i >= bands.len:
-        break
-      outs &= '$'
+    for band in bands:
+      if outs.len > 0:
+        outs &= '$'
+      outs.compressSixel(band)
     if n >= H:
       outs &= ST
       totalLen += outs.len
@@ -367,6 +408,7 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
       outs &= '-'
       totalLen += outs.len
       puts(outs)
+    inc nrow
   if halfdump:
     ymap.putU32BE(uint32(totalLen))
     ymap.putU32BE(uint32(ymap.len))

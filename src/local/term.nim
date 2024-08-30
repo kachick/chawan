@@ -805,7 +805,8 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   var outs = term.cursorGoto(x, y) &
     APC & "GC=1,s=" & $image.bmp.width & ",v=" & $image.bmp.height &
     ",x=" & $image.offx & ",y=" & $image.offy &
-    ",w=" & $image.dispw & ",h=" & $image.disph &
+    ",w=" & $(image.dispw - image.offx) &
+    ",h=" & $(image.disph - image.offy) &
     # for now, we always use placement id 1
     ",p=1,q=2"
   if image.kittyId != 0:
@@ -1005,11 +1006,6 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
     template skip_until(term: Terminal; c: char) =
       while (let cc = term.consume; cc != c):
         discard
-    template consume_int_till(term: Terminal; sentinel: char): int =
-      let n = term.consumeIntUntil(sentinel)
-      if n == -1:
-        fail
-      n
     template consume_int_greedy(term: Terminal; lastc: var char): int =
       var n = 0
       while true:
@@ -1054,8 +1050,10 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
               result.registers = params[2]
       of '4', '6', '8': # GEOMPIXEL, CELLSIZE, GEOMCELL
         term.expect ';'
-        let height = term.consume_int_till ';'
-        let width = term.consume_int_till 't'
+        let height = term.consumeIntUntil(';')
+        let width = term.consumeIntUntil('t')
+        if width == -1 or height == -1:
+          fail
         if c == '4': # GEOMSIZE
           result.widthPx = width
           result.heightPx = height
@@ -1166,19 +1164,30 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
           term.attrs.ppl = r.ppl
         elif r.heightPx != 0:
           term.attrs.ppl = r.heightPx div r.height
+      if not windowOnly: # we don't check for kitty, so don't override this
+        if qaSixel in r.attrs:
+          term.imageMode = imSixel
+        if qaKittyImage in r.attrs:
+          term.imageMode = imKitty
+      if term.imageMode == imSixel: # adjust after windowChange
+        if r.registers != 0:
+          # I need at least 3 registers (1 for transparency), and can't do
+          # anything with more than 101 ^ 3.
+          # In practice, terminals I've seen have between 256 - 65535; for now,
+          # I'll stick with 65535 as the upper limit, because I have no way
+          # to test if encoding time explodes with more or something.
+          term.sixelRegisterNum = clamp(r.registers, 3, 65535)
+        if term.sixelRegisterNum == 0:
+          # assume 256 - tell me if you have more.
+          term.sixelRegisterNum = 256
+        term.sixelMaxWidth = r.sixelMaxWidth
+        term.sixelMaxHeight = r.sixelMaxHeight
       if windowOnly:
         return
       if qaAnsiColor in r.attrs:
         term.colorMode = cmANSI
       if qaRGB in r.attrs:
         term.colorMode = cmTrueColor
-      if qaSixel in r.attrs:
-        term.imageMode = imSixel
-        term.sixelRegisterNum = clamp(r.registers, 16, 1024)
-        term.sixelMaxWidth = r.sixelMaxWidth
-        term.sixelMaxHeight = r.sixelMaxHeight
-      if qaKittyImage in r.attrs:
-        term.imageMode = imKitty
       # just assume the terminal doesn't choke on these.
       term.formatMode = {ffStrike, ffOverline}
       if r.bgcolor.isSome:
