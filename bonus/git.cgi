@@ -1,17 +1,19 @@
 #!/usr/bin/env -S qjs --std
-/* adds clickable links to git log, git branch and git stash list
+/* adds clickable links to git log, branch, blame & stash list
  * usage:
  * 0. install QuickJS (https://bellard.org/quickjs)
  * 1. put this script in your CGI directory
  * 2. chmod +x /your/cgi-bin/directory/git.cgi
  * 3. ln -s /your/cgi-bin/directory/git.cgi /usr/local/bin/gitcha
- * 4. run `gitcha log', `gitcha branch' or `gitcha stash list'
+ * 4. run `gitcha log', `gitcha branch', `gitcha blame` or `gitcha stash list'
  * other params work too, but without any special processing. it's still useful
  * for ones that open the pager, like git show; this way you can reload the view
  * with `U'.
  * git checkout and friends are blocked for security & convenience reasons, so
  * it may be best to just alias the pager-opening commands.
  * (if you have ansi2html, it also works with w3m. just set GITCHA_CHA=w3m) */
+
+"use strict";
 
 const gitcha = std.getenv("GITCHA_GITCHA") ?? "gitcha";
 if (scriptArgs[0].split('/').pop() == gitcha) {
@@ -56,6 +58,7 @@ function startGitCmd(config, params) {
 
 function runGitCmd(config, params, regex, subfun) {
 	const f = startGitCmd(config, params);
+	let l;
 	while ((l = f.getline()) !== null) {
 		console.log(l.replace(regex, subfun));
 	}
@@ -73,26 +76,75 @@ function cgi(cmd) {
 	return `${cgi0}&params=${encodeURIComponent(cmd)}`;
 }
 
-if (params[0] == "log" || params[0] == "blame") {
+if (params[0] == "log") {
 	const showUrl = cgi("show");
-	runGitCmd(config, params, /[a-f0-9]{7}[a-f0-9]*/g,
-		x => `<a href='${showUrl}%20${x}'>${x}</a>`);
+	const re = /[a-f0-9]{7}[a-f0-9]*/g;
+	function sub(x) {
+		return `<a href='${showUrl}%20${x}'>${x}</a>`;
+	}
+	runGitCmd(config, params, re, sub);
+} else if (params[0] == "blame") {
+	const showUrl = cgi("show");
+	let cmd = "";
+	/* git will give us paths relative to the repo root, so correct that. */
+	let [path, _] = os.getcwd();
+	let op = "";
+	while (path.length > 1) {
+		const [s, err] = os.stat(path + "/.git");
+		if (!err && (s.mode & os.S_IFMT) == os.S_IFDIR)
+			break;
+		path = path.substring(0, path.lastIndexOf('/'));
+		op += "../";
+	}
+	if (path[path.length - 1] != '/')
+		path += '/';
+	/* collect existing flags, but skip commit & file name */
+	let flags = params.filter(x => x && x != "-s" && x[0] == '-' && (x[1] != '-' || x[2])).join(' ');
+	if (flags)
+		flags += ' ';
+	const file = params.findLast(x => x[0] != '-');
+	cmd = encodeURIComponent(`blame ${flags}%s --`);
+	/* silence some useless info */
+	params.splice(1, 0, "-s");
+	const re = /([a-f0-9]{7}[a-f0-9]*) ([^ ]+)? *([0-9]+)\)/g;
+	function sub(_, x, y, z) {
+		const f = y ? op + y : file;
+		return `<a id=${z} href='${showUrl}%20${x}&backlink=${cmd}%20${f}%20${z}'>${x}</a>`;
+	}
+	runGitCmd(config, params, re, sub);
 } else if (params[0] == "branch" &&
 	(params.length == 1 ||
 	params.length == 2 && ["-l", "--list", "-a", "--all"].includes(params[1]))) {
 	const logUrl = cgi("log");
 	const checkoutUrl = cgi("checkout");
-	runGitCmd(config, params, /^(\s+)(<span style='color: -cha-ansi...;'>)?([\w./-]+)(<.*)?$/g,
-		(_, ws, $, name) => `${ws}<a href='${logUrl}%20${name}'>${name}</a>\
- <form method=POST action='${checkoutUrl}%20${name}'><input type=submit value=switch></form>`);
+	const re = /^(\s+)(<span style='color: -cha-ansi...;'>)?([\w./-]+)(<.*)?$/g;
+	function sub(_, ws, $, name) {
+		return `${ws}<a href='${logUrl}%20${name}'>${name}</a>\
+ <form method=POST action='${checkoutUrl}%20${name}'><input type=submit value=switch></form>`;
+	}
+	runGitCmd(config, params, re, sub);
 } else if (params[0] == "stash" && params[1] == "list") {
 	const showUrl = cgi("show");
 	const stashApply = cgi("stash apply");
 	const stashDrop = cgi("stash drop");
-	runGitCmd(config, params, /^stash@\{([0-9]+)\}/g,
-		(s, n) => `stash@{<a href='${showUrl}%20${s}'>${n}</a>}\
+	const re = /^stash@\{([0-9]+)\}/g;
+	function sub(s, n) {
+		return `stash@{<a href='${showUrl}%20${s}'>${n}</a>}\
  <form method=POST action='${stashApply}%20${s}'><input type=submit value=apply></form>` +
-` <form method=POST action='${stashDrop}%20${s}'><input type=submit value=drop></form>`);
+` <form method=POST action='${stashDrop}%20${s}'><input type=submit value=drop></form>`;
+	}
+	runGitCmd(config, params, re, sub);
+} else if (params[0] == "show" && query.backlink) {
+	const cmds = query.backlink.split(' ');
+	const hash = cmds.pop();
+	const i = cmds.indexOf('%s');
+	const re = /[a-f0-9]{40}/g;
+	function sub(x) {
+		cmds[i] = x + "~1";
+		const cmd = cgi(cmds.join(' '));
+		return `<a href='${cmd}#${hash}'>${x}</a>`;
+	}
+	runGitCmd(config, params, re, sub);
 } else {
 	const safeForGet = ["show", "diff", "blame", "status"];
 	if (std.getenv("REQUEST_METHOD") != "POST" &&
