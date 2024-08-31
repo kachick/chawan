@@ -235,7 +235,7 @@ type
     y*: int
     width*: int
     height*: int
-    bmp*: Bitmap
+    bmp*: NetworkBitmap
 
   AbsolutePos = object
     offset: Offset

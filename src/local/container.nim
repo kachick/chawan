@@ -2070,7 +2070,7 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
 
 func findCachedImage*(container: Container; image: PosBitmap;
     offx, erry, dispw: int): CachedImage =
-  let imageId = NetworkBitmap(image.bmp).imageId
+  let imageId = image.bmp.imageId
   for it in container.cachedImages:
     if it.bmp.imageId == imageId and it.width == image.width and
         it.height == image.height and it.offx == offx and it.erry == erry and

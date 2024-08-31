@@ -75,6 +75,11 @@ proc newResolvedPromise*(): EmptyPromise =
   res.resolve()
   return res
 
+proc newResolvedPromise*[T](x: T): Promise[T] =
+  let res = newPromise[T]()
+  res.resolve(x)
+  return res
+
 func empty*(map: PromiseMap): bool =
   map.tab.len == 0
 

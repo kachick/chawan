@@ -2,6 +2,7 @@ import std/algorithm
 import std/deques
 import std/math
 import std/options
+import std/posix
 import std/sets
 import std/strutils
 import std/tables
@@ -21,6 +22,7 @@ import html/script
 import img/bitmap
 import img/painter
 import img/path
+import io/bufwriter
 import io/dynstream
 import io/promise
 import js/console
@@ -39,6 +41,7 @@ import monoucha/quickjs
 import monoucha/tojs
 import types/blob
 import types/color
+import types/line
 import types/matrix
 import types/opt
 import types/referrer
@@ -102,6 +105,8 @@ type
     styling*: bool
     # ID of the next image
     imageId: int
+    # list of streams that must be closed for canvas rendering on load
+    pendingCanvasCtls*: seq[CanvasRenderingContext2D]
 
   # Navigator stuff
   Navigator* = object
@@ -343,8 +348,8 @@ type
   HTMLLabelElement* = ref object of HTMLElement
 
   HTMLCanvasElement* = ref object of HTMLElement
-    ctx2d: CanvasRenderingContext2D
-    bitmap*: Bitmap
+    ctx2d*: CanvasRenderingContext2D
+    bitmap*: NetworkBitmap
 
   DrawingState = object
     # CanvasTransform
@@ -366,6 +371,7 @@ type
     bitmap: Bitmap
     state: DrawingState
     stateStack: seq[DrawingState]
+    ps*: PosixStream
 
   TextMetrics = ref object
     # x-direction
@@ -384,7 +390,7 @@ type
     ideographicBaseline {.jsget.}: float64
 
   HTMLImageElement* = ref object of HTMLElement
-    bitmap*: Bitmap
+    bitmap*: NetworkBitmap
     fetchStarted: bool
 
   HTMLVideoElement* = ref object of HTMLElement
@@ -449,7 +455,48 @@ jsDestructor(CanvasRenderingContext2D)
 jsDestructor(TextMetrics)
 jsDestructor(CSSStyleDeclaration)
 
+# Forward declarations
+func attr*(element: Element; s: StaticAtom): string
+func attrb*(element: Element; s: CAtom): bool
+func baseURL*(document: Document): URL
+proc attr*(element: Element; name: CAtom; value: string)
+proc attr*(element: Element; name: StaticAtom; value: string)
+proc delAttr(element: Element; i: int; keep = false)
+proc getImageId(window: Window): int
 proc parseColor(element: Element; s: string): ARGBColor
+proc reflectAttr(element: Element; name: CAtom; value: Option[string])
+
+# Forward declaration hacks
+# set in css/cascade
+var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
+  {.nimcall, noSideEffect.}
+# set in css/match
+var doqsa*: proc (node: Node; q: string): seq[Element] {.nimcall.} = nil
+var doqs*: proc (node: Node; q: string): Element {.nimcall.} = nil
+# set in html/chadombuilder
+var domParseHTMLFragment*: proc(element: Element; s: string): seq[Node]
+  {.nimcall.}
+# set in html/env
+var windowFetch*: proc(window: Window; input: JSValue;
+  init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
+  {.nimcall.} = nil
+
+# For now, these are the same; on an API level however, getGlobal is guaranteed
+# to be non-null, while getWindow may return null in the future. (This is in
+# preparation for Worker support.)
+func getGlobal*(ctx: JSContext): Window =
+  let global = JS_GetGlobalObject(ctx)
+  var window: Window
+  assert ctx.fromJS(global, window).isSome
+  JS_FreeValue(ctx, global)
+  return window
+
+func getWindow*(ctx: JSContext): Window =
+  let global = JS_GetGlobalObject(ctx)
+  var window: Window
+  assert ctx.fromJS(global, window).isSome
+  JS_FreeValue(ctx, global)
+  return window
 
 func console(window: Window): Console =
   return window.internalConsole
@@ -457,20 +504,125 @@ func console(window: Window): Console =
 proc resetTransform(state: var DrawingState) =
   state.transformMatrix = newIdentityMatrix(3)
 
-proc resetState(state: var DrawingState) =
+proc reset(state: var DrawingState) =
   state.resetTransform()
   state.fillStyle = rgba(0, 0, 0, 255)
   state.strokeStyle = rgba(0, 0, 0, 255)
   state.path = newPath()
 
 proc create2DContext*(jctx: JSContext; target: HTMLCanvasElement;
-    options = JS_UNDEFINED): CanvasRenderingContext2D =
-  let ctx = CanvasRenderingContext2D(
-    bitmap: target.bitmap,
-    canvas: target
+    options = JS_UNDEFINED) =
+  var pipefd: array[2, cint]
+  if pipe(pipefd) == -1:
+    return
+  let window = jctx.getWindow()
+  let imageId = target.bitmap.imageId
+  let loader = window.loader
+  loader.passFd("canvas-ctl-" & $imageId, FileHandle(pipefd[0]))
+  discard close(pipefd[0])
+  let ps = newPosixStream(FileHandle(pipefd[1]))
+  let ctlreq = newRequest(newURL("stream:canvas-ctl-" & $imageId).get)
+  let ctlres = loader.doRequest(ctlreq)
+  doAssert ctlres.res == 0
+  let cacheId = loader.addCacheFile(ctlres.outputId, loader.clientPid)
+  target.bitmap.cacheId = cacheId
+  let request = newRequest(
+    newURL("img-codec+x-cha-canvas:decode").get,
+    httpMethod = hmPost,
+    headers = newHeaders({"Cha-Image-Info-Only": "1"}),
+    body = RequestBody(t: rbtOutput, outputId: ctlres.outputId)
   )
-  ctx.state.resetState()
-  return ctx
+  let response = loader.doRequest(request)
+  if response.res != 0:
+    # no canvas module; give up
+    ps.sclose()
+    ctlres.resume()
+    ctlres.close()
+    return
+  ctlres.resume()
+  ctlres.close()
+  response.resume()
+  target.ctx2d = CanvasRenderingContext2D(
+    bitmap: target.bitmap,
+    canvas: target,
+    ps: ps
+  )
+  window.pendingCanvasCtls.add(target.ctx2d)
+  ps.withPacketWriter w:
+    w.swrite(pcSetDimensions)
+    w.swrite(target.bitmap.width)
+    w.swrite(target.bitmap.height)
+  target.ctx2d.state.reset()
+
+proc fillRect(ctx: CanvasRenderingContext2D; x1, y1, x2, y2: int;
+    color: ARGBColor) =
+  if ctx.ps != nil:
+    ctx.ps.withPacketWriter w:
+      w.swrite(pcFillRect)
+      w.swrite(x1)
+      w.swrite(y1)
+      w.swrite(x2)
+      w.swrite(y2)
+      w.swrite(color)
+
+proc strokeRect(ctx: CanvasRenderingContext2D; x1, y1, x2, y2: int;
+    color: ARGBColor) =
+  if ctx.ps != nil:
+    ctx.ps.withPacketWriter w:
+      w.swrite(pcStrokeRect)
+      w.swrite(x1)
+      w.swrite(y1)
+      w.swrite(x2)
+      w.swrite(y2)
+      w.swrite(color)
+
+proc fillPath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor;
+    fillRule: CanvasFillRule) =
+  if ctx.ps != nil:
+    let lines = path.getLineSegments()
+    ctx.ps.withPacketWriter w:
+      w.swrite(pcFillPath)
+      w.swrite(lines)
+      w.swrite(color)
+      w.swrite(fillRule)
+
+proc strokePath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor) =
+  if ctx.ps != nil:
+    var lines: seq[Line] = @[]
+    for line in path.lines:
+      lines.add(line)
+    ctx.ps.withPacketWriter w:
+      w.swrite(pcStrokePath)
+      w.swrite(lines)
+      w.swrite(color)
+
+proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
+    color: ARGBColor; align: CSSTextAlign) =
+  if ctx.ps != nil:
+    ctx.ps.withPacketWriter w:
+      w.swrite(pcFillText)
+      w.swrite(text)
+      w.swrite(x)
+      w.swrite(y)
+      w.swrite(color)
+      w.swrite(align)
+
+proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
+    color: ARGBColor; align: CSSTextAlign) =
+  if ctx.ps != nil:
+    ctx.ps.withPacketWriter w:
+      w.swrite(pcStrokeText)
+      w.swrite(text)
+      w.swrite(x)
+      w.swrite(y)
+      w.swrite(color)
+      w.swrite(align)
+
+proc clearRect(ctx: CanvasRenderingContext2D; x1, y1, x2, y2: int) =
+  ctx.fillRect(0, 0, ctx.bitmap.width, ctx.bitmap.height, rgba(0, 0, 0, 0))
+
+proc clear(ctx: CanvasRenderingContext2D) =
+  ctx.clearRect(0, 0, ctx.bitmap.width, ctx.bitmap.height)
 
 # CanvasState
 proc save(ctx: CanvasRenderingContext2D) {.jsfunc.} =
@@ -481,10 +633,9 @@ proc restore(ctx: CanvasRenderingContext2D) {.jsfunc.} =
     ctx.state = ctx.stateStack.pop()
 
 proc reset(ctx: CanvasRenderingContext2D) {.jsfunc.} =
-  ctx.bitmap.clear()
-  #TODO empty list of subpaths
+  ctx.clear()
   ctx.stateStack.setLen(0)
-  ctx.state.resetState()
+  ctx.state.reset()
 
 # CanvasTransform
 #TODO scale
@@ -569,11 +720,11 @@ proc clearRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   #TODO clipping regions (right now we just clip to default)
   let bw = float64(ctx.bitmap.width)
   let bh = float64(ctx.bitmap.height)
-  let x0 = uint64(min(max(x, 0), bw))
-  let x1 = uint64(min(max(x + w, 0), bw))
-  let y0 = uint64(min(max(y, 0), bh))
-  let y1 = uint64(min(max(y + h, 0), bh))
-  ctx.bitmap.clearRect(x0, x1, y0, y1)
+  let x1 = int(min(max(x, 0), bw))
+  let y1 = int(min(max(y, 0), bh))
+  let x2 = int(min(max(x + w, 0), bw))
+  let y2 = int(min(max(y + h, 0), bh))
+  ctx.clearRect(x1, y1, x2, y2)
 
 proc fillRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   for v in [x, y, w, h]:
@@ -584,11 +735,11 @@ proc fillRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
     return
   let bw = float64(ctx.bitmap.width)
   let bh = float64(ctx.bitmap.height)
-  let x0 = uint64(min(max(x, 0), bw))
-  let x1 = uint64(min(max(x + w, 0), bw))
-  let y0 = uint64(min(max(y, 0), bh))
-  let y1 = uint64(min(max(y + h, 0), bh))
-  ctx.bitmap.fillRect(x0, x1, y0, y1, ctx.state.fillStyle)
+  let x1 = int(min(max(x, 0), bw))
+  let y1 = int(min(max(y, 0), bh))
+  let x2 = int(min(max(x + w, 0), bw))
+  let y2 = int(min(max(y + h, 0), bh))
+  ctx.fillRect(x1, y1, x2, y2, ctx.state.fillStyle)
 
 proc strokeRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   for v in [x, y, w, h]:
@@ -599,11 +750,11 @@ proc strokeRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
     return
   let bw = float64(ctx.bitmap.width)
   let bh = float64(ctx.bitmap.height)
-  let x0 = uint64(min(max(x, 0), bw))
-  let x1 = uint64(min(max(x + w, 0), bw))
-  let y0 = uint64(min(max(y, 0), bh))
-  let y1 = uint64(min(max(y + h, 0), bh))
-  ctx.bitmap.strokeRect(x0, x1, y0, y1, ctx.state.strokeStyle)
+  let x1 = int(min(max(x, 0), bw))
+  let y1 = int(min(max(y, 0), bh))
+  let x2 = int(min(max(x + w, 0), bw))
+  let y2 = int(min(max(y + h, 0), bh))
+  ctx.strokeRect(x1, y1, x2, y2, ctx.state.strokeStyle)
 
 # CanvasDrawPath
 proc beginPath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
@@ -612,11 +763,11 @@ proc beginPath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
 proc fill(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
   #TODO path
   ctx.state.path.tempClosePath()
-  ctx.bitmap.fillPath(ctx.state.path, ctx.state.fillStyle, fillRule)
+  ctx.fillPath(ctx.state.path, ctx.state.fillStyle, fillRule)
   ctx.state.path.tempOpenPath()
 
 proc stroke(ctx: CanvasRenderingContext2D) {.jsfunc.} = #TODO path
-  ctx.bitmap.strokePath(ctx.state.path, ctx.state.strokeStyle)
+  ctx.strokePath(ctx.state.path, ctx.state.strokeStyle)
 
 proc clip(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
   #TODO path
@@ -627,44 +778,14 @@ proc clip(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
 # CanvasUserInterface
 
 # CanvasText
-const unifont = readFile"res/unifont_jp-15.0.05.png"
-proc loadUnifont(window: Window) =
-  #TODO this is very wrong, we should move the unifont file in a CGI script or
-  # something
-  if unifontBitmap != nil:
-    return
-  let request = newRequest(
-    newURL("img-codec+png:decode").get,
-    httpMethod = hmPost,
-    body = RequestBody(t: rbtString, s: unifont)
-  )
-  let response = window.loader.doRequest(request)
-  assert response.res == 0
-  let dims = response.headers.table["Cha-Image-Dimensions"][0]
-  let width = parseUInt64(dims.until('x'), allowSign = false).get
-  let height = parseUInt64(dims.after('x'), allowSign = false).get
-  let len = int(width) * int(height)
-  let bitmap = ImageBitmap(
-    px: cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](len)),
-    width: width,
-    height: height
-  )
-  window.loader.resume(response.outputId)
-  response.body.recvDataLoop(addr bitmap.px[0], len * 4)
-  response.body.sclose()
-  unifontBitmap = bitmap
-
 #TODO maxwidth
 proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
     {.jsfunc.} =
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
-  #TODO should not be loaded here...
-  ctx.canvas.internalDocument.window.loadUnifont()
   let vec = ctx.transform(Vector2D(x: x, y: y))
-  ctx.bitmap.fillText(text, vec.x, vec.y, ctx.state.fillStyle,
-    ctx.state.textAlign)
+  ctx.fillText(text, vec.x, vec.y, ctx.state.fillStyle, ctx.state.textAlign)
 
 #TODO maxwidth
 proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
@@ -672,11 +793,8 @@ proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
-  #TODO should not be loaded here...
-  ctx.canvas.internalDocument.window.loadUnifont()
   let vec = ctx.transform(Vector2D(x: x, y: y))
-  ctx.bitmap.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle,
-    ctx.state.textAlign)
+  ctx.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle, ctx.state.textAlign)
 
 proc measureText(ctx: CanvasRenderingContext2D; text: string): TextMetrics
     {.jsfunc.} =
@@ -893,47 +1011,6 @@ const ReflectTable0 = [
   makes("class", "className", AllTagTypes),
   makef("onclick", AllTagTypes, "click"),
 ]
-
-# Forward declarations
-func attr*(element: Element; s: StaticAtom): string
-func attrb*(element: Element; s: CAtom): bool
-proc attr*(element: Element; name: CAtom; value: string)
-proc attr*(element: Element; name: StaticAtom; value: string)
-func baseURL*(document: Document): URL
-proc delAttr(element: Element; i: int; keep = false)
-proc reflectAttr(element: Element; name: CAtom; value: Option[string])
-
-# Forward declaration hacks
-# set in css/cascade
-var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
-  {.nimcall, noSideEffect.}
-# set in css/match
-var doqsa*: proc (node: Node; q: string): seq[Element] {.nimcall.} = nil
-var doqs*: proc (node: Node; q: string): Element {.nimcall.} = nil
-# set in html/chadombuilder
-var domParseHTMLFragment*: proc(element: Element; s: string): seq[Node]
-  {.nimcall.}
-# set in html/env
-var windowFetch*: proc(window: Window; input: JSValue;
-  init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
-  {.nimcall.} = nil
-
-# For now, these are the same; on an API level however, getGlobal is guaranteed
-# to be non-null, while getWindow may return null in the future. (This is in
-# preparation for Worker support.)
-func getGlobal*(ctx: JSContext): Window =
-  let global = JS_GetGlobalObject(ctx)
-  var window: Window
-  assert ctx.fromJS(global, window).isSome
-  JS_FreeValue(ctx, global)
-  return window
-
-func getWindow*(ctx: JSContext): Window =
-  let global = JS_GetGlobalObject(ctx)
-  var window: Window
-  assert ctx.fromJS(global, window).isSome
-  JS_FreeValue(ctx, global)
-  return window
 
 func document*(node: Node): Document =
   if node of Document:
@@ -2763,7 +2840,15 @@ proc newHTMLElement*(document: Document; localName: CAtom;
   of TAG_LABEL:
     result = HTMLLabelElement()
   of TAG_CANVAS:
-    let bitmap = if document.scriptingEnabled: newBitmap(300, 150) else: nil
+    let bitmap = if document.scriptingEnabled:
+      NetworkBitmap(
+        contentType: "image/x-cha-canvas",
+        imageId: document.window.getImageId(),
+        width: 300,
+        height: 150
+      )
+    else:
+      nil
     result = HTMLCanvasElement(bitmap: bitmap)
   of TAG_IMG:
     result = HTMLImageElement()
@@ -3034,7 +3119,10 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
         let res = res.get
         if res.getContentType() == "text/css":
           return res.text()
-        res.unregisterFun()
+        res.close()
+      let p = newPromise[JSResult[string]]()
+      p.resolve(JSResult[string].err(res.error))
+      return p
     ).then(proc(s: JSResult[string]) =
       if s.isSome:
         #TODO non-utf-8 css?
@@ -3071,7 +3159,8 @@ proc loadResource(window: Window; image: HTMLImageElement) =
         return
     let cachedURL = CachedURLImage(expiry: -1, loading: true)
     window.imageURLCache[surl] = cachedURL
-    let p = window.loader.fetch(newRequest(url)).then(
+    let headers = newHeaders({"Accept": "*/*"})
+    let p = window.loader.fetch(newRequest(url, headers = headers)).then(
       proc(res: JSResult[Response]): EmptyPromise =
         if res.isNone:
           return newResolvedPromise()
@@ -3092,8 +3181,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
         )
         let r = window.loader.fetch(request)
         response.resume()
-        response.unregisterFun()
-        response.body.sclose()
+        response.close()
         var expiry = -1i64
         if "Cache-Control" in response.headers:
           for hdr in response.headers.table["Cache-Control"]:
@@ -3113,8 +3201,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
           let response = res.get
           # close immediately; all data we're interested in is in the headers.
           response.resume()
-          response.unregisterFun()
-          response.body.sclose()
+          response.close()
           if "Cha-Image-Dimensions" notin response.headers.table:
             window.console.error("Cha-Image-Dimensions missing in",
               $response.url)
@@ -3122,12 +3209,13 @@ proc loadResource(window: Window; image: HTMLImageElement) =
           let dims = response.headers.table["Cha-Image-Dimensions"][0]
           let width = parseUInt64(dims.until('x'), allowSign = false)
           let height = parseUInt64(dims.after('x'), allowSign = false)
-          if width.isNone or height.isNone:
+          if width.isNone or height.isNone or width.get > uint64(int.high) or
+              height.get > uint64(int.high):
             window.console.error("wrong Cha-Image-Dimensions in", $response.url)
             return
           let bmp = NetworkBitmap(
-            width: width.get,
-            height: height.get,
+            width: int(width.get),
+            height: int(height.get),
             cacheId: cacheId,
             imageId: window.getImageId(),
             contentType: contentType
@@ -3244,10 +3332,24 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
     if element.scriptingEnabled and name in {satWidth, satHeight}:
       let w = element.attrul(satWidth).get(300)
       let h = element.attrul(satHeight).get(150)
-      let canvas = HTMLCanvasElement(element)
-      if canvas.bitmap == nil or canvas.bitmap.width != w or
-          canvas.bitmap.height != h:
-        canvas.bitmap = newBitmap(w, h)
+      if w <= uint64(int.high) and h <= uint64(int.high):
+        let w = int(w)
+        let h = int(h)
+        let canvas = HTMLCanvasElement(element)
+        if canvas.bitmap == nil or canvas.bitmap.width != w or
+            canvas.bitmap.height != h:
+          let window = element.document.window
+          if canvas.ctx2d != nil and canvas.ctx2d.ps != nil:
+            let i = window.pendingCanvasCtls.find(canvas.ctx2d)
+            window.pendingCanvasCtls.del(i)
+            canvas.ctx2d.ps.sclose()
+            canvas.ctx2d = nil
+          canvas.bitmap = NetworkBitmap(
+            contentType: "image/x-cha-canvas",
+            imageId: window.getImageId(),
+            width: w,
+            height: h
+          )
   of TAG_IMG:
     let image = HTMLImageElement(element)
     # https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
@@ -4457,24 +4559,21 @@ func getElementReflectFunctions(): seq[TabGetSet] =
 proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
     options = JS_UNDEFINED): RenderingContext {.jsfunc.} =
   if contextId == "2d":
-    if this.ctx2d != nil:
-      return this.ctx2d
-    return create2DContext(jctx, this, options)
+    if this.ctx2d == nil:
+      create2DContext(jctx, this, options)
+    return this.ctx2d
   return nil
 
 # Note: the standard says quality should be converted in a strange way for
 # backwards compat, but I don't care.
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
     contentType = "image/png"; quality = none(float64)) {.jsfunc.} =
-  if not contentType.startsWith("image/"):
+  if not contentType.startsWith("image/") or this.bitmap.cacheId == 0:
     return
-  let url = newURL("img-codec+" & contentType.after('/') & ":encode")
-  if url.isNone:
+  let url0 = newURL("img-codec+" & contentType.after('/') & ":encode")
+  if url0.isNone:
     return
-  #TODO this is dumb (and slow)
-  var s = newString(this.bitmap.px.len * 4)
-  if s.len > 0:
-    copyMem(addr s[0], addr this.bitmap.px[0], s.len)
+  let url = url0.get
   let headers = newHeaders({
     "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
   })
@@ -4482,17 +4581,38 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
     quality *= 99
     quality += 1
     headers.add("Cha-Image-Quality", $quality)
-  let request = newRequest(
-    url.get,
-    httpMethod = hmPost,
-    headers = headers,
-    body = RequestBody(t: rbtString, s: s)
-  )
   # callback will go out of scope when we return, so capture a new reference.
   let callback = JS_DupValue(ctx, callback)
   let window = this.document.window
+  let loader = window.loader
   let contentType = contentType.toLowerAscii()
-  window.loader.fetch(request).then(proc(res: JSResult[Response]) =
+  let cacheReq = newRequest(newURL("cache:" & $this.bitmap.cacheId).get)
+  loader.fetch(cacheReq).then(proc(res: JSResult[Response]): FetchPromise =
+    if res.isNone:
+      return newResolvedPromise(res)
+    let res = res.get
+    let p = loader.fetch(newRequest(
+      newURL("img-codec+x-cha-canvas:decode").get,
+      httpMethod = hmPost,
+      body = RequestBody(t: rbtOutput, outputId: res.outputId)
+    ))
+    res.resume()
+    res.close()
+    return p
+  ).then(proc(res: JSResult[Response]): FetchPromise =
+    if res.isNone:
+      return newResolvedPromise(res)
+    let res = res.get
+    let p = loader.fetch(newRequest(
+      url,
+      httpMethod = hmPost,
+      headers = headers,
+      body = RequestBody(t: rbtOutput, outputId: res.outputId)
+    ))
+    res.resume()
+    res.close()
+    return p
+  ).then(proc(res: JSResult[Response]) =
     if res.isNone:
       if contentType != "image/png":
         # redo as PNG.

@@ -1439,7 +1439,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   ictx.whitespacenum = 0
 
 proc addInlineImage(ictx: var InlineContext; state: var InlineState;
-    bmp: Bitmap; padding: LayoutUnit) =
+    bmp: NetworkBitmap; padding: LayoutUnit) =
   let atom = InlineAtom(
     t: iatImage,
     bmp: bmp,

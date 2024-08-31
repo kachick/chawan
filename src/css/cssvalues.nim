@@ -318,7 +318,7 @@ type
   CSSContent* = object
     t*: CSSContentType
     s*: string
-    bmp*: Bitmap
+    bmp*: NetworkBitmap
 
   CSSQuotes* = object
     auto*: bool

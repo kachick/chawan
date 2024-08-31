@@ -215,7 +215,7 @@ iterator lines*(path: Path): Line {.inline.} =
 
 proc getLineSegments*(path: Path): PathLines =
   if path.subpaths.len == 0:
-    return
+    return PathLines()
   var miny = Inf
   var maxy = -Inf
   var segments: seq[LineSegment]

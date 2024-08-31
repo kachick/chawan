@@ -44,7 +44,7 @@ proc swrite*[T](writer: var BufferedWriter; o: Option[T])
 proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E])
 proc swrite*(writer: var BufferedWriter; c: ARGBColor) {.inline.}
 proc swrite*(writer: var BufferedWriter; o: RequestBody)
-proc swrite*(writer: var BufferedWriter; bmp: Bitmap)
+proc swrite*(writer: var BufferedWriter; bmp: NetworkBitmap)
 
 const InitLen = sizeof(int) * 2
 const SizeInit = max(64, InitLen)
@@ -199,13 +199,9 @@ proc swrite*(writer: var BufferedWriter; o: RequestBody) =
   of rbtMultipart: writer.swrite(o.multipart)
   of rbtOutput: writer.swrite(o.outputId)
 
-proc swrite*(writer: var BufferedWriter; bmp: Bitmap) =
-  writer.swrite(bmp of ImageBitmap)
+proc swrite*(writer: var BufferedWriter; bmp: NetworkBitmap) =
   writer.swrite(bmp.width)
   writer.swrite(bmp.height)
-  if bmp of ImageBitmap:
-    writer.swrite(bmp.px)
-  else:
-    writer.swrite(NetworkBitmap(bmp).cacheId)
-    writer.swrite(NetworkBitmap(bmp).imageId)
-    writer.swrite(NetworkBitmap(bmp).contentType)
+  writer.swrite(bmp.cacheId)
+  writer.swrite(bmp.imageId)
+  writer.swrite(bmp.contentType)

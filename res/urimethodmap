@@ -22,3 +22,4 @@ img-codec+bmp:		cgi-bin:stbi
 img-codec+x-unknown:	cgi-bin:stbi
 img-codec+webp:		cgi-bin:jebp
 img-codec+x-sixel:	cgi-bin:sixel
+img-codec+x-cha-canvas:	cgi-bin:canvas

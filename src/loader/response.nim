@@ -3,7 +3,6 @@ import std/tables
 
 import chagashi/charset
 import chagashi/decoder
-import img/bitmap
 import io/dynstream
 import io/promise
 import loader/headers
@@ -13,7 +12,6 @@ import monoucha/jserror
 import monoucha/quickjs
 import monoucha/tojs
 import types/blob
-import types/color
 import types/opt
 import types/referrer
 import types/url
@@ -224,46 +222,6 @@ proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
   response.opaque = opaque
   response.onRead = onReadBlob
   response.onFinish = onFinishBlob
-  response.bodyUsed = true
-  response.resume()
-  return opaque.bodyRead
-
-type BitmapOpaque = ref object of RootObj
-  bmp: Bitmap
-  idx: int
-  bodyRead: EmptyPromise
-
-proc onReadBitmap(response: Response) =
-  let opaque = BitmapOpaque(response.opaque)
-  let bmp = opaque.bmp
-  while true:
-    try:
-      let p = cast[ptr UncheckedArray[uint8]](addr bmp.px[0])
-      let L = bmp.px.len * 4 - opaque.idx
-      let n = response.body.recvData(addr p[opaque.idx], L)
-      opaque.idx += n
-      if n == 0:
-        break
-    except ErrorAgain:
-      break
-
-proc onFinishBitmap(response: Response; success: bool) =
-  let opaque = BitmapOpaque(response.opaque)
-  opaque.bodyRead.resolve()
-
-proc saveToBitmap*(response: Response; bmp: Bitmap): EmptyPromise =
-  assert not response.bodyUsed
-  let opaque = BitmapOpaque(bmp: bmp, idx: 0, bodyRead: EmptyPromise())
-  let size = bmp.width * bmp.height
-  bmp.px = cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](size))
-  response.opaque = opaque
-  if size > 0:
-    response.onRead = onReadBitmap
-    response.onFinish = onFinishBitmap
-  else:
-    response.unregisterFun()
-    response.body.sclose()
-    opaque.bodyRead.resolve()
   response.bodyUsed = true
   response.resume()
   return opaque.bodyRead

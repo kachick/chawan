@@ -34,7 +34,7 @@ proc sread*[T](reader: var BufferedReader; o: var Option[T])
 proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E])
 proc sread*(reader: var BufferedReader; c: var ARGBColor) {.inline.}
 proc sread*(reader: var BufferedReader; o: var RequestBody)
-proc sread*(reader: var BufferedReader; bmp: var Bitmap)
+proc sread*(reader: var BufferedReader; bmp: var NetworkBitmap)
 
 proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
   assert len != 0
@@ -215,30 +215,10 @@ proc sread*(reader: var BufferedReader; o: var RequestBody) =
   of rbtMultipart: reader.sread(o.multipart)
   of rbtOutput: reader.sread(o.outputId)
 
-proc sread*(reader: var BufferedReader; bmp: var Bitmap) =
-  var isImageBitmap: bool
-  var width: uint64
-  var height: uint64
-  reader.sread(isImageBitmap)
-  reader.sread(width)
-  reader.sread(height)
-  if isImageBitmap:
-    bmp = ImageBitmap(
-      width: width,
-      height: height
-    )
-    reader.sread(bmp.px)
-  else:
-    var cacheId: int
-    var imageId: int
-    var contentType: string
-    reader.sread(cacheId)
-    reader.sread(imageId)
-    reader.sread(contentType)
-    bmp = NetworkBitmap(
-      width: width,
-      height: height,
-      cacheId: cacheId,
-      imageId: imageId,
-      contentType: contentType
-    )
+proc sread*(reader: var BufferedReader; bmp: var NetworkBitmap) =
+  bmp = NetworkBitmap()
+  reader.sread(bmp.width)
+  reader.sread(bmp.height)
+  reader.sread(bmp.cacheId)
+  reader.sread(bmp.imageId)
+  reader.sread(bmp.contentType)

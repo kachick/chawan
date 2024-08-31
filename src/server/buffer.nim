@@ -1134,6 +1134,10 @@ proc onload(buffer: Buffer) =
         buffer.document.readyState = rsComplete
         if buffer.config.scripting:
           buffer.dispatchLoadEvent()
+          for ctx in buffer.window.pendingCanvasCtls:
+            ctx.ps.sclose()
+            ctx.ps = nil
+          buffer.window.pendingCanvasCtls.setLen(0)
         if buffer.hasTask(bcGetTitle):
           buffer.resolveTask(bcGetTitle, buffer.document.title)
         if buffer.hasTask(bcLoad):

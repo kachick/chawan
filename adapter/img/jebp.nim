@@ -6,9 +6,6 @@ import std/strutils
 import utils/sandbox
 import utils/twtstr
 
-{.passc: "-fno-strict-aliasing".}
-{.passl: "-fno-strict-aliasing".}
-
 {.compile: "jebp.c".}
 
 when sizeof(cint) < 4:
@@ -61,10 +58,12 @@ proc myRead(data: pointer; size: csize_t; user: pointer): csize_t {.cdecl.} =
     n += csize_t(i)
   return n
 
+{.push header: "stb_image_resize.h".}
 proc stbir_resize_uint8(input_pixels: ptr uint8;
   input_w, input_h, input_stride_in_bytes: cint; output_pixels: ptr uint8;
   output_w, output_h, output_stride_in_bytes, num_channels: cint): cint
   {.importc.}
+{.pop.}
 
 proc writeAll(data: pointer; size: int) =
   var n = 0

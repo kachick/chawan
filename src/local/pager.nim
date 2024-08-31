@@ -130,7 +130,6 @@ type
     forkserver*: ForkServer
     formRequestMap*: Table[string, FormRequestType]
     hasload*: bool # has a page been successfully loaded since startup?
-    imageId: int # hack to allocate a new ID for canvas each frame, TODO remove
     inputBuffer*: string # currently uninterpreted characters
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
@@ -484,8 +483,7 @@ proc redraw(pager: Pager) {.jsfunc.} =
 
 proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     offx, erry, dispw: int) =
-  let bmp = NetworkBitmap()
-  bmp[] = NetworkBitmap(image.bmp)[]
+  let bmp = image.bmp
   let request = newRequest(newURL("cache:" & $bmp.cacheId).get)
   let cachedImage = CachedImage(
     bmp: bmp,
@@ -505,7 +503,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       return
     let response = res.get
     let headers = newHeaders()
-    if uint64(image.width) != bmp.width or uint64(image.height) != bmp.height:
+    if image.width != bmp.width or image.height != bmp.height:
       headers.add("Cha-Image-Target-Dimensions", $image.width & 'x' &
         $image.height)
     let request = newRequest(
@@ -524,9 +522,6 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       pager.loader.removeCachedItem(bmp.cacheId)
       return
     let response = res.get
-    # take target sizes
-    bmp.width = uint64(image.width)
-    bmp.height = uint64(image.height)
     let headers = newHeaders({
       "Cha-Image-Dimensions": $image.width & 'x' & $image.height
     })
@@ -571,36 +566,28 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
 proc initImages(pager: Pager; container: Container) =
   var newImages: seq[CanvasImage] = @[]
   for image in container.images:
-    var imageId = -1
-    var data: Blob = nil
-    var bmp0 = image.bmp
     var erry = 0
     var offx = 0
     var dispw = 0
-    if image.bmp of NetworkBitmap:
-      let bmp = NetworkBitmap(image.bmp)
-      if pager.term.imageMode == imSixel:
-        let xpx = (image.x - container.fromx) * pager.attrs.ppc
-        offx = -min(xpx, 0)
-        let maxwpx = pager.bufWidth * pager.attrs.ppc
-        dispw = min(int(image.width) + xpx, maxwpx) - xpx
-        let ypx = (image.y - container.fromy) * pager.attrs.ppl
-        erry = -min(ypx, 0) mod 6
-      let cached = container.findCachedImage(image, offx, erry, dispw)
-      imageId = bmp.imageId
-      if cached == nil:
-        pager.loadCachedImage(container, image, offx, erry, dispw)
-        continue
-      bmp0 = cached.bmp
-      data = cached.data
-      if not cached.loaded:
-        continue # loading
-    else:
-      imageId = pager.imageId
-      inc pager.imageId
-    let canvasImage = pager.term.loadImage(bmp0, data, container.process,
+    if pager.term.imageMode == imSixel:
+      let xpx = (image.x - container.fromx) * pager.attrs.ppc
+      offx = -min(xpx, 0)
+      let maxwpx = pager.bufWidth * pager.attrs.ppc
+      #TODO this is wrong if term caps sixel width
+      dispw = min(int(image.width) + xpx, maxwpx) - xpx
+      let ypx = (image.y - container.fromy) * pager.attrs.ppl
+      erry = -min(ypx, 0) mod 6
+    let cached = container.findCachedImage(image, offx, erry, dispw)
+    let imageId = image.bmp.imageId
+    if cached == nil:
+      pager.loadCachedImage(container, image, offx, erry, dispw)
+      continue
+    if not cached.loaded:
+      continue # loading
+    let canvasImage = pager.term.loadImage(cached.data, container.process,
       imageId, image.x - container.fromx, image.y - container.fromy,
-      image.x, image.y, pager.bufWidth, pager.bufHeight, erry, offx, dispw)
+      image.width, image.height, image.x, image.y, pager.bufWidth,
+      pager.bufHeight, erry, offx, dispw)
     if canvasImage != nil:
       newImages.add(canvasImage)
   pager.term.clearImages(pager.bufHeight)
@@ -1165,7 +1152,7 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
     proxy: pager.config.network.proxy,
     filter: newURLFilter(
       scheme = some(url.scheme),
-      allowschemes = @["data", "cache"],
+      allowschemes = @["data", "cache", "stream"],
       default = true
     ),
     insecureSSLNoVerify: false

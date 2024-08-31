@@ -416,13 +416,15 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       let styledText = styledParent.newStyledReplacement(content, pseudo)
       styledParent.children.add(styledText)
     of peCanvas:
-      let content = CSSContent(
-        t: ContentImage,
-        s: "canvas://",
-        bmp: HTMLCanvasElement(styledParent.node).bitmap
-      )
-      let styledText = styledParent.newStyledReplacement(content, pseudo)
-      styledParent.children.add(styledText)
+      let bmp = HTMLCanvasElement(styledParent.node).bitmap
+      if bmp.cacheId != 0:
+        let content = CSSContent(
+          t: ContentImage,
+          s: "canvas://",
+          bmp: bmp
+        )
+        let styledText = styledParent.newStyledReplacement(content, pseudo)
+        styledParent.children.add(styledText)
     of peVideo:
       let content = CSSContent(t: ContentVideo)
       let styledText = styledParent.newStyledReplacement(content, pseudo)

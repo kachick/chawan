@@ -11,7 +11,6 @@ import chagashi/charset
 import chagashi/decoder
 import chagashi/encoder
 import config/config
-import img/bitmap
 import io/dynstream
 import js/base64
 import types/blob
@@ -57,17 +56,24 @@ type
   CanvasImage* = ref object
     pid: int
     imageId: int
+    # relative position on screen
     x: int
     y: int
+    # original dimensions (after resizing)
+    width: int
+    height: int
+    # offset (crop start)
     offx: int
     offy: int
+    # size cap (crop end)
+    # Note: this 0-based, so the final display size is
+    # (dispw - offx, disph - offy)
     dispw: int
     disph: int
     damaged: bool
     marked*: bool
     dead: bool
     kittyId: int
-    bmp: Bitmap
     # 0 if kitty
     erry: int
     # absolute x, y in container
@@ -643,11 +649,11 @@ proc outputGrid*(term: Terminal) =
   term.cursorx = -1
   term.cursory = -1
 
-func findImage(term: Terminal; pid, imageId: int; bmp: Bitmap;
-    rx, ry, erry, offx, dispw: int): CanvasImage =
+func findImage(term: Terminal; pid, imageId: int; rx, ry, width, height,
+    erry, offx, dispw: int): CanvasImage =
   for it in term.canvasImages:
     if not it.dead and it.pid == pid and it.imageId == imageId and
-        it.bmp.width == bmp.width and it.bmp.height == bmp.height and
+        it.width == width and it.height == height and
         it.rx == rx and it.ry == ry and
         (term.imageMode != imSixel or it.erry == erry and it.dispw == dispw and
           it.offx == offx):
@@ -669,8 +675,8 @@ proc positionImage(term: Terminal; image: CanvasImage; x, y, maxw, maxh: int):
   # origin (*not* offx/offy)
   let maxwpx = maxw * term.attrs.ppc
   let maxhpx = maxh * term.attrs.ppl
-  var width = int(image.bmp.width)
-  var height = int(image.bmp.height)
+  var width = image.width
+  var height = image.height
   if term.imageMode == imSixel:
     #TODO a better solution would be to split up the image here so that it
     # still gets fully displayed on the screen, or at least downscale it...
@@ -686,7 +692,7 @@ proc clearImage*(term: Terminal; image: CanvasImage; maxh: int) =
   of imNone: discard
   of imSixel:
     # we must clear sixels the same way as we clear text.
-    let ey = min(image.y + int(image.bmp.height), maxh)
+    let ey = min(image.y + image.height, maxh)
     let x = max(image.x, 0)
     for y in max(image.y, 0) ..< ey:
       term.lineDamage[y] = min(x, term.lineDamage[y])
@@ -699,10 +705,10 @@ proc clearImages*(term: Terminal; maxh: int) =
       term.clearImage(image, maxh)
     image.marked = false
 
-proc loadImage*(term: Terminal; bmp: Bitmap; data: Blob; pid, imageId,
-    x, y, rx, ry, maxw, maxh, erry, offx, dispw: int): CanvasImage =
-  if (let image = term.findImage(pid, imageId, bmp, rx, ry, erry, offx, dispw);
-      image != nil):
+proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
+    rx, ry, maxw, maxh, erry, offx, dispw: int): CanvasImage =
+  if (let image = term.findImage(pid, imageId, rx, ry, width, height, erry,
+        offx, dispw); image != nil):
     # reuse image on screen
     if image.x != x or image.y != y:
       # only clear sixels; with kitty we just move the existing image
@@ -714,7 +720,7 @@ proc loadImage*(term: Terminal; bmp: Bitmap; data: Blob; pid, imageId,
         return nil
     elif term.imageMode == imSixel:
       # check if any line of our image is damaged
-      let ey = min(image.y + int(image.bmp.height), maxh)
+      let ey = min(image.y + image.height, maxh)
       let mx = (image.offx + image.dispw) div term.attrs.ppc
       for y in max(image.y, 0) ..< ey:
         if term.lineDamage[y] < mx:
@@ -726,12 +732,13 @@ proc loadImage*(term: Terminal; bmp: Bitmap; data: Blob; pid, imageId,
     return image
   # new image
   let image = CanvasImage(
-    bmp: bmp,
     pid: pid,
     imageId: imageId,
     data: data,
     rx: rx,
     ry: ry,
+    width: width,
+    height: height,
     erry: erry
   )
   if term.positionImage(image, x, y, maxw, maxh):
@@ -751,7 +758,6 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let offy = image.offy
   let dispw = image.dispw
   let disph = image.disph
-  let bmp = image.bmp
   var outs = term.cursorGoto(x, y)
   outs &= DCSSTART & 'q'
   # set raster attributes
@@ -768,11 +774,11 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let L = data.len - lookupTableLen - 4
   # Note: we only crop images when it is possible to do so in near constant
   # time. Otherwise, the image is re-coded in a cropped form.
-  if realh == int(bmp.height): # don't crop
+  if realh == image.height: # don't crop
     term.write(data.toOpenArray(preludeLen, L - 1))
   else:
     let si = preludeLen + int(data.getU32BE(L + (offy div 6) * 4))
-    if disph == int(bmp.height): # crop top only
+    if disph == image.height: # crop top only
       term.write(data.toOpenArray(si, L - 1))
     else: # crop both top & bottom
       let ed6 = (disph - image.erry) div 6
@@ -803,7 +809,7 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
 
 proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   var outs = term.cursorGoto(x, y) &
-    APC & "GC=1,s=" & $image.bmp.width & ",v=" & $image.bmp.height &
+    APC & "GC=1,s=" & $image.width & ",v=" & $image.height &
     ",x=" & $image.offx & ",y=" & $image.offy &
     ",w=" & $(image.dispw - image.offx) &
     ",h=" & $(image.disph - image.offy) &

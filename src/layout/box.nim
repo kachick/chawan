@@ -25,7 +25,7 @@ type
     of iatInlineBlock:
       innerbox*: BlockBox
     of iatImage:
-      bmp*: Bitmap
+      bmp*: NetworkBitmap
 
   RootInlineFragmentState* = object
     # offset relative to parent
@@ -73,7 +73,7 @@ type
     of iftNewline:
       discard
     of iftBitmap:
-      bmp*: Bitmap
+      bmp*: NetworkBitmap
     of iftBox:
       box*: BlockBox
 

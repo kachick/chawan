@@ -51,7 +51,8 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
-	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp $(OUTDIR_CGI_BIN)/sixel \
+	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp \
+	$(OUTDIR_CGI_BIN)/canvas $(OUTDIR_CGI_BIN)/sixel \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc \
 	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
@@ -91,6 +92,7 @@ $(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
 	$(CC) $(GMIFETCH_CFLAGS) adapter/protocol/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch" $(GMIFETCH_LDFLAGS)
 
 twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim
+dynstream = src/io/dynstream.nim src/io/serversocket.nim
 $(OUTDIR_CGI_BIN)/man: lib/monoucha/monoucha/jsregex.nim \
 		lib/monoucha/monoucha/libregexp.nim src/types/opt.nim $(twtstr)
 $(OUTDIR_CGI_BIN)/http: adapter/protocol/curlwrap.nim \
@@ -109,6 +111,11 @@ $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h src/utils/sandbox.nim
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h \
 		src/utils/sandbox.nim
+$(OUTDIR_CGI_BIN)/sixel: src/types/color.nim src/utils/sandbox.nim $(twtstr)
+$(OUTDIR_CGI_BIN)/canvas: src/css/cssvalues.nim src/img/bitmap.nim \
+	src/img/painter.nim src/img/path.nim src/io/bufreader.nim \
+	src/types/color.nim src/types/line.nim src/utils/sandbox.nim \
+	$(dynstream)
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/gophertypes.nim $(twtstr)
 $(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim $(twtstr)
@@ -164,7 +171,7 @@ manpages = $(manpages1) $(manpages5)
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
 
-protocols = http about file ftp gopher gmifetch cha-finger man spartan stbi jebp sixel
+protocols = http about file ftp gopher gmifetch cha-finger man spartan stbi jebp sixel canvas
 converters = gopher2html md2html ansi2html gmi2html
 tools = urlenc
 

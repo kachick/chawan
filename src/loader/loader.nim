@@ -108,7 +108,10 @@ type
   ClientData = ref object
     pid: int
     key: ClientKey
+    # List of cached resources.
     cacheMap: seq[CachedItem]
+    # List of file descriptors passed by the client.
+    passedFdMap: Table[string, FileHandle] # host -> fd
     config: LoaderClientConfig
 
   LoaderContext = ref object
@@ -119,8 +122,6 @@ type
     handleMap: Table[int, LoaderHandle]
     outputMap: Table[int, OutputHandle]
     selector: Selector[int]
-    # List of file descriptors passed by the pager.
-    passedFdMap: Table[string, FileHandle] # host -> fd
     # List of existing clients (buffer or pager) that may make requests.
     clientData: Table[int, ClientData] # pid -> data
     # ID of next output. TODO: find a better allocation scheme
@@ -356,8 +357,9 @@ proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: LoaderHandle) =
   handle.outputs.setLen(0)
   handle.iclose()
 
-proc loadStream(ctx: LoaderContext; handle: LoaderHandle; request: Request) =
-  ctx.passedFdMap.withValue(request.url.pathname, fdp):
+proc loadStream(ctx: LoaderContext; client: ClientData; handle: LoaderHandle;
+    request: Request) =
+  client.passedFdMap.withValue(request.url.pathname, fdp):
     handle.sendResult(0)
     handle.sendStatus(200)
     handle.sendHeaders(newHeaders())
@@ -365,7 +367,7 @@ proc loadStream(ctx: LoaderContext; handle: LoaderHandle; request: Request) =
     var stats: Stat
     doAssert fstat(fdp[], stats) != -1
     handle.istream = ps
-    ctx.passedFdMap.del(request.url.pathname)
+    client.passedFdMap.del(request.url.pathname)
     if S_ISCHR(stats.st_mode) or S_ISREG(stats.st_mode):
       # regular file: e.g. cha <file
       # or character device: e.g. cha </dev/null
@@ -493,7 +495,7 @@ proc loadResource(ctx: LoaderContext; client: ClientData;
         assert ostream == nil
         handle.close()
     elif request.url.scheme == "stream":
-      ctx.loadStream(handle, request)
+      ctx.loadStream(client, handle, request)
       if handle.istream != nil:
         ctx.addFd(handle)
       else:
@@ -658,11 +660,12 @@ proc shareCachedItem(ctx: LoaderContext; stream: SocketStream;
   targetClient.cacheMap.add(item)
   stream.sclose()
 
-proc passFd(ctx: LoaderContext; stream: SocketStream; r: var BufferedReader) =
+proc passFd(ctx: LoaderContext; stream: SocketStream; client: ClientData;
+    r: var BufferedReader) =
   var id: string
   r.sread(id)
   let fd = stream.recvFileHandle()
-  ctx.passedFdMap[id] = fd
+  client.passedFdMap[id] = fd
   stream.sclose()
 
 proc removeCachedItem(ctx: LoaderContext; stream: SocketStream;
@@ -764,9 +767,6 @@ proc acceptConnection(ctx: LoaderContext) =
       of lcShareCachedItem:
         privileged_command
         ctx.shareCachedItem(stream, r)
-      of lcPassFd:
-        privileged_command
-        ctx.passFd(stream, r)
       of lcRedirectToFile:
         privileged_command
         ctx.redirectToFile(stream, r)
@@ -780,6 +780,8 @@ proc acceptConnection(ctx: LoaderContext) =
         ctx.addCacheFile(stream, client, r)
       of lcRemoveCachedItem:
         ctx.removeCachedItem(stream, client, r)
+      of lcPassFd:
+        ctx.passFd(stream, client, r)
       of lcLoad:
         ctx.load(stream, client, r)
       of lcTee:
