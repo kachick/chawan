@@ -285,14 +285,17 @@ func getIdnaTableStatus(r: Rune): IDNATableStatus =
   return itsValid
 
 func getIdnaMapped(r: Rune): string =
-  let i = uint32(r)
-  if i <= high(uint16):
-    let u = uint16(i)
+  let u = uint32(r)
+  if u <= high(uint16):
+    let u = uint16(u)
     let n = MappedMapLow.searchInMap(u)
-    if n != -1:
-      return $MappedMapLow[n].mapped
-  let n = MappedMapHigh.searchInMap(i)
-  return $MappedMapHigh[n].mapped
+    let idx = MappedMapLow[n].idx
+    let e = MappedMapData.find('\0', idx)
+    return MappedMapData[idx ..< e]
+  let n = MappedMapHigh.searchInMap(u)
+  let idx = MappedMapHigh[n].idx
+  let e = MappedMapData.find('\0', idx)
+  return MappedMapData[idx ..< e]
 
 func processIdna(str: string; beStrict: bool): string =
   # CheckHyphens = false

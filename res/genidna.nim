@@ -1,6 +1,8 @@
+import std/algorithm
 import std/sets
 import std/streams
 import std/strutils
+import std/tables
 import std/unicode
 
 type
@@ -9,8 +11,9 @@ type
   FullRangeList = tuple[lm: seq[(uint16, uint16)], hm: seq[(uint32, uint32)]]
   FullSet = tuple[lm: seq[uint16], hm: seq[uint32]]
 
-var MappedMapLow: LowMap
-var MappedMapHigh: HighMap
+var MappedMapLow: LowMap = @[]
+var MappedMapHigh: HighMap = @[]
+var MappedMapStrings: seq[string] = @[]
 var DisallowedRanges: FullRangeList
 var Disallowed: FullSet
 var Ignored: FullSet
@@ -21,6 +24,7 @@ proc loadIdnaData() =
       MappedMapLow.add((uint16(i), str))
     else:
       MappedMapHigh.add((i, str))
+    MappedMapStrings.add(str)
   template add_disallow(i, j: uint32) =
     if i <= high(uint16):
       DisallowedRanges.lm.add((uint16(i), uint16(j)))
@@ -140,21 +144,35 @@ proc flush(writer: var LineWriter) =
 proc main() =
   loadIdnaData()
   var writer = LineWriter(s: newFileStream(stdout))
-  echo "type Z = cstring"
-
   echo "const MappedMapLow: array[" & $MappedMapLow.len &
-    ", tuple[ucs: uint16, mapped: Z]] = ["
+    ", tuple[ucs, idx: uint16]] = ["
+  MappedMapStrings.sort(proc(a, b: string): int = cmp(a.len, b.len),
+    order = Descending)
+  var mdata = ""
+  var idxMap = initTable[string, int]()
+  for s in MappedMapStrings:
+    let s0 = s & '\0'
+    let i = mdata.find(s0)
+    if i != -1:
+      idxMap[s] = i
+    else:
+      idxMap[s] = mdata.len
+      mdata &= s0
   for (ucs, s) in MappedMapLow:
-    writer.write("(" & $ucs & "," & s.escape() & ".Z),")
+    writer.write("(" & $ucs & "," & $idxMap[s] & "),")
   writer.flush()
   echo "]"
   echo ""
   echo "const MappedMapHigh: array[" & $MappedMapHigh.len &
-    ", tuple[ucs: uint32, mapped: Z]] = ["
+    ", tuple[ucs: uint32; idx: uint16]] = ["
   for (ucs, s) in MappedMapHigh:
-    writer.write("(" & $ucs & "," & s.escape() & ".Z),")
+    writer.write("(" & $ucs & "," & $idxMap[s] & "),")
   writer.flush()
   echo "]"
+  echo ""
+  stdout.write("const MappedMapData = ")
+  stdout.write(mdata.escape())
+  echo ""
   echo ""
 
   echo "const DisallowedRangesLow: array[" & $DisallowedRanges.lm.len &
