@@ -1,7 +1,9 @@
 # Sixel codec. I'm lazy, so no decoder yet.
 #
 # "Regular" mode just encodes the image as a sixel image, with
-# Cha-Image-Sixel-Palette colors. (TODO: maybe adjust this based on quality?)
+# Cha-Image-Sixel-Palette colors. If that isn't given, it's set
+# according to Cha-Image-Quality.
+#
 # The encoder also has a "half-dump" mode, where the output is modified as
 # follows:
 #
@@ -213,31 +215,59 @@ type
     d1: seq[DitherDiff]
     d2: seq[DitherDiff]
 
+proc getColor(nodes: seq[Node]; c: RGBColor; diff: var DitherDiff): Node =
+  var child: Node = nil
+  var minDist = uint32.high
+  for node in nodes:
+    let ic = node.c
+    let rd = int32(c.r) - int32(ic.r)
+    let gd = int32(c.g) - int32(ic.g)
+    let bd = int32(c.b) - int32(ic.b)
+    let d = uint32(abs(rd)) + uint32(abs(gd)) + uint32(abs(bd))
+    if d < minDist:
+      minDist = d
+      child = node
+      diff = (rd, gd, bd)
+      if ic == c:
+        break
+  return child
+
 proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff;
-    level = 0): Node =
+    level: int): Node =
   if node.leaf:
-    let r = int32(c.r) - int32(node.c.r)
-    let g = int32(c.g) - int32(node.c.g)
-    let b = int32(c.b) - int32(node.c.b)
+    let ic = node.c
+    let r = int32(c.r) - int32(ic.r)
+    let g = int32(c.g) - int32(ic.g)
+    let b = int32(c.b) - int32(ic.b)
     diff = (r, g, b)
     return node
   let idx = int(c.getIdx(level))
   var child = node.children[idx]
   let nlevel = level + 1
   if child == nil:
-    var minDist = uint32.high
-    for node in nodes:
-      let rd = int32(c.r) - int32(node.c.r)
-      let gd = int32(c.g) - int32(node.c.g)
-      let bd = int32(c.b) - int32(node.c.b)
-      let d = uint32(abs(rd)) + uint32(abs(gd)) + uint32(abs(bd))
-      if d < minDist:
-        minDist = d
-        child = node
-        diff = (rd, gd, bd)
+    let child = nodes.getColor(c, diff)
     node.children[idx] = child
     return child
   return child.getColor(c, nodes, diff, nlevel)
+
+proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff):
+    int =
+  if nodes.len < 63:
+    # Octree-based nearest neighbor search creates really ugly artifacts
+    # with a low amount of colors, which is exactly the case where
+    # linear search is still acceptable.
+    #
+    # 64 is the first power of 2 that gives OK results on my test images
+    # with the octree; we must also subtract one for transparency.
+    #
+    # (In practice, I assume no sane terminal would pick a palette (> 2)
+    # that isn't a multiple of 4, so really only 16 is relevant here.
+    # Even that is quite rare, unless you misconfigure XTerm - or
+    # have a hardware terminal, but those didn't have private color
+    # registers in the first place. I do like the aesthetics, though;
+    # would be a shame if it didn't work :P)
+    return nodes.getColor(c, diff).idx
+  return node.getColor(c, nodes, diff, 0).idx
 
 proc correctDither(c: RGBColor; x: int; dither: Dither): RGBColor =
   let (rd, gd, bd) = dither.d1[x + 1]
@@ -364,7 +394,7 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
         let m = n + (offx + j) * 4
         let c0 = s.getPixel(m, bgcolor).correctDither(j, dither)
         var diff: DitherDiff
-        let c = node.getColor(c0, nodes, diff).idx
+        let c = node.getColor(c0, nodes, diff)
         dither.fs(j, diff)
         if chunk == nil or chunk.c != c:
           chunk = addr chunkMap[c - 1]
@@ -445,6 +475,7 @@ proc main() =
     var palette = -1
     var bgcolor = rgb(0, 0, 0)
     var cropw = -1
+    var quality = -1
     for hdr in headers.split('\n'):
       let s = hdr.after(':').strip()
       case hdr.until(':')
@@ -464,12 +495,22 @@ proc main() =
         if q.isNone:
           die("Cha-Control: ConnectionError 1 wrong palette\n")
         palette = int(q.get)
+      of "Cha-Image-Quality":
+        let q = parseUInt16(s, allowSign = false)
+        if q.isNone:
+          die("Cha-Control: ConnectionError 1 wrong quality\n")
+        quality = int(q.get)
       of "Cha-Image-Background-Color":
         bgcolor = parseLegacyColor0(s)
     if cropw == -1:
       cropw = width
     if palette == -1:
-      palette = 16
+      if quality < 30:
+        palette = 16
+      elif quality < 70:
+        palette = 256
+      else:
+        palette = 1024
     if width == 0 or height == 0:
       puts("Cha-Image-Dimensions: 0x0\n")
       quit(0) # done...
