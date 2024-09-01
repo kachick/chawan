@@ -5,6 +5,8 @@ import std/strutils
 import std/tables
 import std/unicode
 
+import io/bufreader
+import io/bufwriter
 import lib/punycode
 import monoucha/fromjs
 import monoucha/javascript
@@ -84,6 +86,30 @@ type
 
 jsDestructor(URL)
 jsDestructor(URLSearchParams)
+
+# Forward declarations
+proc parseURL*(input: string; base = none(URL); override = none(URLState)):
+    Option[URL]
+func serialize*(url: URL; excludefragment = false; excludepassword = false):
+    string
+
+proc swrite*(writer: var BufferedWriter; url: URL) =
+  if url != nil:
+    writer.swrite(url.serialize())
+  else:
+    writer.swrite("")
+
+proc sread*(reader: var BufferedReader; url: var URL) =
+  var s: string
+  reader.sread(s)
+  if s == "":
+    url = nil
+  else:
+    let x = parseURL(s)
+    if x.isSome:
+      url = x.get
+    else:
+      url = nil
 
 const EmptyPath = URLPath(opaque: true, s: "")
 const EmptyHost = Host(t: htDomain, domain: "")

@@ -5,21 +5,16 @@ import std/options
 import std/sets
 import std/tables
 
-import img/bitmap
 import io/dynstream
-import loader/request
-import types/blob
 import types/color
-import types/formdata
 import types/opt
-import types/url
 
 type BufferedWriter* = object
   stream: DynStream
   buffer: ptr UncheckedArray[uint8]
   bufSize: int
   bufLen: int
-  sendAux: seq[FileHandle]
+  sendAux*: seq[FileHandle]
 
 proc `=destroy`(writer: var BufferedWriter) =
   if writer.buffer != nil:
@@ -31,20 +26,15 @@ proc swrite*[T](writer: var BufferedWriter; s: set[T])
 proc swrite*[T: enum](writer: var BufferedWriter; x: T)
 proc swrite*(writer: var BufferedWriter; s: string)
 proc swrite*(writer: var BufferedWriter; b: bool)
-proc swrite*(writer: var BufferedWriter; url: URL)
 proc swrite*(writer: var BufferedWriter; tup: tuple)
 proc swrite*[I, T](writer: var BufferedWriter; a: array[I, T])
 proc swrite*[T](writer: var BufferedWriter; s: openArray[T])
 proc swrite*[U, V](writer: var BufferedWriter; t: Table[U, V])
 proc swrite*(writer: var BufferedWriter; obj: object)
 proc swrite*(writer: var BufferedWriter; obj: ref object)
-proc swrite*(writer: var BufferedWriter; part: FormDataEntry)
-proc swrite*(writer: var BufferedWriter; blob: Blob)
 proc swrite*[T](writer: var BufferedWriter; o: Option[T])
 proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E])
-proc swrite*(writer: var BufferedWriter; c: ARGBColor) {.inline.}
-proc swrite*(writer: var BufferedWriter; o: RequestBody)
-proc swrite*(writer: var BufferedWriter; bmp: NetworkBitmap)
+proc swrite*(writer: var BufferedWriter; c: ARGBColor)
 
 const InitLen = sizeof(int) * 2
 const SizeInit = max(64, InitLen)
@@ -81,7 +71,7 @@ template withPacketWriter*(stream: DynStream; w, body: untyped) =
     w.flush()
     w.deinit()
 
-proc writeData(writer: var BufferedWriter; buffer: pointer; len: int) =
+proc writeData*(writer: var BufferedWriter; buffer: pointer; len: int) =
   let targetLen = writer.bufLen + len
   let missing = targetLen - writer.bufSize
   if missing > 0:
@@ -118,12 +108,6 @@ proc swrite*(writer: var BufferedWriter; b: bool) =
   else:
     writer.swrite(0u8)
 
-proc swrite*(writer: var BufferedWriter; url: URL) =
-  if url != nil:
-    writer.swrite(url.serialize())
-  else:
-    writer.swrite("")
-
 proc swrite*(writer: var BufferedWriter; tup: tuple) =
   for f in tup.fields:
     writer.swrite(f)
@@ -152,28 +136,6 @@ proc swrite*(writer: var BufferedWriter; obj: ref object) =
   if obj != nil:
     writer.swrite(obj[])
 
-proc swrite*(writer: var BufferedWriter; part: FormDataEntry) =
-  writer.swrite(part.isstr)
-  writer.swrite(part.name)
-  writer.swrite(part.filename)
-  if part.isstr:
-    writer.swrite(part.svalue)
-  else:
-    writer.swrite(part.value)
-
-#TODO clean up this mess
-proc swrite*(writer: var BufferedWriter; blob: Blob) =
-  if blob.fd.isSome:
-    writer.sendAux.add(blob.fd.get)
-  writer.swrite(blob of WebFile)
-  if blob of WebFile:
-    writer.swrite(WebFile(blob).name)
-  writer.swrite(blob.fd.isSome)
-  writer.swrite(blob.ctype)
-  writer.swrite(blob.size)
-  if blob.size > 0:
-    writer.writeData(blob.buffer, int(blob.size))
-
 proc swrite*[T](writer: var BufferedWriter; o: Option[T]) =
   writer.swrite(o.isSome)
   if o.isSome:
@@ -190,18 +152,3 @@ proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E]) =
 
 proc swrite*(writer: var BufferedWriter; c: ARGBColor) =
   writer.swrite(uint32(c))
-
-proc swrite*(writer: var BufferedWriter; o: RequestBody) =
-  writer.swrite(o.t)
-  case o.t
-  of rbtNone: discard
-  of rbtString: writer.swrite(o.s)
-  of rbtMultipart: writer.swrite(o.multipart)
-  of rbtOutput: writer.swrite(o.outputId)
-
-proc swrite*(writer: var BufferedWriter; bmp: NetworkBitmap) =
-  writer.swrite(bmp.width)
-  writer.swrite(bmp.height)
-  writer.swrite(bmp.cacheId)
-  writer.swrite(bmp.imageId)
-  writer.swrite(bmp.contentType)

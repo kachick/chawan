@@ -2,6 +2,8 @@ import std/options
 import std/tables
 
 import html/script
+import io/bufreader
+import io/bufwriter
 import loader/headers
 import monoucha/fromjs
 import monoucha/javascript
@@ -89,6 +91,24 @@ type
     client*: Option[EnvironmentSettings]
 
 jsDestructor(JSRequest)
+
+proc swrite*(writer: var BufferedWriter; o: RequestBody) =
+  writer.swrite(o.t)
+  case o.t
+  of rbtNone: discard
+  of rbtString: writer.swrite(o.s)
+  of rbtMultipart: writer.swrite(o.multipart)
+  of rbtOutput: writer.swrite(o.outputId)
+
+proc sread*(reader: var BufferedReader; o: var RequestBody) =
+  var t: RequestBodyType
+  reader.sread(t)
+  o = RequestBody(t: t)
+  case t
+  of rbtNone: discard
+  of rbtString: reader.sread(o.s)
+  of rbtMultipart: reader.sread(o.multipart)
+  of rbtOutput: reader.sread(o.outputId)
 
 proc contentLength*(body: RequestBody): int =
   case body.t

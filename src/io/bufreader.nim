@@ -2,39 +2,29 @@ import std/options
 import std/sets
 import std/tables
 
-import img/bitmap
 import io/dynstream
-import loader/request
-import types/blob
 import types/color
-import types/formdata
 import types/opt
-import types/url
 
 type BufferedReader* = object
   buffer: seq[uint8]
   bufIdx: int
-  recvAux: seq[FileHandle] #TODO assert on unused ones
+  recvAux*: seq[FileHandle] #TODO assert on unused ones
 
 proc sread*(reader: var BufferedReader; n: var SomeNumber)
 proc sread*[T](reader: var BufferedReader; s: var set[T])
 proc sread*[T: enum](reader: var BufferedReader; x: var T)
 proc sread*(reader: var BufferedReader; s: var string)
 proc sread*(reader: var BufferedReader; b: var bool)
-proc sread*(reader: var BufferedReader; url: var URL)
 proc sread*(reader: var BufferedReader; tup: var tuple)
 proc sread*[I, T](reader: var BufferedReader; a: var array[I, T])
 proc sread*(reader: var BufferedReader; s: var seq)
 proc sread*[U, V](reader: var BufferedReader; t: var Table[U, V])
 proc sread*(reader: var BufferedReader; obj: var object)
 proc sread*(reader: var BufferedReader; obj: var ref object)
-proc sread*(reader: var BufferedReader; part: var FormDataEntry)
-proc sread*(reader: var BufferedReader; blob: var Blob)
 proc sread*[T](reader: var BufferedReader; o: var Option[T])
 proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E])
-proc sread*(reader: var BufferedReader; c: var ARGBColor) {.inline.}
-proc sread*(reader: var BufferedReader; o: var RequestBody)
-proc sread*(reader: var BufferedReader; bmp: var NetworkBitmap)
+proc sread*(reader: var BufferedReader; c: var ARGBColor)
 
 proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
   assert len != 0
@@ -57,7 +47,7 @@ template withPacketReader*(stream: DynStream; r, body: untyped) =
     var r = stream.initPacketReader()
     body
 
-proc readData(reader: var BufferedReader; buffer: pointer; len: int) =
+proc readData*(reader: var BufferedReader; buffer: pointer; len: int) =
   assert reader.bufIdx + len <= reader.buffer.len
   copyMem(buffer, addr reader.buffer[reader.bufIdx], len)
   reader.bufIdx += len
@@ -93,18 +83,6 @@ proc sread*(reader: var BufferedReader; b: var bool) =
   else:
     assert n == 0u8
     b = false
-
-proc sread*(reader: var BufferedReader; url: var URL) =
-  var s: string
-  reader.sread(s)
-  if s == "":
-    url = nil
-  else:
-    let x = newURL(s)
-    if x.isSome:
-      url = x.get
-    else:
-      url = nil
 
 proc sread*(reader: var BufferedReader; tup: var tuple) =
   for f in tup.fields:
@@ -142,38 +120,6 @@ proc sread*(reader: var BufferedReader; obj: var ref object) =
     new(obj)
     reader.sread(obj[])
 
-proc sread*(reader: var BufferedReader; part: var FormDataEntry) =
-  var isstr: bool
-  reader.sread(isstr)
-  if isstr:
-    part = FormDataEntry(isstr: true)
-  else:
-    part = FormDataEntry(isstr: false)
-  reader.sread(part.name)
-  reader.sread(part.filename)
-  if part.isstr:
-    reader.sread(part.svalue)
-  else:
-    reader.sread(part.value)
-
-proc sread*(reader: var BufferedReader; blob: var Blob) =
-  var isWebFile: bool
-  reader.sread(isWebFile)
-  blob = if isWebFile: WebFile() else: Blob()
-  if isWebFile:
-    reader.sread(WebFile(blob).name)
-  var hasFd: bool
-  reader.sread(hasFd)
-  if hasFd:
-    blob.fd = some(reader.recvAux.pop())
-  reader.sread(blob.ctype)
-  reader.sread(blob.size)
-  if blob.size > 0:
-    let buffer = alloc(blob.size)
-    reader.readData(blob.buffer, int(blob.size))
-    blob.buffer = buffer
-    blob.deallocFun = deallocBlob
-
 proc sread*[T](reader: var BufferedReader; o: var Option[T]) =
   var x: bool
   reader.sread(x)
@@ -204,21 +150,3 @@ proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E]) =
 
 proc sread*(reader: var BufferedReader; c: var ARGBColor) =
   reader.sread(uint32(c))
-
-proc sread*(reader: var BufferedReader; o: var RequestBody) =
-  var t: RequestBodyType
-  reader.sread(t)
-  o = RequestBody(t: t)
-  case t
-  of rbtNone: discard
-  of rbtString: reader.sread(o.s)
-  of rbtMultipart: reader.sread(o.multipart)
-  of rbtOutput: reader.sread(o.outputId)
-
-proc sread*(reader: var BufferedReader; bmp: var NetworkBitmap) =
-  bmp = NetworkBitmap()
-  reader.sread(bmp.width)
-  reader.sread(bmp.height)
-  reader.sread(bmp.cacheId)
-  reader.sread(bmp.imageId)
-  reader.sread(bmp.contentType)

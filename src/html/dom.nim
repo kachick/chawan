@@ -360,7 +360,7 @@ type
     # CanvasPathDrawingStyles
     lineWidth: float64
     # CanvasTextDrawingStyles
-    textAlign: CSSTextAlign
+    textAlign: CanvasTextAlign
     # CanvasPath
     path: Path
 
@@ -595,7 +595,7 @@ proc strokePath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor) =
       w.swrite(color)
 
 proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
-    color: ARGBColor; align: CSSTextAlign) =
+    color: ARGBColor; align: CanvasTextAlign) =
   if ctx.ps != nil:
     ctx.ps.withPacketWriter w:
       w.swrite(pcFillText)
@@ -606,7 +606,7 @@ proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
       w.swrite(align)
 
 proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
-    color: ARGBColor; align: CSSTextAlign) =
+    color: ARGBColor; align: CanvasTextAlign) =
   if ctx.ps != nil:
     ctx.ps.withPacketWriter w:
       w.swrite(pcStrokeText)
@@ -826,22 +826,12 @@ proc getLineDash(ctx: CanvasRenderingContext2D): seq[float64] {.jsfunc.} =
 
 # CanvasTextDrawingStyles
 proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
-  case ctx.state.textAlign
-  of TextAlignStart: return "start"
-  of TextAlignEnd: return "end"
-  of TextAlignLeft: return "left"
-  of TextAlignRight: return "right"
-  of TextAlignCenter: return "center"
-  else: doAssert false
+  return $ctx.state.textAlign
 
 proc textAlign(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
-  ctx.state.textAlign = case s
-  of "start": TextAlignStart
-  of "end": TextAlignEnd
-  of "left": TextAlignLeft
-  of "right": TextAlignRight
-  of "center": TextAlignCenter
-  else: ctx.state.textAlign
+  let x = parseEnumNoCase[CanvasTextAlign](s)
+  if x.isSome:
+    ctx.state.textAlign = x.get
 
 # CanvasPath
 proc closePath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
@@ -859,19 +849,30 @@ proc quadraticCurveTo(ctx: CanvasRenderingContext2D; cpx, cpy, x,
 
 proc arcTo(ctx: CanvasRenderingContext2D; x1, y1, x2, y2, radius: float64):
     Err[DOMException] {.jsfunc.} =
-  return ctx.state.path.arcTo(x1, y1, x2, y2, radius)
+  if radius < 0:
+    return errDOMException("Expected positive radius, but got negative",
+      "IndexSizeError")
+  ctx.state.path.arcTo(x1, y1, x2, y2, radius)
+  return ok()
 
 proc arc(ctx: CanvasRenderingContext2D; x, y, radius, startAngle,
     endAngle: float64; counterclockwise = false): Err[DOMException]
     {.jsfunc.} =
-  return ctx.state.path.arc(x, y, radius, startAngle, endAngle,
-    counterclockwise)
+  if radius < 0:
+    return errDOMException("Expected positive radius, but got negative",
+      "IndexSizeError")
+  ctx.state.path.arc(x, y, radius, startAngle, endAngle, counterclockwise)
+  return ok()
 
 proc ellipse(ctx: CanvasRenderingContext2D; x, y, radiusX, radiusY, rotation,
     startAngle, endAngle: float64; counterclockwise = false): Err[DOMException]
     {.jsfunc.} =
-  return ctx.state.path.ellipse(x, y, radiusX, radiusY, rotation, startAngle,
-    endAngle, counterclockwise)
+  if radiusX < 0 or radiusY < 0:
+    return errDOMException("Expected positive radius, but got negative",
+      "IndexSizeError")
+  ctx.state.path.ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle,
+    counterclockwise)
+  return ok()
 
 proc rect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   ctx.state.path.rect(x, y, w, h)

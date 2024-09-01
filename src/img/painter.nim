@@ -1,20 +1,27 @@
 import std/algorithm
 import std/unicode
 
-import css/cssvalues
 import img/bitmap
 import img/path
 import types/color
 import types/line
 import types/vector
 
-type CanvasFillRule* = enum
-  cfrNonZero = "nonzero"
-  cfrEvenOdd = "evenodd"
+type
+  CanvasFillRule* = enum
+    cfrNonZero = "nonzero"
+    cfrEvenOdd = "evenodd"
 
-type PaintCommand* = enum
-  pcSetDimensions, pcFillRect, pcStrokeRect, pcFillPath, pcStrokePath,
-  pcFillText, pcStrokeText
+  PaintCommand* = enum
+    pcSetDimensions, pcFillRect, pcStrokeRect, pcFillPath, pcStrokePath,
+    pcFillText, pcStrokeText
+
+  CanvasTextAlign* = enum
+    ctaStart = "start"
+    ctaEnd = "end"
+    ctaLeft = "left"
+    ctaRight = "right"
+    ctaCenter = "center"
 
 # https://en.wikipedia.org/wiki/Bresenham's_line_algorithm#All_cases
 proc plotLineLow(bmp: Bitmap; x1, y1, x2, y2: int; color: ARGBColor) =
@@ -181,7 +188,7 @@ proc drawBitmap(a, b: Bitmap; p: Vector2D) =
         a.setpxb(ax, ay, b.getpx(x, y))
 
 proc fillText*(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
-    textAlign: CSSTextAlign) =
+    textAlign: CanvasTextAlign) =
   var w = 0f64
   var glyphs: seq[Bitmap] = @[]
   for r in text.runes:
@@ -191,15 +198,14 @@ proc fillText*(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
   var x = x
   #TODO rtl
   case textAlign
-  of TextAlignLeft, TextAlignStart: discard
-  of TextAlignRight, TextAlignEnd: x -= w
-  of TextAlignCenter: x -= w / 2
-  else: doAssert false
+  of ctaLeft, ctaStart: discard
+  of ctaRight, ctaEnd: x -= w
+  of ctaCenter: x -= w / 2
   for glyph in glyphs:
     bmp.drawBitmap(glyph, Vector2D(x: x, y: y - 8))
     x += float64(glyph.width)
 
 proc strokeText*(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
-    textAlign: CSSTextAlign) =
+    textAlign: CanvasTextAlign) =
   #TODO
   bmp.fillText(text, x, y, color, textAlign)

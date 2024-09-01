@@ -1,5 +1,7 @@
 import std/strutils
 
+import io/bufreader
+import io/bufwriter
 import io/dynstream
 import monoucha/javascript
 import types/blob
@@ -20,6 +22,29 @@ type
     boundary*: string
 
 jsDestructor(FormData)
+
+proc swrite*(writer: var BufferedWriter; part: FormDataEntry) =
+  writer.swrite(part.isstr)
+  writer.swrite(part.name)
+  writer.swrite(part.filename)
+  if part.isstr:
+    writer.swrite(part.svalue)
+  else:
+    writer.swrite(part.value)
+
+proc sread*(reader: var BufferedReader; part: var FormDataEntry) =
+  var isstr: bool
+  reader.sread(isstr)
+  if isstr:
+    part = FormDataEntry(isstr: true)
+  else:
+    part = FormDataEntry(isstr: false)
+  reader.sread(part.name)
+  reader.sread(part.filename)
+  if part.isstr:
+    reader.sread(part.svalue)
+  else:
+    reader.sread(part.value)
 
 iterator items*(this: FormData): FormDataEntry {.inline.} =
   for entry in this.entries:

@@ -10,7 +10,6 @@ import std/os
 import std/posix
 import std/strutils
 
-import css/cssvalues
 import img/bitmap
 import img/painter
 import img/path
@@ -121,7 +120,7 @@ proc main() =
             var text: string
             var x, y: float64
             var color: ARGBColor
-            var align: CSSTextAlign
+            var align: CanvasTextAlign
             r.sread(text)
             r.sread(x)
             r.sread(y)
