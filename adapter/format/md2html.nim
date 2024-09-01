@@ -8,10 +8,10 @@ proc toggle[T](s: var set[T], t: T): bool =
     s.excl(t)
 
 type BracketState = enum
-  bsNone, bsInBracketRef, bsInBracket, bsAfterBracket, bsInParen, bsInImage,
-  bsInTag
+  bsNone, bsInBracketRef, bsInBracket, bsAfterBracket, bsInParen, bsInImage
 
 const AsciiAlphaNumeric = {'0'..'9', 'A'..'Z', 'a'..'z'}
+const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 
 proc getId(line: openArray[char]): string =
   result = ""
@@ -47,7 +47,7 @@ proc getId(line: openArray[char]): string =
     inc i
 
 type InlineState = enum
-  isItalic, isBold, isCode, isComment, isDel
+  isItalic, isBold, isDel
 
 func startsWithScheme(s: string): bool =
   for i, c in s:
@@ -57,132 +57,178 @@ func startsWithScheme(s: string): bool =
       break
   false
 
-proc parseInline(line: openArray[char]) =
-  var state: set[InlineState] = {}
-  var bs = bsNone
-  var i = 0
-  var bracketChars = ""
-  var quote = false
-  var image = false
-  template append(s: untyped) =
-    if bs in {bsInBracketRef, bsInBracket}:
-      bracketChars &= s
-    else:
-      stdout.write(s)
+type ParseInlineContext = object
+  i: int
+  bracketChars: string
+  bs: BracketState
+
+proc parseInTag(ctx: var ParseInlineContext; line: openArray[char]) =
+  var buf = ""
+  var i = ctx.i
   while i < line.len:
     let c = line[i]
-    if bs == bsAfterBracket and c != '(':
-      stdout.write("[" & bracketChars & "]")
-      bracketChars = ""
-      bs = bsNone
+    if c == '>': # done
+      if buf.startsWithScheme(): # link
+        var linkChars = ""
+        for c in buf:
+          if c == '\'':
+            linkChars &= "&apos"
+          else:
+            linkChars &= c
+        stdout.write("<A HREF='" & linkChars & "'>" & buf & "</A>")
+      else: # tag
+        stdout.write('<' & buf & '>')
+      buf = ""
+      break
+    elif c == '<':
+      stdout.write('<' & buf)
+      buf = ""
+      dec i
+      break
+    else:
+      buf &= c
+    inc i
+  stdout.write(buf)
+  ctx.i = i
+
+type CommentState = enum
+  csNone, csDash, csDashDash
+
+proc append(ctx: var ParseInlineContext; s: string) =
+  if ctx.bs in {bsInBracketRef, bsInBracket}:
+    ctx.bracketChars &= s
+  else:
+    stdout.write(s)
+
+proc append(ctx: var ParseInlineContext; c: char) =
+  if ctx.bs in {bsInBracketRef, bsInBracket}:
+    ctx.bracketChars &= c
+  else:
+    stdout.write(c)
+
+proc parseComment(ctx: var ParseInlineContext; line: openArray[char]) =
+  var i = ctx.i
+  var cs = csNone
+  var buf = ""
+  while i < line.len:
+    let c = line[i]
+    if cs in {csNone, csDash} and c == '-':
+      inc cs
+    elif cs == csDashDash and c == '>':
+      buf &= '>'
+      break
+    else:
+      cs = csNone
+    buf &= c
+    inc i
+  ctx.append(buf)
+  ctx.i = i
+
+proc parseCode(ctx: var ParseInlineContext; line: openArray[char]) =
+  var i = ctx.i
+  while i < line.len:
+    let c = line[i]
+    case c
+    of '<': ctx.append("&lt;")
+    of '>': ctx.append("&gt;")
+    of '"': ctx.append("&quot;")
+    of '\'': ctx.append("&apos;")
+    of '&': ctx.append("&amp;")
+    of '`':
+      ctx.append("</CODE>")
+      break
+    else: ctx.append(c)
+    inc i
+  ctx.i = i
+
+proc parseInline(line: openArray[char]) =
+  var state: set[InlineState] = {}
+  var ctx = ParseInlineContext()
+  var image = false
+  while ctx.i < line.len:
+    let c = line[ctx.i]
+    if ctx.bs == bsAfterBracket and c != '(':
+      stdout.write("[" & ctx.bracketChars & "]")
+      ctx.bracketChars = ""
+      ctx.bs = bsNone
       image = false
-    if quote:
-      append c
-    elif isComment in state:
-      if i + 2 < line.len and line.toOpenArray(i, i + 2) == "-->":
-        state.excl(isComment)
-        append "-->"
-        i += 2
-      else:
-        append c
-    elif bs == bsInTag:
-      if c == '>': # done
-        if bracketChars.startsWithScheme(): # link
-          var linkChars = ""
-          for c in bracketChars:
-            if c == '\'':
-              linkChars &= "&apos"
-            else:
-              linkChars &= c
-          stdout.write("<A HREF='" & linkChars & "'>" & bracketChars & "</A>")
-        else: # tag
-          stdout.write('<' & bracketChars & '>')
-        bracketChars = ""
-        bs = bsNone
-      elif c == '<':
-        stdout.write('<' & bracketChars)
-        bracketChars = ""
-      else:
-        bracketChars &= c
-    elif isCode in state:
-      case c
-      of '<': append "&lt;"
-      of '>': append "&gt;"
-      of '"': append "&quot;"
-      of '\'': append "&apos;"
-      of '&': append "&amp;"
-      of '`':
-        append "</CODE>"
-        state.excl(isCode)
-      else: append c
-    elif c == '\\':
-      quote = true
-    elif c == '*' or c == '_' and
-        (i == 0 or line[i - 1] notin AsciiAlphaNumeric or
-        i + 1 >= line.len or line[i + 1] notin AsciiAlphaNumeric + {'_'}):
-      if i + 1 < line.len and line[i + 1] == c:
+    if c == '\\':
+      inc ctx.i
+      if ctx.i < line.len:
+        ctx.append(line[ctx.i])
+    elif (ctx.i > 0 and line[ctx.i - 1] notin AsciiWhitespace or
+          ctx.i + 1 < line.len and line[ctx.i + 1] notin AsciiWhitespace) and
+        (c == '*' or
+          c == '_' and
+            (ctx.i == 0 or line[ctx.i - 1] notin AsciiAlphaNumeric or
+              ctx.i + 1 >= line.len or
+              line[ctx.i + 1] notin AsciiAlphaNumeric + {'_'})):
+      if ctx.i + 1 < line.len and line[ctx.i + 1] == c:
         if state.toggle(isBold):
-          append "<B>"
+          ctx.append("<B>")
         else:
-          append "</B>"
-        inc i
+          ctx.append("</B>")
+        inc ctx.i
       else:
         if state.toggle(isItalic):
           stdout.write("<I>")
         else:
           stdout.write("</I>")
     elif c == '`':
-      state.incl(isCode)
-      append "<CODE>"
-    elif c == '~' and i + 1 < line.len and line[i + 1] == '~':
+      ctx.append("<CODE>")
+      inc ctx.i
+      ctx.parseCode(line)
+    elif c == '~' and ctx.i + 1 < line.len and line[ctx.i + 1] == '~':
       if state.toggle(isDel):
-        append "<DEL>"
+        ctx.append("<DEL>")
       else:
-        append "</DEL>"
-      inc i
-    elif c == '!' and bs == bsNone and i + 1 < line.len and line[i + 1] == '[':
+        ctx.append("</DEL>")
+      inc ctx.i
+    elif c == '!' and ctx.bs == bsNone and ctx.i + 1 < line.len and
+        line[ctx.i + 1] == '[':
       image = true
-    elif c == '[' and bs == bsNone:
-      bs = bsInBracket
-      if i + 1 < line.len and line[i + 1] == '^':
-        inc i
-        bs = bsInBracketRef
-    elif c == ']' and bs == bsInBracketRef:
-      let id = bracketChars.getId()
-      stdout.write("<A HREF='#" & id & "'>" & bracketChars & "</A>")
-      bracketChars = ""
-    elif c == ']' and bs == bsInBracket:
-      bs = bsAfterBracket
-    elif c == '(' and bs == bsAfterBracket:
+    elif c == '[' and ctx.bs == bsNone:
+      ctx.bs = bsInBracket
+      if ctx.i + 1 < line.len and line[ctx.i + 1] == '^':
+        inc ctx.i
+        ctx.bs = bsInBracketRef
+    elif c == ']' and ctx.bs == bsInBracketRef:
+      let id = ctx.bracketChars.getId()
+      stdout.write("<A HREF='#" & id & "'>" & ctx.bracketChars & "</A>")
+      ctx.bracketChars = ""
+    elif c == ']' and ctx.bs == bsInBracket:
+      ctx.bs = bsAfterBracket
+    elif c == '(' and ctx.bs == bsAfterBracket:
       if image:
         stdout.write("<IMG SRC='")
       else:
         stdout.write("<A HREF='")
-      bs = bsInParen
-    elif c == ')' and bs == bsInParen:
+      ctx.bs = bsInParen
+    elif c == ')' and ctx.bs == bsInParen:
       if image:
-        stdout.write("' ALT='" & bracketChars & "'>")
+        stdout.write("' ALT='" & ctx.bracketChars & "'>")
       else:
-        stdout.write("'>" & bracketChars & "</A>")
+        stdout.write("'>" & ctx.bracketChars & "</A>")
       image = false
-      bracketChars = ""
-      bs = bsNone
-    elif c == '\'' and bs == bsInParen:
+      ctx.bracketChars = ""
+      ctx.bs = bsNone
+    elif c == '\'' and ctx.bs == bsInParen:
       stdout.write("&apos;")
-    elif c == '<' and bs == bsNone:
-      bs = bsInTag
-      bracketChars = ""
-    elif i + 4 < line.len and line.toOpenArray(i, i + 3) == "<!--":
-      append "<!--"
-      i += 3
-      state.incl(isComment)
-    elif c == '\n' and i >= 2 and line[i - 1] == ' ' and line[i - 2] == ' ':
-      append "<BR>"
+    elif c == '<' and ctx.bs == bsNone:
+      inc ctx.i
+      ctx.parseInTag(line)
+    elif ctx.i + 4 < line.len and line.toOpenArray(ctx.i, ctx.i + 3) == "<!--":
+      ctx.append("<!--")
+      ctx.i += 3
+      ctx.parseComment(line)
+    elif c == '\n' and ctx.i >= 2 and line[ctx.i - 1] == ' ' and
+        line[ctx.i - 2] == ' ':
+      ctx.append("<BR>")
     else:
-      append c
-    inc i
-  if bracketChars != "":
-    stdout.write(bracketChars)
+      ctx.append(c)
+    inc ctx.i
+  if ctx.bracketChars != "":
+    stdout.write(ctx.bracketChars)
   if isBold in state:
     stdout.write("</B>")
   if isItalic in state:
@@ -350,7 +396,7 @@ proc parsePre(state: var ParseState; line: string) =
     state.blockType = btNone
     stdout.write("</PRE>\n")
   else:
-    stdout.write(line & "\n")
+    stdout.write(line & '\n')
 
 proc parseList(state: var ParseState; line: string) =
   if line == "":
@@ -371,9 +417,9 @@ proc parseList(state: var ParseState; line: string) =
       state.pushList(t)
     stdout.write("<LI>")
     state.listDepth = n
-    state.blockData = line.substr(len + 1) & "\n"
+    state.blockData = line.substr(len + 1) & '\n'
   else:
-    state.blockData &= line & "\n"
+    state.blockData &= line & '\n'
 
 proc parsePar(state: var ParseState; line: string) =
   if line == "":
@@ -395,7 +441,7 @@ proc parsePar(state: var ParseState; line: string) =
     state.hasp = false
     stdout.write("<PRE>")
   else:
-    state.blockData &= line & "\n"
+    state.blockData &= line & '\n'
 
 proc parseHTML(state: var ParseState; line: string) =
   if state.hasp:
@@ -406,7 +452,7 @@ proc parseHTML(state: var ParseState; line: string) =
     state.blockData = ""
     state.blockType = btNone
   else:
-    state.blockData &= line & "\n"
+    state.blockData &= line & '\n'
 
 proc parseHTMLPre(state: var ParseState; line: string) =
   if state.hasp:
@@ -417,7 +463,7 @@ proc parseHTMLPre(state: var ParseState; line: string) =
     state.blockData = ""
     state.blockType = btNone
   else:
-    state.blockData &= line & "\n"
+    state.blockData &= line & '\n'
 
 proc parseTabPre(state: var ParseState; line: string) =
   if line.len == 0:
@@ -433,7 +479,7 @@ proc parseTabPre(state: var ParseState; line: string) =
     while state.numPreLines > 0:
       state.blockData &= '\n'
       dec state.numPreLines
-    state.blockData &= line.substr(1) & "\n"
+    state.blockData &= line.substr(1) & '\n'
 
 proc parseSpacePre(state: var ParseState; line: string) =
   if line.len == 0:
@@ -449,7 +495,7 @@ proc parseSpacePre(state: var ParseState; line: string) =
     while state.numPreLines > 0:
       state.blockData &= '\n'
       dec state.numPreLines
-    state.blockData &= line.substr(4) & "\n"
+    state.blockData &= line.substr(4) & '\n'
 
 proc parseBlockquote(state: var ParseState; line: string) =
   if line.len == 0 or line[0] != '>':
@@ -468,7 +514,7 @@ proc parseComment(state: var ParseState; line: string) =
     state.blockType = btNone
     line.substr(i + 3).parseInline()
   else:
-    stdout.write(line & "\n")
+    stdout.write(line & '\n')
 
 proc main() =
   var line: string
