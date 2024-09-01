@@ -321,6 +321,7 @@ proc gotoLine(ctx: JSContext; pager: Pager; val = JS_UNDEFINED): Opt[void]
     var s: string
     ?ctx.fromJS(val, s)
     pager.container.gotoLine(s)
+  return ok()
 
 proc dumpAlerts*(pager: Pager) =
   for msg in pager.alerts:
