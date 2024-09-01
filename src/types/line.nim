@@ -56,7 +56,7 @@ proc cmpLineSegmentX*(l1, l2: LineSegment): int =
 func p0*(ls: LineSegment): Vector2D {.inline.} = ls.line.p0
 func p1*(ls: LineSegment): Vector2D {.inline.} = ls.line.p1
 
-converter toLineSegment*(line: Line): LineSegment =
+proc toLineSegment*(line: Line): LineSegment =
   LineSegment(
     line: line,
     miny: line.miny,

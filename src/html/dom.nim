@@ -588,9 +588,7 @@ proc fillPath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor;
 
 proc strokePath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor) =
   if ctx.ps != nil:
-    var lines: seq[Line] = @[]
-    for line in path.lines:
-      lines.add(line)
+    let lines = path.getLines()
     ctx.ps.withPacketWriter w:
       w.swrite(pcStrokePath)
       w.swrite(lines)

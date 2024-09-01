@@ -180,47 +180,51 @@ iterator arcLines(p0, p1, o: Vector2D; r: float64; i: bool): Line {.inline.} =
     p0 = p1
     theta -= step
 
-iterator lines(subpath: Subpath; i: int): Line {.inline.} =
+proc addLines(lines: var seq[Line]; subpath: Subpath; i: int) =
   let p0 = subpath.points[i]
   let p1 = subpath.points[i + 1]
   case subpath.segments[i].t
   of pstStraight:
-    yield Line(p0: p0, p1: p1)
+    if line.p0 != line.p1:
+      lines.add(Line(p0: p0, p1: p1))
   of pstQuadratic:
     let c = subpath.segments[i].cp
     for line in quadraticLines(p0, p1, c):
-      yield line
+      if line.p0 != line.p1:
+        lines.add(line)
   of pstBezier:
     let c0 = subpath.segments[i].cp0
     let c1 = subpath.segments[i].cp1
     for line in bezierLines(p0, p1, c0, c1):
-      yield line
+      if line.p0 != line.p1:
+        lines.add(line)
   of pstArc:
     let o = subpath.segments[i].oa
     let r = subpath.segments[i].r
     let i = subpath.segments[i].ia
     for line in arcLines(p0, p1, o, r, i):
-      yield line
+      if line.p0 != line.p1:
+        lines.add(line)
   of pstEllipse:
     discard #TODO
 
-iterator lines*(path: Path): Line {.inline.} =
+proc getLines*(path: Path): seq[Line] =
+  var lines: seq[Line] = @[]
   for subpath in path.subpaths:
     assert subpath.points.len == subpath.segments.len + 1
     for i in 0 ..< subpath.segments.len:
-      for line in subpath.lines(i):
-        if line.p0 == line.p1:
-          continue
-        yield line
+      lines.addLines(subpath, i)
+  return lines
 
 proc getLineSegments*(path: Path): PathLines =
   if path.subpaths.len == 0:
     return PathLines()
   var miny = Inf
   var maxy = -Inf
-  var segments: seq[LineSegment]
-  for line in path.lines:
-    let ls = LineSegment(line)
+  let lines = path.getLines()
+  var segments: seq[LineSegment] = @[]
+  for line in lines:
+    let ls = line.toLineSegment()
     miny = min(miny, ls.miny)
     maxy = max(maxy, ls.maxy)
     segments.add(ls)
@@ -380,8 +384,8 @@ proc ellipse*(path: Path; x, y, radiusX, radiusY, rotation, startAngle,
   var e = resolveEllipsePoint(o, endAngle, radiusX, radiusY, rotation)
   if counterclockwise:
     let tmp = s
-    e = s
-    s = tmp
+    s = e
+    e = tmp
   if path.subpaths.len > 0:
     path.addStraightSegment(s)
   else:
