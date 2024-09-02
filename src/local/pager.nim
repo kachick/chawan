@@ -515,8 +515,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     )
     let r = pager.loader.fetch(request)
     response.resume()
-    response.unregisterFun()
-    response.body.sclose()
+    response.close()
     return r
   ).then(proc(res: JSResult[Response]) =
     if res.isNone:
@@ -546,8 +545,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     )
     let r = pager.loader.fetch(request)
     response.resume()
-    response.unregisterFun()
-    response.body.sclose()
+    response.close()
     r.then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
       if res.isNone:
         let p = newPromise[JSResult[Blob]]()

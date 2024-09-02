@@ -181,6 +181,16 @@ func findCachedHandle(ctx: LoaderContext; cacheId: int): LoaderHandle =
 type PushBufferResult = enum
   pbrDone, pbrUnregister
 
+proc register(ctx: LoaderContext; handle: LoaderHandle) =
+  assert not handle.registered
+  ctx.selector.registerHandle(int(handle.istream.fd), {Read}, 0)
+  handle.registered = true
+
+proc unregister(ctx: LoaderContext; handle: LoaderHandle) =
+  assert handle.registered
+  ctx.selector.unregister(int(handle.istream.fd))
+  handle.registered = false
+
 proc register(ctx: LoaderContext; output: OutputHandle) =
   assert not output.registered
   ctx.selector.registerHandle(int(output.ostream.fd), {Write}, 0)
@@ -278,7 +288,7 @@ proc addFd(ctx: LoaderContext; handle: LoaderHandle) =
   let output = handle.output
   output.ostream.setBlocking(false)
   handle.istream.setBlocking(false)
-  ctx.selector.registerHandle(int(handle.istream.fd), {Read}, 0)
+  ctx.register(handle)
   assert handle.istream.fd notin ctx.handleMap
   assert output.ostream.fd notin ctx.outputMap
   ctx.handleMap[handle.istream.fd] = handle
@@ -894,7 +904,7 @@ proc finishCycle(ctx: LoaderContext; unregRead: var seq[LoaderHandle];
   # unregistered handles to nil.
   for handle in unregRead:
     if handle.istream != nil:
-      ctx.selector.unregister(int(handle.istream.fd))
+      ctx.unregister(handle)
       ctx.handleMap.del(handle.istream.fd)
       if handle.parser != nil:
         handle.finishParse()
@@ -915,7 +925,7 @@ proc finishCycle(ctx: LoaderContext; unregRead: var seq[LoaderHandle];
         handle.outputs.del(i)
         if handle.outputs.len == 0 and handle.istream != nil:
           # premature end of all output streams; kill istream too
-          ctx.selector.unregister(int(handle.istream.fd))
+          ctx.unregister(handle)
           ctx.handleMap.del(handle.istream.fd)
           if handle.parser != nil:
             handle.finishParse()
@@ -1060,6 +1070,7 @@ proc addCacheFile*(loader: FileLoader; outputId, targetPid: int): int =
   var r = stream.initPacketReader()
   var outputId: int
   r.sread(outputId)
+  stream.sclose()
   return outputId
 
 proc getCacheFile*(loader: FileLoader; cacheId: int): string =
@@ -1072,6 +1083,7 @@ proc getCacheFile*(loader: FileLoader; cacheId: int): string =
   var r = stream.initPacketReader()
   var s: string
   r.sread(s)
+  stream.sclose()
   return s
 
 proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
@@ -1084,7 +1096,10 @@ proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
     w.swrite(outputId)
     w.swrite(targetPath)
   var r = stream.initPacketReader()
-  r.sread(result)
+  var res: bool
+  r.sread(res)
+  stream.sclose()
+  return res
 
 proc onConnected*(loader: FileLoader; fd: int) =
   let connectData = loader.connecting[fd]
@@ -1152,7 +1167,7 @@ proc onRead*(loader: FileLoader; fd: int) =
       if response.onFinish != nil:
         response.onFinish(response, true)
       response.onFinish = nil
-      response.unregisterFun()
+      response.close()
 
 proc onError*(loader: FileLoader; fd: int) =
   let response = loader.ongoing.getOrDefault(fd)
@@ -1160,7 +1175,7 @@ proc onError*(loader: FileLoader; fd: int) =
     if response.onFinish != nil:
       response.onFinish(response, false)
     response.onFinish = nil
-    response.unregisterFun()
+    response.close()
 
 # Note: this blocks until headers are received.
 proc doRequest*(loader: FileLoader; request: Request): Response =
@@ -1222,8 +1237,10 @@ proc addClient*(loader: FileLoader; key: ClientKey; pid: int;
     w.swrite(config)
     w.swrite(clonedFrom)
   var r = stream.initPacketReader()
-  r.sread(result)
+  var res: bool
+  r.sread(res)
   stream.sclose()
+  return res
 
 proc removeClient*(loader: FileLoader; pid: int) =
   let stream = loader.connect()

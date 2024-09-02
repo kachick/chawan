@@ -9,6 +9,7 @@ type
   DynStream* = ref object of RootObj
     isend*: bool
     blocking*: bool #TODO move to posixstream
+    closed: bool
 
 # Semantics of this function are those of POSIX read(2): that is, it may return
 # a result that is lower than `len`, and that does not mean the stream is
@@ -155,7 +156,9 @@ method seek*(s: PosixStream; off: int) =
     raisePosixIOError()
 
 method sclose*(s: PosixStream) =
+  assert not s.closed
   discard close(s.fd)
+  s.closed = true
 
 proc newPosixStream*(fd: FileHandle): PosixStream =
   return PosixStream(fd: fd, blocking: true)
@@ -214,7 +217,9 @@ method seek*(s: SocketStream; off: int) =
   doAssert false
 
 method sclose*(s: SocketStream) =
+  assert not s.closed
   s.source.close()
+  s.closed = true
 
 # see serversocket.nim for an explanation
 {.compile: "connect_unix.c".}
@@ -301,7 +306,9 @@ method sendData*(s: BufStream; buffer: pointer; len: int): int =
   return len
 
 method sclose*(s: BufStream) =
+  assert not s.closed
   s.source.sclose()
+  s.closed = true
 
 proc flushWrite*(s: BufStream): bool =
   s.source.setBlocking(false)
@@ -340,7 +347,9 @@ method seek*(s: DynFileStream; off: int) =
   s.file.setFilePos(int64(off))
 
 method sclose*(s: DynFileStream) =
+  assert not s.closed
   s.file.close()
+  s.closed = true
 
 method sflush*(s: DynFileStream) =
   s.file.flushFile()

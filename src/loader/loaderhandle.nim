@@ -53,6 +53,7 @@ type
     cacheId*: int # if cached, our ID in a client cacheMap
     parser*: HeaderParser # only exists for CGI handles
     rstate: ResponseState # track response state
+    registered*: bool # track registered state
     when defined(debug):
       url*: URL
 
@@ -175,6 +176,7 @@ proc sendData*(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
 
 proc iclose*(handle: LoaderHandle) =
   if handle.istream != nil:
+    assert not handle.registered
     if handle.rstate notin {rsBeforeResult, rsAfterFailure, rsAfterHeaders}:
       assert handle.outputs.len == 1
       # not an ideal solution, but better than silently eating malformed
