@@ -1,3 +1,7 @@
+<!-- MANON
+% cha-troubleshooting(5) | Troubleshooting Chawan
+MANOFF -->
+
 # Troubleshooting Chawan
 
 This document lists common problems you may run into when using Chawan.

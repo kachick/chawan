@@ -1,4 +1,8 @@
-# Image support in Chawan
+<!-- MANON
+% cha-image(5) | Image support in Chawan
+MANOFF -->
+
+# Inline images
 
 On terminals that support images, Chawan can display various bit-mapped
 image formats.
@@ -12,8 +16,8 @@ There are actually two switches for images in the config:
 
 * buffer.images: this enables downloading images, *even if they cannot
   be displayed*.
-* display.image-mode: sets the "image mode". Defaults to "auto", but may
-  also be set to "sixel" or "kitty" manually.
+* display.image-mode: sets the inline image display method. Defaults to
+  "auto", but may also be set to "sixel" or "kitty" manually.
 
 In most cases, all you need to do is to set "buffer.images" to true;
 with the default image-mode, Chawan will find the best image display

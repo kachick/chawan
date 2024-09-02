@@ -163,7 +163,8 @@ distclean: clean
 
 manpages1 = cha.1 mancha.1
 manpages5 = cha-config.5 cha-mailcap.5 cha-mime.types.5 cha-localcgi.5 \
-	cha-urimethodmap.5 cha-protocols.5 cha-api.5
+	cha-urimethodmap.5 cha-protocols.5 cha-api.5 cha-troubleshooting.5 \
+	cha-image.5
 
 manpages = $(manpages1) $(manpages5)
 

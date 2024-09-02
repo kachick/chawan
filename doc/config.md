@@ -164,7 +164,7 @@ option disabled, only enabling it for specific sites in `[[siteconf]]`.
 <td>boolean</td>
 <td>When set to true, elements with an "autofocus" attribute are focused on
 automatically after the buffer is loaded.<br>
-Defaults to false</td>
+Defaults to false.</td>
 </tr>
 
 <tr>
