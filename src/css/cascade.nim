@@ -417,7 +417,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       styledParent.children.add(styledText)
     of peCanvas:
       let bmp = HTMLCanvasElement(styledParent.node).bitmap
-      if bmp.cacheId != 0:
+      if bmp != nil and bmp.cacheId != 0:
         let content = CSSContent(
           t: ContentImage,
           s: "canvas://",
