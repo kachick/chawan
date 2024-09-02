@@ -195,12 +195,12 @@ proc iclose*(handle: LoaderHandle) =
     handle.istream = nil
 
 proc oclose*(output: OutputHandle) =
+  assert not output.registered
   output.ostream.sclose()
   output.ostream = nil
 
 proc close*(handle: LoaderHandle) =
   handle.iclose()
   for output in handle.outputs:
-    assert not output.registered
     if output.ostream != nil:
       output.oclose()

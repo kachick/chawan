@@ -196,9 +196,27 @@ proc register(ctx: LoaderContext; output: OutputHandle) =
   ctx.selector.registerHandle(int(output.ostream.fd), {Write}, 0)
   output.registered = true
 
+const bsdPlatform = defined(macosx) or defined(freebsd) or defined(netbsd) or
+  defined(openbsd) or defined(dragonfly)
 proc unregister(ctx: LoaderContext; output: OutputHandle) =
   assert output.registered
-  ctx.selector.unregister(int(output.ostream.fd))
+  # so kqueue-based selectors raise when we try to unregister a pipe whose
+  # reader is at EOF. "solution": clean up this mess ourselves.
+  let fd = int(output.ostream.fd)
+  when bsdPlatform:
+    let oc = ctx.selector.count
+    try:
+      ctx.selector.unregister(fd)
+    except IOSelectorsException:
+      # ????
+      for name, f in ctx.selector[].fieldPairs:
+        when name == "fds":
+          cast[ptr int](addr f[fd])[] = -1
+        elif name == "changes":
+          f.setLen(0)
+      ctx.selector.count = oc - 1
+  else:
+    ctx.selector.unregister(int(output.ostream.fd))
   output.registered = false
 
 # Either write data to the target output, or append it to the list of buffers to
@@ -405,6 +423,7 @@ proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: LoaderHandle;
     let ps = newPosixStream(client.cacheMap[n].path, O_RDONLY, 0)
     if startFrom != 0:
       ps.seek(startFrom)
+    handle.istream = ps
     if ps == nil:
       handle.rejectHandle(ERROR_FILE_NOT_IN_CACHE)
       client.cacheMap.del(n)
@@ -412,7 +431,6 @@ proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: LoaderHandle;
     handle.sendResult(0)
     handle.sendStatus(200)
     handle.sendHeaders(newHeaders())
-    handle.istream = ps
     handle.output.ostream.setBlocking(false)
     let cachedHandle = ctx.findCachedHandle(id)
     ctx.loadStreamRegular(handle, cachedHandle)
@@ -497,7 +515,8 @@ proc loadResource(ctx: LoaderContext; client: ClientData;
             let output = outputIn.tee(ostream, ctx.getOutputId(), client.pid)
             ctx.outputMap[ostream.fd] = output
             output.suspended = false
-            ctx.register(output)
+            if not output.isEmpty:
+              ctx.register(output)
           else:
             ostream.sclose()
         ctx.addFd(handle)
