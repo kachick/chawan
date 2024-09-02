@@ -545,9 +545,10 @@ proc inputLoop(client: Client) =
   selector.registerHandle(int(client.pager.term.istream.fd), {Read}, 0)
   when not defined(android):
     let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
+  var keys: array[64, ReadyKey]
   while true:
-    let events = client.selector.select(-1)
-    for event in events:
+    let count = client.selector.selectInto(-1, keys)
+    for event in keys.toOpenArray(0, count - 1):
       if Read in event.events:
         client.handleRead(event.fd)
       if Write in event.events:
@@ -598,9 +599,10 @@ func hasSelectFds(client: Client): bool =
     client.pager.procmap.len > 0
 
 proc headlessLoop(client: Client) =
+  var keys: array[64, ReadyKey]
   while client.hasSelectFds():
-    let events = client.selector.select(-1)
-    for event in events:
+    let count = client.selector.selectInto(-1, keys)
+    for event in keys.toOpenArray(0, count - 1):
       if Read in event.events:
         client.handleRead(event.fd)
       if Write in event.events:

@@ -216,7 +216,7 @@ proc unregister(ctx: LoaderContext; output: OutputHandle) =
           f.setLen(0)
       ctx.selector.count = oc - 1
   else:
-    ctx.selector.unregister(int(output.ostream.fd))
+    ctx.selector.unregister(fd)
   output.registered = false
 
 # Either write data to the target output, or append it to the list of buffers to
@@ -953,11 +953,12 @@ proc finishCycle(ctx: LoaderContext; unregRead: var seq[LoaderHandle];
 proc runFileLoader*(fd: cint; config: LoaderConfig) =
   var ctx = initLoaderContext(fd, config)
   let fd = int(ctx.ssock.sock.getFd())
+  var keys: array[64, ReadyKey]
   while ctx.alive:
-    let events = ctx.selector.select(-1)
+    let count = ctx.selector.selectInto(-1, keys)
     var unregRead: seq[LoaderHandle] = @[]
     var unregWrite: seq[OutputHandle] = @[]
-    for event in events:
+    for event in keys.toOpenArray(0, count - 1):
       if Read in event.events:
         if event.fd == fd: # incoming connection
           ctx.acceptConnection()

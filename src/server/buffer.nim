@@ -1828,9 +1828,10 @@ proc handleError(buffer: Buffer; fd: int; err: OSErrorCode): bool =
 
 proc runBuffer(buffer: Buffer) =
   var alive = true
+  var keys: array[64, ReadyKey]
   while alive:
-    let events = buffer.selector.select(-1)
-    for event in events:
+    let count = buffer.selector.selectInto(-1, keys)
+    for event in keys.toOpenArray(0, count - 1):
       if Read in event.events:
         if not buffer.handleRead(event.fd):
           alive = false
