@@ -766,6 +766,10 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   # transparent if we want to draw a non-6-divisible number of rows
   let trans = realh mod 6 != 0
   outs &= "\"1;" & $int(trans) & ";" & $realw & ';' & $realh
+  if data.len < 4: # bounds check
+    outs &= ST
+    term.write(outs)
+    return
   term.write(outs)
   let sraLen = int(data.getU32BE(0))
   let preludeLen = sraLen + 4
@@ -774,16 +778,21 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let L = data.len - lookupTableLen - 4
   # Note: we only crop images when it is possible to do so in near constant
   # time. Otherwise, the image is re-coded in a cropped form.
-  if realh == image.height: # don't crop
+  if preludeLen >= data.len or L < 0: # bounds check
+    term.write(ST)
+  elif realh == image.height: # don't crop
     term.write(data.toOpenArray(preludeLen, L - 1))
   else:
     let si = preludeLen + int(data.getU32BE(L + (offy div 6) * 4))
-    if disph == image.height: # crop top only
+    if si >= data.len: # bounds check
+      term.write(ST)
+    elif disph == image.height: # crop top only
       term.write(data.toOpenArray(si, L - 1))
     else: # crop both top & bottom
       let ed6 = (disph - image.erry) div 6
       let ei = preludeLen + int(data.getU32BE(L + ed6 * 4)) - 1
-      term.write(data.toOpenArray(si, ei - 1))
+      if ei <= data.len: # bounds check
+        term.write(data.toOpenArray(si, ei - 1))
       # calculate difference between target Y & actual position in the map
       # note: it must be offset by image.erry; that's where the map starts.
       let herry = disph - (ed6 * 6 + image.erry)
