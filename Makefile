@@ -108,10 +108,10 @@ $(OUTDIR_CGI_BIN)/gopher: adapter/protocol/curlwrap.nim adapter/protocol/curlerr
 		adapter/gophertypes.nim adapter/protocol/curl.nim \
 		src/loader/connecterror.nim $(twtstr)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
-		adapter/img/stb_image.h src/utils/sandbox.nim
+		adapter/img/stb_image.h src/utils/sandbox.nim $(dynstream)
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h \
 		src/utils/sandbox.nim
-$(OUTDIR_CGI_BIN)/sixel: src/types/color.nim src/utils/sandbox.nim $(twtstr)
+$(OUTDIR_CGI_BIN)/sixel: src/types/color.nim src/utils/sandbox.nim $(twtstr) $(dynstream)
 $(OUTDIR_CGI_BIN)/canvas: src/img/bitmap.nim src/img/painter.nim \
 	src/img/path.nim src/io/bufreader.nim src/types/color.nim \
 	src/types/line.nim src/utils/sandbox.nim $(dynstream) $(twtstr)

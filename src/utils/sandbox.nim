@@ -128,6 +128,27 @@ elif SandboxMode == stLibSeccomp:
         # PROT_WRITE (w/o PROT_READ) and PROT_NONE, which does no harm.
         doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall, 1, arg2) == 0
 
+  proc blockStat(ctx: scmp_filter_ctx) =
+    # glibc calls fstat and its variants on fread, and it's quite hard
+    # to ensure we never use it. Plus, in older glibc versions (< 2.39),
+    # fstat is implemented as fstatat, and allowing that would imply
+    # access to arbitrary paths. So for consistency, we make all of them
+    # return an error.
+    #
+    # The offending function is _IO_file_doallocate; it doesn't actually
+    # look at errno, so EPERM should work fine.
+    const err = SCMP_ACT_ERRNO(uint16(EPERM))
+    const fstatList = [
+      cstring"fstat",
+      "fstat64",
+      "fstatat64",
+      "newfstatat",
+      "statx"
+    ]
+    for it in fstatList:
+      let syscall = seccomp_syscall_resolve_name(it)
+      doAssert seccomp_rule_add(ctx, err, syscall, 0) == 0
+
   proc enterBufferSandbox*(sockPath: string) =
     onSignal SIGSYS:
       discard sig
@@ -148,7 +169,6 @@ elif SandboxMode == stLibSeccomp:
       "exit_group", # for quit
       "fcntl", "fcntl64", # for changing blocking status
       "fork", # for when fork is really fork
-      "fstat", # glibc fread seems to call it
       "getpid", # for determining current PID after we fork
       "getrlimit", # glibc uses it after fork it seems
       "getsockname", # Nim needs it for connecting
@@ -185,6 +205,7 @@ elif SandboxMode == stLibSeccomp:
         datum_a: 1 # PF_LOCAL == PF_UNIX == AF_UNIX
       )
       doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall, 1, arg0) == 0
+    ctx.blockStat()
     when defined(android):
       ctx.allowBionic()
     doAssert seccomp_load(ctx) == 0
@@ -204,7 +225,6 @@ elif SandboxMode == stLibSeccomp:
       "mmap", "mmap2", "mremap", "munmap", "brk", # memory allocation
       "poll", # curl needs poll
       "getpid", # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
-      "fstat", # glibc fread seems to call it
       # we either have to use CURLOPT_NOSIGNAL or allow signals.
       # do the latter, otherwise the default name resolver will never time out.
       "signal", "sigaction", "rt_sigaction",
@@ -212,6 +232,7 @@ elif SandboxMode == stLibSeccomp:
     for it in allowList:
       doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW,
         seccomp_syscall_resolve_name(it), 0) == 0
+    ctx.blockStat()
     when defined(android):
       ctx.allowBionic()
     doAssert seccomp_load(ctx) == 0

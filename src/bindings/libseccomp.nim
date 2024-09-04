@@ -37,6 +37,9 @@ const SCMP_ACT_KILL_PROCESS* = 0x80000000u32
 const SCMP_ACT_ALLOW* = 0x7FFF0000u32
 const SCMP_ACT_TRAP* = 0x00030000u32
 
+template SCMP_ACT_ERRNO*(x: uint16): uint32 =
+  0x50000u32 or x
+
 proc seccomp_init*(def_action: uint32): scmp_filter_ctx
 proc seccomp_reset*(ctx: scmp_filter_ctx; def_action: uint32): cint
 proc seccomp_syscall_resolve_name*(name: cstring): cint

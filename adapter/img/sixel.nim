@@ -20,26 +20,17 @@ import std/os
 import std/posix
 import std/strutils
 
+import io/dynstream
 import types/color
 import utils/sandbox
 import utils/twtstr
 
-const STDOUT_FILENO = 1
-
-proc writeAll(data: pointer; size: int) =
-  var n = 0
-  while n < size:
-    let i = write(STDOUT_FILENO, addr cast[ptr UncheckedArray[uint8]](data)[n],
-      int(size) - n)
-    assert i >= 0
-    n += i
-
-proc puts(s: string) =
-  if s.len > 0:
-    writeAll(unsafeAddr s[0], s.len)
+proc puts(os: PosixStream; s: string) =
+  os.sendDataLoop(s)
 
 proc die(s: string) {.noreturn.} =
-  puts(s)
+  let os = newPosixStream(STDOUT_FILENO)
+  os.puts(s)
   quit(1)
 
 const DCSSTART = "\eP"
@@ -147,18 +138,15 @@ proc trim(trimMap: var TrimMap; K: var int) =
   node.n = n
   K = k
 
-proc getPixel(s: string; m: int; bgcolor: ARGBColor): RGBColor {.inline.} =
-  let r = uint8(s[m])
-  let g = uint8(s[m + 1])
-  let b = uint8(s[m + 2])
-  let a = uint8(s[m + 3])
-  var c0 = RGBAColorBE(r: r, g: g, b: b, a: a)
+proc getPixel(img: seq[RGBAColorBE]; m: int; bgcolor: ARGBColor): RGBColor
+    {.inline.} =
+  var c0 = img[m]
   if c0.a != 255:
     let c1 = bgcolor.blend(c0)
     return RGBColor(uint32(rgb(c1.r, c1.g, c1.b)).fastmul(100))
   return RGBColor(uint32(rgb(c0.r, c0.g, c0.b)).fastmul(100))
 
-proc quantize(s: string; bgcolor: ARGBColor; palette: int): Node =
+proc quantize(img: seq[RGBAColorBE]; bgcolor: ARGBColor; palette: int): Node =
   let root = Node(leaf: false)
   # number of leaves
   var K = 0
@@ -168,9 +156,8 @@ proc quantize(s: string; bgcolor: ARGBColor; palette: int): Node =
   # batch together insertions of color runs
   var pc0 = RGBColor(0)
   var pcs = 0u32
-  for i in 0 ..< s.len div 4:
-    let m = i * 4
-    let c0 = s.getPixel(m, bgcolor)
+  for m in 0 ..< img.len:
+    let c0 = img.getPixel(m, bgcolor)
     if pc0 != c0:
       if pcs > 0:
         K += int(root.insert(pc0, trimMap, n = pcs))
@@ -347,13 +334,13 @@ proc createBands(bands: var seq[SixelBand]; chunkMap: seq[SixelChunk];
     if not found:
       bands.add(@[unsafeAddr chunk])
 
-proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
-    bgcolor: ARGBColor; palette: int) =
+proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
+    halfdump: bool; bgcolor: ARGBColor; palette: int) =
   # reserve one entry for transparency
   # (this is necessary so that cropping works properly when the last
   # sixel would not fit on the screen, and also for images with !(height % 6).)
   let palette = palette - 1
-  let node = s.quantize(bgcolor, palette)
+  let node = img.quantize(bgcolor, palette)
   # prelude
   var outs = "Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n"
   let preludeLenPos = outs.len
@@ -368,13 +355,13 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
     # prepend prelude size
     let L = outs.len - 4 - preludeLenPos # subtract length field
     outs.setU32BE(uint32(L), preludeLenPos)
-  puts(outs)
-  let W = width * 4
+  let os = newPosixStream(STDOUT_FILENO)
+  let W = width
   let H = W * height
   let realw = cropw - offx
   var n = offy * W
   var ymap = ""
-  var totalLen = 0
+  var totalLen = 0u32
   # add +2 so we don't have to bounds check
   var dither = Dither(
     d1: newSeq[DitherDiff](realw + 2),
@@ -382,17 +369,19 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
   )
   var chunkMap = newSeq[SixelChunk](palette)
   var nrow = 1
+  # buffer to 64k, just because.
+  const MaxBuffer = 65546
   while true:
     if halfdump:
-      ymap.putU32BE(uint32(totalLen))
+      ymap.putU32BE(totalLen)
     for i in 0 ..< 6:
       if n >= H:
         break
       let mask = 1u8 shl i
       var chunk: ptr SixelChunk = nil
       for j in 0 ..< realw:
-        let m = n + (offx + j) * 4
-        let c0 = s.getPixel(m, bgcolor).correctDither(j, dither)
+        let m = n + offx + j
+        let c0 = img.getPixel(m, bgcolor).correctDither(j, dither)
         var diff: DitherDiff
         let c = node.getColor(c0, nodes, diff)
         dither.fs(j, diff)
@@ -424,27 +413,27 @@ proc encode(s: string; width, height, offx, offy, cropw: int; halfdump: bool;
       zeroMem(addr dither.d2[0], dither.d2.len * sizeof(dither.d2[0]))
     var bands: seq[SixelBand] = @[]
     bands.createBands(chunkMap, nrow)
-    outs.setLen(0)
-    for band in bands:
-      if outs.len > 0:
+    let olen = outs.len
+    for i in 0 ..< bands.len:
+      if i > 0:
         outs &= '$'
-      outs.compressSixel(band)
+      outs.compressSixel(bands[i])
     if n >= H:
       outs &= ST
-      totalLen += outs.len
+      totalLen += uint32(outs.len - olen)
       break
     else:
       outs &= '-'
-      totalLen += outs.len
-      puts(outs)
+      totalLen += uint32(outs.len - olen)
+      if outs.len >= MaxBuffer:
+        os.sendDataLoop(outs)
+        outs.setLen(0)
     inc nrow
   if halfdump:
-    ymap.putU32BE(uint32(totalLen))
+    ymap.putU32BE(totalLen)
     ymap.putU32BE(uint32(ymap.len))
     outs &= ymap
-    puts(outs)
-  else:
-    puts(outs)
+  os.sendDataLoop(outs)
 
 proc parseDimensions(s: string): (int, int) =
   let s = s.split('x')
@@ -512,9 +501,13 @@ proc main() =
       else:
         palette = 1024
     if width == 0 or height == 0:
-      puts("Cha-Image-Dimensions: 0x0\n")
+      let os = newPosixStream(STDOUT_FILENO)
+      os.sendDataLoop("Cha-Image-Dimensions: 0x0\n")
       quit(0) # done...
-    let s = stdin.readAll()
-    s.encode(width, height, offx, offy, cropw, halfdump, bgcolor, palette)
+    let n = width * height
+    var img = cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](n))
+    let ps = newPosixStream(STDIN_FILENO)
+    ps.recvDataLoop(addr img[0], n * 4)
+    img.encode(width, height, offx, offy, cropw, halfdump, bgcolor, palette)
 
 main()

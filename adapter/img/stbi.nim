@@ -3,6 +3,7 @@ import std/os
 import std/posix
 import std/strutils
 
+import io/dynstream
 import utils/sandbox
 import utils/twtstr
 
@@ -183,9 +184,9 @@ proc main() =
         if q < 1 or 100 < q:
           die("Cha-Control: ConnectionError 1 wrong quality")
         quality = cint(q)
-    let s = stdin.readAll()
-    if s.len != width * height * 4:
-      die("Cha-Control: ConnectionError 1 wrong size")
+    let ps = newPosixStream(STDIN_FILENO)
+    var s = newSeqUninitialized[uint8](width * height * 4)
+    ps.recvDataLoop(s)
     puts("Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n")
     let p = unsafeAddr s[0]
     case f
