@@ -572,8 +572,8 @@ proc initImages(pager: Pager; container: Container) =
       let xpx = (image.x - container.fromx) * pager.attrs.ppc
       offx = -min(xpx, 0)
       let maxwpx = pager.bufWidth * pager.attrs.ppc
-      #TODO this is wrong if term caps sixel width
-      dispw = min(int(image.width) + xpx, maxwpx) - xpx
+      let width = min(image.width - offx, pager.term.sixelMaxWidth) + offx
+      dispw = min(width + xpx, maxwpx) - xpx
       let ypx = (image.y - container.fromy) * pager.attrs.ppl
       erry = -min(ypx, 0) mod 6
     let cached = container.findCachedImage(image, offx, erry, dispw)

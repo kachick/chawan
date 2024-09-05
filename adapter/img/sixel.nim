@@ -37,16 +37,16 @@ const DCSSTART = "\eP"
 const ST = "\e\\"
 
 proc setU32BE(s: var string; n: uint32; at: int) =
-  s[at] = char(n and 0xFF)
-  s[at + 1] = char((n shr 8) and 0xFF)
-  s[at + 2] = char((n shr 16) and 0xFF)
-  s[at + 3] = char((n shr 24) and 0xFF)
+  s[at] = char((n shr 24) and 0xFF)
+  s[at + 1] = char((n shr 16) and 0xFF)
+  s[at + 2] = char((n shr 8) and 0xFF)
+  s[at + 3] = char(n and 0xFF)
 
 proc putU32BE(s: var string; n: uint32) =
-  s &= char(n and 0xFF)
-  s &= char((n shr 8) and 0xFF)
-  s &= char((n shr 16) and 0xFF)
   s &= char((n shr 24) and 0xFF)
+  s &= char((n shr 16) and 0xFF)
+  s &= char((n shr 8) and 0xFF)
+  s &= char(n and 0xFF)
 
 type Node {.acyclic.} = ref object
   leaf: bool

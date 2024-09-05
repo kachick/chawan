@@ -105,7 +105,7 @@ type
     defaultForeground: RGBColor
     ibuf*: string # buffer for chars when we can't process them
     sixelRegisterNum*: int
-    sixelMaxWidth: int
+    sixelMaxWidth*: int
     sixelMaxHeight: int
     kittyId: int # counter for kitty image (*not* placement) ids.
     cursorx: int
@@ -604,6 +604,9 @@ proc applyConfigDimensions(term: Terminal) =
       term.sixelMaxWidth = term.attrs.widthPx
     if term.sixelMaxHeight == 0:
       term.sixelMaxHeight = term.attrs.heightPx
+    # xterm acts weird even if I don't fill in the missing rows, so
+    # just round down instead.
+    term.sixelMaxHeight = (term.sixelMaxHeight div 6) * 6
 
 proc applyConfig(term: Terminal) =
   # colors, formatting
@@ -747,10 +750,10 @@ proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
   return nil
 
 func getU32BE(data: openArray[char]; i: int): uint32 =
-  return uint32(data[i]) or
-    (uint32(data[i + 1]) shl 8) or
-    (uint32(data[i + 2]) shl 16) or
-    (uint32(data[i + 3]) shl 24)
+  return uint32(data[i + 3]) or
+    (uint32(data[i + 2]) shl 8) or
+    (uint32(data[i + 1]) shl 16) or
+    (uint32(data[i]) shl 24)
 
 proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
     data: openArray[char]) =
@@ -759,21 +762,27 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let dispw = image.dispw
   let disph = image.disph
   var outs = term.cursorGoto(x, y)
-  outs &= DCSSTART & 'q'
-  # set raster attributes
   let realw = dispw - offx
   let realh = disph - offy
-  # transparent if we want to draw a non-6-divisible number of rows
+  # set transparency if we want to draw a non-6-divisible number
+  # of rows; omit it otherwise, for then some terminals (e.g. foot)
+  # handle the image more efficiently
   let trans = realh mod 6 != 0
-  outs &= "\"1;" & $int(trans) & ";" & $realw & ';' & $realh
+  outs &= DCSSTART & "0;" & $int(trans) & 'q'
+  # set raster attributes
+  outs &= "\"1;1;" & $realw & ';' & $realh
   if data.len < 4: # bounds check
     outs &= ST
     term.write(outs)
     return
-  term.write(outs)
   let sraLen = int(data.getU32BE(0))
   let preludeLen = sraLen + 4
-  term.write(data.toOpenArray(4, 4 + sraLen - 1))
+  if preludeLen > data.len:
+    outs &= ST
+    term.write(outs)
+    return
+  term.write(outs)
+  term.write(data.toOpenArray(4, preludeLen - 1))
   let lookupTableLen = int(data.getU32BE(data.len - 4))
   let L = data.len - lookupTableLen - 4
   # Note: we only crop images when it is possible to do so in near constant
