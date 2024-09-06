@@ -954,7 +954,7 @@ when TermcapFound:
 
 type
   QueryAttrs = enum
-    qaAnsiColor, qaRGB, qaSixel, qaKittyImage
+    qaAnsiColor, qaRGB, qaSixel, qaKittyImage, qaSyncTermFix
 
   QueryResult = object
     success: bool
@@ -982,6 +982,40 @@ proc consumeIntUntil(term: Terminal; sentinel: char): int =
       return -1
   return n
 
+proc consumeIntGreedy(term: Terminal; lastc: var char): int =
+  var n = 0
+  while true:
+    let c = term.readChar()
+    if (let x = decValue(c); x != -1):
+      n *= 10
+      n += x
+    else:
+      lastc = c
+      break
+  return n
+
+proc eatColor(term: Terminal; tc: set[char]; wasEsc: var bool): uint8 =
+  var val = 0u8
+  var i = 0
+  var c = char(0)
+  while (c = term.readChar(); c notin tc):
+    let v0 = hexValue(c)
+    if i > 4 or v0 == -1:
+      break # wat
+    let v = uint8(v0)
+    if i == 0: # 1st place - expand it for when we don't get a 2nd place
+      val = (v shl 4) or v
+    elif i == 1: # 2nd place - clear expanded placeholder from 1st place
+      val = (val and not 0xFu8) or v
+    # all other places are irrelevant
+    inc i
+  wasEsc = c == '\e'
+  return val
+
+proc skipUntil(term: Terminal; c: char) =
+  while term.readChar() != c:
+    discard
+
 proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
   if not windowOnly:
@@ -1005,7 +1039,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       CELLSIZE &
       GEOMCELL &
       DA1
-    term.outfile.write(outs)
+    term.write(outs)
   else:
     const outs =
       GEOMPIXEL &
@@ -1013,7 +1047,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       GEOMCELL &
       XTIMGDIMS &
       DA1
-    term.outfile.write(outs)
+    term.write(outs)
   term.flush()
   result = QueryResult(success: false, attrs: {})
   while true:
@@ -1027,44 +1061,29 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
     template expect(term: Terminal; s: string) =
       for c in s:
         term.expect c
-    template skip_until(term: Terminal; c: char) =
-      while (let cc = term.consume; cc != c):
-        discard
-    template consume_int_greedy(term: Terminal; lastc: var char): int =
-      var n = 0
-      while true:
-        let c = term.consume
-        if (let x = decValue(c); x != -1):
-          n *= 10
-          n += x
-        else:
-          lastc = c
-          break
-      n
     term.expect '\e'
     case term.consume
     of '[':
       # CSI
       case (let c = term.consume; c)
       of '?': # DA1, XTSMGRAPHICS
-        var lastc: char
         var params = newSeq[int]()
-        while true:
-          let n = term.consume_int_greedy lastc
-          params.add(n)
-          if lastc in {'c', 'S'}:
+        var lastc: char
+        while lastc notin {'c', 'S'}:
+          let n = term.consumeIntGreedy(lastc)
+          if lastc notin {'c', 'S', ';'}:
+            # skip entry
             break
-          if lastc != ';':
-            fail
-        if lastc == 'c':
+          params.add(n)
+        if lastc == 'c': # DA1
           for n in params:
             case n
             of 4: result.attrs.incl(qaSixel)
             of 22: result.attrs.incl(qaAnsiColor)
             else: discard
           result.success = true
-          break # DA1 returned; done
-        else: # 'S'
+          break
+        else: # 'S' (XTSMGRAPHICS)
           if params.len >= 4:
             if params[0] == 2 and params[1] == 0:
               result.sixelMaxWidth = params[2]
@@ -1072,13 +1091,23 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
           if params.len >= 3:
             if params[0] == 1 and params[1] == 0:
               result.registers = params[2]
+      of '=':
+        # = is SyncTERM's response to DA1. Nothing useful will come after this.
+        term.skipUntil('c')
+        # SyncTERM supports these.
+        result.attrs.incl(qaSixel)
+        result.attrs.incl(qaAnsiColor)
+        # This will make us ask SyncTERM to stop moving the cursor on EOL.
+        result.attrs.incl(qaSyncTermFix)
+        result.success = true
+        break # we're done
       of '4', '6', '8': # GEOMPIXEL, CELLSIZE, GEOMCELL
         term.expect ';'
         let height = term.consumeIntUntil(';')
         let width = term.consumeIntUntil('t')
         if width == -1 or height == -1:
-          fail
-        if c == '4': # GEOMSIZE
+          discard
+        elif c == '4': # GEOMSIZE
           result.widthPx = width
           result.heightPx = height
         elif c == '6': # CELLSIZE
@@ -1096,28 +1125,11 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         n = term.consumeIntUntil(';')
       if term.consume == 'r' and term.consume == 'g' and term.consume == 'b':
         term.expect ':'
-        var was_esc = false
-        template eat_color(tc: set[char]): uint8 =
-          var val = 0u8
-          var i = 0
-          var c = char(0)
-          while (c = term.consume; c notin tc):
-            let v0 = hexValue(c)
-            if i > 4 or v0 == -1:
-              fail # wat
-            let v = uint8(v0)
-            if i == 0: # 1st place - expand it for when we don't get a 2nd place
-              val = (v shl 4) or v
-            elif i == 1: # 2nd place - clear expanded placeholder from 1st place
-              val = (val and not 0xFu8) or v
-            # all other places are irrelevant
-            inc i
-          was_esc = c == '\e'
-          val
-        let r = eat_color {'/'}
-        let g = eat_color {'/'}
-        let b = eat_color {'\a', '\e'}
-        if was_esc:
+        var wasEsc = false
+        let r = term.eatColor({'/'}, wasEsc)
+        let g = term.eatColor({'/'}, wasEsc)
+        let b = term.eatColor({'\a', '\e'}, wasEsc)
+        if wasEsc:
           # we got ST, not BEL; at least kitty does this
           term.expect '\\'
         let C = rgb(r, g, b)
@@ -1129,7 +1141,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
           result.bgcolor = some(C)
       else:
         # not RGB, give up
-        term.skip_until '\a'
+        term.skipUntil('\a')
     of 'P':
       # DCS
       let c = term.consume
@@ -1143,18 +1155,18 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
             fail
           id *= 0x10
           id += hexValue(c)
-        term.skip_until '\e' # ST (1)
+        term.skipUntil('\e') # ST (1)
         if id == tcapRGB:
           result.attrs.incl(qaRGB)
       else: # 0
         # pure insanity: kitty returns P0, but also +r524742 after. please
         # make up your mind!
-        term.skip_until '\e' # ST (1)
+        term.skipUntil('\e') # ST (1)
       term.expect '\\' # ST (2)
     of '_': # APC
       term.expect 'G'
       result.attrs.incl(qaKittyImage)
-      term.skip_until '\e' # ST (1)
+      term.skipUntil('\e') # ST (1)
       term.expect '\\' # ST (2)
     else:
       fail
@@ -1212,6 +1224,8 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.colorMode = cmANSI
       if qaRGB in r.attrs:
         term.colorMode = cmTrueColor
+      if qaSyncTermFix in r.attrs:
+        term.write(static CSI("=5h"))
       # just assume the terminal doesn't choke on these.
       term.formatMode = {ffStrike, ffOverline}
       if r.bgcolor.isSome:
