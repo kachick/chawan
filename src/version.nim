@@ -27,6 +27,6 @@ tryImport chame/version, "chame"
 tryImport monoucha/version, "monoucha"
 
 static:
-  checkVersion("chagashi", 0, 5, 5)
+  checkVersion("chagashi", 0, 5, 6)
   checkVersion("chame", 1, 0, 1)
   checkVersion("monoucha", 0, 4, 1)
