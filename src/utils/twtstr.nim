@@ -419,23 +419,23 @@ proc passRealloc*(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
 
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [
-  (0xC0, 0xD6),
-  (0xD8, 0xF6),
-  (0xF8, 0x2FF),
-  (0x370, 0x37D),
-  (0x37F, 0x1FFF),
-  (0x200C, 0x200D),
-  (0x2070, 0x218F),
-  (0x2C00, 0x2FEF),
-  (0x3001, 0xD7FF),
-  (0xF900, 0xFDCF),
-  (0xFDF0, 0xFFFD),
-  (0x10000, 0xEFFFF)
+  (0xC0u32, 0xD6u32),
+  (0xD8u32, 0xF6u32),
+  (0xF8u32, 0x2FFu32),
+  (0x370u32, 0x37Du32),
+  (0x37Fu32, 0x1FFFu32),
+  (0x200Cu32, 0x200Du32),
+  (0x2070u32, 0x218Fu32),
+  (0x2C00u32, 0x2FEFu32),
+  (0x3001u32, 0xD7FFu32),
+  (0xF900u32, 0xFDCFu32),
+  (0xFDF0u32, 0xFFFDu32),
+  (0x10000u32, 0xEFFFFu32)
 ]
 const NameCharRanges = [ # + NameStartCharRanges
-  (0xB7, 0xB7),
-  (0x0300, 0x036F),
-  (0x203F, 0x2040)
+  (0xB7u32, 0xB7u32),
+  (0x0300u32, 0x036Fu32),
+  (0x203Fu32, 0x2040u32)
 ]
 const NameStartCharAscii = {':', '_'} + AsciiAlpha
 const NameCharAscii = NameStartCharAscii + {'-', '.'} + AsciiDigit
@@ -451,7 +451,7 @@ func matchNameProduction*(s: string): bool =
     inc i
   else:
     fastRuneAt(s, i, r)
-    if not isInRange(NameStartCharRanges, int32(r)):
+    if not NameStartCharRanges.isInRange(uint32(r)):
       return false
   # NameChar
   while i < s.len:
@@ -461,8 +461,8 @@ func matchNameProduction*(s: string): bool =
       inc i
     else:
       fastRuneAt(s, i, r)
-      if not isInRange(NameStartCharRanges, int32(r)) and
-          not isInMap(NameCharRanges, int32(r)):
+      if not NameStartCharRanges.isInRange(uint32(r)) and
+          not NameCharRanges.isInMap(uint32(r)):
         return false
   return true
 
@@ -548,28 +548,38 @@ func getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
   result = @[]
   for e in T.low .. T.high:
     result.add(($e, int(e)))
-  result.sort(proc(x, y: IdentMapItem): int = cmp(x[0], y[0]))
+  result.sort(proc(x, y: IdentMapItem): int = cmp(x.s, y.s))
+
+func cmpItem(x: IdentMapItem; y: string): int =
+  return x.s.cmp(y)
+
+func strictParseEnum0(map: openArray[IdentMapItem]; s: string): int =
+  let i = map.binarySearch(s, cmpItem)
+  if i != -1:
+    return map[i].n
+  return -1
 
 func strictParseEnum*[T: enum](s: string): Option[T] =
   const IdentMap = getIdentMap(T)
-  let i = IdentMap.binarySearch(s, proc(x: IdentMapItem; y: string): int =
-    return x[0].cmp(y)
-  )
-  if i != -1:
-    return some(T(IdentMap[i].n))
+  let n = IdentMap.strictParseEnum0(s)
+  if n != -1:
+    return some(T(n))
   return none(T)
 
-func parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): Opt[int] =
+func parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): int =
   let i = map.binarySearch(s, proc(x: IdentMapItem; y: string): int =
     return x[0].cmpIgnoreCase(y)
   )
   if i != -1:
-    return ok(map[i].n)
-  return err()
+    return map[i].n
+  return -1
 
 func parseEnumNoCase*[T: enum](s: string): Opt[T] =
   const IdentMap = getIdentMap(T)
-  return ok(T(?IdentMap.parseEnumNoCase0(s)))
+  let n = IdentMap.parseEnumNoCase0(s)
+  if n != -1:
+    return ok(T(n))
+  return err()
 
 proc getContentTypeAttr*(contentType, attrname: string): string =
   var i = contentType.find(';')

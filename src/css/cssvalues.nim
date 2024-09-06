@@ -768,17 +768,19 @@ template isToken(cval: CSSComponentValue): bool =
 template getToken(cval: CSSComponentValue): CSSToken =
   CSSToken(cval)
 
-func parseIdent(map: openArray[IdentMapItem]; cval: CSSComponentValue):
-    Opt[int] =
+func parseIdent(map: openArray[IdentMapItem]; cval: CSSComponentValue): int =
   if isToken(cval):
     let tok = getToken(cval)
     if tok.tokenType == cttIdent:
       return map.parseEnumNoCase0(tok.value)
-  return err()
+  return -1
 
 func parseIdent[T: enum](cval: CSSComponentValue): Opt[T] =
   const IdentMap = getIdentMap(T)
-  return ok(cast[T](?IdentMap.parseIdent(cval)))
+  let i = IdentMap.parseIdent(cval)
+  if i != -1:
+    return ok(T(i))
+  return err()
 
 func cssLength(val: float64; unit: string): Opt[CSSLength] =
   let u = ?parseEnumNoCase[CSSUnit](unit)
@@ -1028,7 +1030,9 @@ func cssFontWeight(cval: CSSComponentValue): Opt[int] =
         "lighter": 400,
         "bolder": 700
       }
-      return FontWeightMap.parseIdent(cval)
+      let i = FontWeightMap.parseIdent(cval)
+      if i != -1:
+        return ok(i)
     elif tok.tokenType == cttNumber:
       if tok.nvalue in 1f64..1000f64:
         return ok(int(tok.nvalue))
