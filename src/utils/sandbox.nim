@@ -90,7 +90,6 @@ elif SandboxMode == stLibSeccomp:
       const androidAllowList = [
         cstring"rt_sigprocmask",
         "epoll_pwait",
-        "futex",
         "madvise"
       ]
       for it in androidAllowList:
@@ -169,6 +168,7 @@ elif SandboxMode == stLibSeccomp:
       "exit_group", # for quit
       "fcntl", "fcntl64", # for changing blocking status
       "fork", # for when fork is really fork
+      "futex", # bionic libc & WSL both need it
       "getpid", # for determining current PID after we fork
       "getrlimit", # glibc uses it after fork it seems
       "getsockname", # Nim needs it for connecting
@@ -225,6 +225,7 @@ elif SandboxMode == stLibSeccomp:
       "mmap", "mmap2", "mremap", "munmap", "brk", # memory allocation
       "poll", # curl needs poll
       "getpid", # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
+      "futex", # bionic libc & WSL both need it
       # we either have to use CURLOPT_NOSIGNAL or allow signals.
       # do the latter, otherwise the default name resolver will never time out.
       "signal", "sigaction", "rt_sigaction",
