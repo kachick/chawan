@@ -52,9 +52,37 @@ func width*(s: string; start, len: int): int =
     fastRuneAt(s, i, r)
     result += r.twidth(result)
 
+when NimMajor < 2:
+  template ones(n: untyped): untyped = ((1 shl n)-1)
+  template fastRuneAt(s: openArray[char]; i: int; result: untyped) =
+    result = Rune(0xFFFD)
+    if uint32(s[i]) <= 127:
+      result = Rune(uint32(s[i]))
+    elif uint32(s[i]) shr 5 == 0b110:
+      if i <= s.len - 2:
+        result = Rune((uint32(s[i]) and (ones(5))) shl 6 or
+          (uint32(s[i+1]) and ones(6)))
+        i += 1
+    elif uint32(s[i]) shr 4 == 0b1110:
+      if i <= s.len - 3:
+        result = Rune((uint32(s[i]) and ones(4)) shl 12 or
+          (uint32(s[i+1]) and ones(6)) shl 6 or (uint32(s[i+2]) and ones(6)))
+        i += 2
+    elif uint32(s[i]) shr 3 == 0b11110:
+      if i <= s.len - 4:
+        result = Rune((uint32(s[i]) and ones(3)) shl 18 or
+          (uint32(s[i+1]) and ones(6)) shl 12 or
+          (uint32(s[i+2]) and ones(6)) shl 6 or
+          (uint32(s[i+3]) and ones(6)))
+        i += 3
+    inc i
+
 func notwidth*(s: openArray[char]): int =
   result = 0
-  for r in s.runes:
+  var i = 0
+  while i < s.len:
+    var r: Rune
+    fastRuneAt(s, i, r)
     result += r.width()
 
 func twidth*(s: string; w: int): int =

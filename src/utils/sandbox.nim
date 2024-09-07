@@ -136,7 +136,7 @@ elif SandboxMode == stLibSeccomp:
     #
     # The offending function is _IO_file_doallocate; it doesn't actually
     # look at errno, so EPERM should work fine.
-    const err = SCMP_ACT_ERRNO(uint16(EPERM))
+    const err = SCMP_ACT_ERRNO(1u16)
     const fstatList = [
       cstring"fstat",
       "fstat64",
