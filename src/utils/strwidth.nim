@@ -52,7 +52,7 @@ func width*(s: string; start, len: int): int =
     fastRuneAt(s, i, r)
     result += r.twidth(result)
 
-func notwidth*(s: string): int =
+func notwidth*(s: openArray[char]): int =
   result = 0
   for r in s.runes:
     result += r.width()

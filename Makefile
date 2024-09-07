@@ -118,6 +118,7 @@ $(OUTDIR_CGI_BIN)/canvas: src/img/bitmap.nim src/img/painter.nim \
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/gophertypes.nim $(twtstr)
 $(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim $(twtstr)
+$(OUTDIR_LIBEXEC)/md2html: $(twtstr)
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"

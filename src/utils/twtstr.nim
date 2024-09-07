@@ -124,7 +124,7 @@ func endsWithIgnoreCase*(s1, s2: string): bool =
       return false
   return true
 
-func skipBlanks*(buf: string; at: int): int =
+func skipBlanks*(buf: openArray[char]; at: int): int =
   result = at
   while result < buf.len and buf[result] in AsciiWhitespace:
     inc result
@@ -386,7 +386,7 @@ func percentDecode*(input: string; si = 0): string =
         i += 2
     inc i
 
-func htmlEscape*(s: string): string =
+func htmlEscape*(s: openArray[char]): string =
   result = ""
   for c in s:
     case c

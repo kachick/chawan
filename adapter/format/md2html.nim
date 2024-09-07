@@ -1,53 +1,37 @@
 import std/strutils
 
-proc toggle[T](s: var set[T], t: T): bool =
-  result = t notin s
-  if result:
-    s.incl(t)
-  else:
-    s.excl(t)
+import utils/twtstr
 
 type BracketState = enum
-  bsNone, bsInBracketRef, bsInBracket, bsAfterBracket, bsInParen, bsInImage
-
-const AsciiAlphaNumeric = {'0'..'9', 'A'..'Z', 'a'..'z'}
-const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
+  bsNone, bsInBracket
 
 proc getId(line: openArray[char]): string =
   result = ""
   var i = 0
   var bs = bsNone
-  var escape = false
   while i < line.len:
-    let c = line[i]
-    if bs == bsInParen:
-      if escape:
-        escape = false
-        inc i
-        continue
-      if c == ')':
-        bs = bsNone
-      elif c == '\\':
-        escape = true
-      inc i
-      continue
-    case c
+    case (let c = line[i]; c)
     of AsciiAlphaNumeric, '-', '_', '.': result &= c.toLowerAscii()
     of ' ': result &= '-'
     of '[':
-      if bs != bsNone:
-        bs = bsInBracket
+      bs = bsInBracket
     of ']':
       if bs == bsInBracket:
-        bs = bsAfterBracket
-    of '(':
-      if bs == bsAfterBracket:
-        bs = bsInParen
+        if i + 1 < line.len and line[i + 1] == '(':
+          inc i
+          while i < line.len:
+            let c = line[i]
+            if c == '\\':
+              inc i
+            elif c == ')':
+              break
+            inc i
+        bs = bsNone
     else: discard
     inc i
 
-type InlineState = enum
-  isItalic, isBold, isDel
+type InlineFlag = enum
+  ifItalic, ifBold, ifDel
 
 func startsWithScheme(s: string): bool =
   for i, c in s:
@@ -61,21 +45,17 @@ type ParseInlineContext = object
   i: int
   bracketChars: string
   bs: BracketState
+  bracketRef: bool
+  flags: set[InlineFlag]
 
 proc parseInTag(ctx: var ParseInlineContext; line: openArray[char]) =
   var buf = ""
-  var i = ctx.i
+  var i = ctx.i + 1
   while i < line.len:
     let c = line[i]
     if c == '>': # done
       if buf.startsWithScheme(): # link
-        var linkChars = ""
-        for c in buf:
-          if c == '\'':
-            linkChars &= "&apos"
-          else:
-            linkChars &= c
-        stdout.write("<A HREF='" & linkChars & "'>" & buf & "</A>")
+        stdout.write("<A HREF='" & buf.htmlEscape() & "'>" & buf & "</A>")
       else: # tag
         stdout.write('<' & buf & '>')
       buf = ""
@@ -91,20 +71,20 @@ proc parseInTag(ctx: var ParseInlineContext; line: openArray[char]) =
   stdout.write(buf)
   ctx.i = i
 
-type CommentState = enum
-  csNone, csDash, csDashDash
-
 proc append(ctx: var ParseInlineContext; s: string) =
-  if ctx.bs in {bsInBracketRef, bsInBracket}:
+  if ctx.bs == bsInBracket:
     ctx.bracketChars &= s
   else:
     stdout.write(s)
 
 proc append(ctx: var ParseInlineContext; c: char) =
-  if ctx.bs in {bsInBracketRef, bsInBracket}:
+  if ctx.bs == bsInBracket:
     ctx.bracketChars &= c
   else:
     stdout.write(c)
+
+type CommentState = enum
+  csNone, csDash, csDashDash
 
 proc parseComment(ctx: var ParseInlineContext; line: openArray[char]) =
   var i = ctx.i
@@ -125,33 +105,147 @@ proc parseComment(ctx: var ParseInlineContext; line: openArray[char]) =
   ctx.i = i
 
 proc parseCode(ctx: var ParseInlineContext; line: openArray[char]) =
-  var i = ctx.i
+  let i = ctx.i + 1
+  let j = line.toOpenArray(i, line.high).find('`')
+  if j != -1:
+    ctx.append("<CODE>")
+    ctx.append(line.toOpenArray(i, i + j - 1).htmlEscape())
+    ctx.append("</CODE>")
+    ctx.i = i + j
+  else:
+    ctx.append('`')
+
+proc parseLinkDestination(url: var string; line: openArray[char]; i: int): int =
+  var i = i
+  var quote = false
+  var parens = 0
+  let sc = line[i]
+  if sc == '<':
+    inc i
   while i < line.len:
     let c = line[i]
-    case c
-    of '<': ctx.append("&lt;")
-    of '>': ctx.append("&gt;")
-    of '"': ctx.append("&quot;")
-    of '\'': ctx.append("&apos;")
-    of '&': ctx.append("&amp;")
-    of '`':
-      ctx.append("</CODE>")
+    if quote:
+      quote = false
+    elif sc == '<' and c == '>' or sc != '<' and c in AsciiWhitespace + {')'}:
       break
-    else: ctx.append(c)
+    elif c in {'<', '\n'} or c in Controls and sc != '<':
+      return -1
+    elif c == '\\':
+      quote = true
+    elif c == '(':
+      inc parens
+      url &= c
+    elif c == ')' and sc != '>':
+      if parens == 0:
+        break
+      dec parens
+      url &= c
+    else:
+      url &= c
     inc i
-  ctx.i = i
+  if sc != '>' and parens != 0 or quote:
+    return -1
+  return line.skipBlanks(i)
+
+proc parseTitle(title: var string; line: openArray[char]; i: int): int =
+  let ec = line[i]
+  var i = i + 1
+  var quote = false
+  while i < line.len:
+    let c = line[i]
+    if quote:
+      quote = false
+    elif c == '\\':
+      quote = true
+    elif c == ec:
+      inc i
+      break
+    else:
+      title &= c
+    inc i
+  return line.skipBlanks(i)
+
+proc parseLink(ctx: var ParseInlineContext; line: openArray[char]) =
+  let i = ctx.i + 1
+  if i >= line.len or line[i] != '(':
+    #TODO reference links
+    stdout.write('[' & ctx.bracketChars & ']')
+    return
+  var url = ""
+  var j = url.parseLinkDestination(line, line.skipBlanks(i + 1))
+  var title = ""
+  if j != -1 and j < line.len and line[j] in {'(', '"', '\''}:
+    j = title.parseTitle(line, j)
+  if j == -1 or j >= line.len or line[j] != ')':
+    stdout.write('[' & ctx.bracketChars & ']')
+  else:
+    let url = url.htmlEscape()
+    stdout.write("<A HREF='" & url)
+    if title != "":
+      stdout.write("' TITLE='" & title.htmlEscape())
+    stdout.write("'>")
+    stdout.write(ctx.bracketChars)
+    stdout.write("</A>")
+    ctx.i = j
+
+proc parseImageAlt(text: var string; line: openArray[char]; i: int): int =
+  var i = i
+  var brackets = 0
+  while i < line.len:
+    let c = line[i]
+    if c == '\\':
+      inc i
+    elif c == '<':
+      while i < line.len and line[i] != '>':
+        text &= c
+        inc i
+    elif c == '[':
+      inc brackets
+      text &= c
+    elif line[i] == ']':
+      if brackets == 0:
+        break
+      dec brackets
+      text &= c
+    else:
+      text &= c
+    inc i
+  return i
+
+proc parseImage(ctx: var ParseInlineContext; line: openArray[char]) =
+  var text = ""
+  let i = text.parseImageAlt(line, ctx.i + 2)
+  if i == -1 or i + 1 >= line.len or line[i] != ']' or line[i + 1] != '(':
+    ctx.append("![")
+    return
+  var url = ""
+  var j = url.parseLinkDestination(line, line.skipBlanks(i + 2))
+  var title = ""
+  if j != -1 and j < line.len and line[j] in {'(', '"', '\''}:
+    j = title.parseTitle(line, j)
+  if j == -1 or j >= line.len or line[j] != ')':
+    ctx.append("![")
+  else:
+    ctx.append("<IMG SRC='" & url.htmlEscape())
+    if title != "":
+      ctx.append("' TITLE='" & title.htmlEscape())
+    if text != "":
+      ctx.append("' ALT='" & text.htmlEscape())
+    ctx.append("'>")
+    ctx.i = j
+
+proc appendToggle(ctx: var ParseInlineContext; f: InlineFlag; s, e: string) =
+  if f notin ctx.flags:
+    ctx.flags.incl(f)
+    ctx.append(s)
+  else:
+    ctx.flags.excl(f)
+    ctx.append(e)
 
 proc parseInline(line: openArray[char]) =
-  var state: set[InlineState] = {}
   var ctx = ParseInlineContext()
-  var image = false
   while ctx.i < line.len:
     let c = line[ctx.i]
-    if ctx.bs == bsAfterBracket and c != '(':
-      stdout.write("[" & ctx.bracketChars & "]")
-      ctx.bracketChars = ""
-      ctx.bs = bsNone
-      image = false
     if c == '\\':
       inc ctx.i
       if ctx.i < line.len:
@@ -164,58 +258,35 @@ proc parseInline(line: openArray[char]) =
               ctx.i + 1 >= line.len or
               line[ctx.i + 1] notin AsciiAlphaNumeric + {'_'})):
       if ctx.i + 1 < line.len and line[ctx.i + 1] == c:
-        if state.toggle(isBold):
-          ctx.append("<B>")
-        else:
-          ctx.append("</B>")
+        ctx.appendToggle(ifBold, "<B>", "</B>")
         inc ctx.i
       else:
-        if state.toggle(isItalic):
-          stdout.write("<I>")
-        else:
-          stdout.write("</I>")
+        ctx.appendToggle(ifItalic, "<I>", "</I>")
     elif c == '`':
-      ctx.append("<CODE>")
-      inc ctx.i
       ctx.parseCode(line)
     elif c == '~' and ctx.i + 1 < line.len and line[ctx.i + 1] == '~':
-      if state.toggle(isDel):
-        ctx.append("<DEL>")
-      else:
-        ctx.append("</DEL>")
+      ctx.appendToggle(ifDel, "<DEL>", "</DEL>")
       inc ctx.i
-    elif c == '!' and ctx.bs == bsNone and ctx.i + 1 < line.len and
-        line[ctx.i + 1] == '[':
-      image = true
-    elif c == '[' and ctx.bs == bsNone:
+    elif c == '!' and ctx.i + 1 < line.len and line[ctx.i + 1] == '[':
+      ctx.parseImage(line)
+    elif c == '[':
+      if ctx.bs == bsInBracket:
+        stdout.write('[' & ctx.bracketChars)
+        ctx.bracketChars = ""
       ctx.bs = bsInBracket
-      if ctx.i + 1 < line.len and line[ctx.i + 1] == '^':
+      ctx.bracketRef = ctx.i + 1 < line.len and line[ctx.i + 1] == '^'
+      if ctx.bracketRef:
         inc ctx.i
-        ctx.bs = bsInBracketRef
-    elif c == ']' and ctx.bs == bsInBracketRef:
-      let id = ctx.bracketChars.getId()
-      stdout.write("<A HREF='#" & id & "'>" & ctx.bracketChars & "</A>")
-      ctx.bracketChars = ""
     elif c == ']' and ctx.bs == bsInBracket:
-      ctx.bs = bsAfterBracket
-    elif c == '(' and ctx.bs == bsAfterBracket:
-      if image:
-        stdout.write("<IMG SRC='")
+      if ctx.bracketRef:
+        let id = ctx.bracketChars.getId()
+        stdout.write("<A HREF='#" & id & "'>" & ctx.bracketChars & "</A>")
       else:
-        stdout.write("<A HREF='")
-      ctx.bs = bsInParen
-    elif c == ')' and ctx.bs == bsInParen:
-      if image:
-        stdout.write("' ALT='" & ctx.bracketChars & "'>")
-      else:
-        stdout.write("'>" & ctx.bracketChars & "</A>")
-      image = false
+        ctx.parseLink(line)
       ctx.bracketChars = ""
+      ctx.bracketRef = false
       ctx.bs = bsNone
-    elif c == '\'' and ctx.bs == bsInParen:
-      stdout.write("&apos;")
-    elif c == '<' and ctx.bs == bsNone:
-      inc ctx.i
+    elif c == '<':
       ctx.parseInTag(line)
     elif ctx.i + 4 < line.len and line.toOpenArray(ctx.i, ctx.i + 3) == "<!--":
       ctx.append("<!--")
@@ -227,12 +298,16 @@ proc parseInline(line: openArray[char]) =
     else:
       ctx.append(c)
     inc ctx.i
+  if ctx.bs == bsInBracket:
+    stdout.write("[")
   if ctx.bracketChars != "":
     stdout.write(ctx.bracketChars)
-  if isBold in state:
+  if ifBold in ctx.flags:
     stdout.write("</B>")
-  if isItalic in state:
+  if ifItalic in ctx.flags:
     stdout.write("</I>")
+  if ifDel in ctx.flags:
+    stdout.write("</DEL>")
 
 proc parseHash(line: openArray[char]): bool =
   var n = -1
@@ -271,19 +346,17 @@ proc getListDepth(line: string): tuple[depth, len: int; ol: ListType] =
       depth += 8
     elif c == ' ':
       inc depth
-    elif c in {'*', '-'}:
-      let i = i + 1
-      if i < line.len and line[i] in {'\t', ' '}:
-        return (depth, i, ltUl)
-      break
-    elif c in {'0'..'9'}:
-      let i = i + 1
-      if i < line.len and line[i] == '.':
+    else:
+      if c in {'*', '-'}:
         let i = i + 1
         if i < line.len and line[i] in {'\t', ' '}:
-          return (depth, i, ltOl)
-      break
-    else:
+          return (depth, i, ltUl)
+      elif c in {'0'..'9'}:
+        let i = i + 1
+        if i < line.len and line[i] == '.':
+          let i = i + 1
+          if i < line.len and line[i] in {'\t', ' '}:
+            return (depth, i, ltOl)
       break
   return (-1, -1, ltUl)
 
@@ -396,7 +469,7 @@ proc parsePre(state: var ParseState; line: string) =
     state.blockType = btNone
     stdout.write("</PRE>\n")
   else:
-    stdout.write(line & '\n')
+    stdout.write(line.htmlEscape() & '\n')
 
 proc parseList(state: var ParseState; line: string) =
   if line == "":
@@ -479,7 +552,7 @@ proc parseTabPre(state: var ParseState; line: string) =
     while state.numPreLines > 0:
       state.blockData &= '\n'
       dec state.numPreLines
-    state.blockData &= line.substr(1) & '\n'
+    state.blockData &= line.toOpenArray(1, line.high).htmlEscape() & '\n'
 
 proc parseSpacePre(state: var ParseState; line: string) =
   if line.len == 0:
@@ -495,7 +568,7 @@ proc parseSpacePre(state: var ParseState; line: string) =
     while state.numPreLines > 0:
       state.blockData &= '\n'
       dec state.numPreLines
-    state.blockData &= line.substr(4) & '\n'
+    state.blockData &= line.toOpenArray(4, line.high).htmlEscape() & '\n'
 
 proc parseBlockquote(state: var ParseState; line: string) =
   if line.len == 0 or line[0] != '>':
@@ -512,7 +585,7 @@ proc parseComment(state: var ParseState; line: string) =
   if i != -1:
     stdout.write(line.substr(0, i + 2))
     state.blockType = btNone
-    line.substr(i + 3).parseInline()
+    line.toOpenArray(i + 3, line.high).parseInline()
   else:
     stdout.write(line & '\n')
 
