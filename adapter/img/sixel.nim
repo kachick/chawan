@@ -154,24 +154,22 @@ proc quantize(img: seq[RGBAColorBE]; bgcolor: ARGBColor; palette: int): Node =
   # (note: somewhat confusingly, this actually starts at level 1.)
   var trimMap: array[7, seq[Node]]
   # batch together insertions of color runs
-  var pc0 = RGBColor(0)
-  var pcs = 0u32
-  for m in 0 ..< img.len:
-    let c0 = img.getPixel(m, bgcolor)
-    if pc0 != c0:
-      if pcs > 0:
-        K += int(root.insert(pc0, trimMap, n = pcs))
-      pcs = 0
-      pc0 = c0
-    inc pcs
+  var pc = img.getPixel(0, bgcolor)
+  var pn = 1u32
+  for m in 1 ..< img.len:
+    let c = img.getPixel(m, bgcolor)
+    if pc != c:
+      K += int(root.insert(pc, trimMap, n = pn))
+      pc = c
+      pn = 0
+    inc pn
     while K > palette:
       # trim the tree.
       trimMap.trim(K)
-  if pcs > 0:
-    K += int(root.insert(pc0, trimMap, n = pcs))
-    while K > palette:
-      # trim the tree.
-      trimMap.trim(K)
+  K += int(root.insert(pc, trimMap, n = pn))
+  while K > palette:
+    # trim the tree.
+    trimMap.trim(K)
   return root
 
 proc flatten(node: Node; cols: var seq[Node]) =
@@ -314,25 +312,23 @@ proc compressSixel(outs: var string; band: SixelBand) =
       for i in 0 ..< n:
         outs &= c
 
-proc createBands(bands: var seq[SixelBand]; chunkMap: seq[SixelChunk];
+proc createBands(bands: var seq[SixelBand]; activeChunks: seq[ptr SixelChunk];
     nrow: int) =
-  for chunk in chunkMap:
-    if chunk.nrow < nrow:
-      continue
+  for chunk in activeChunks:
     let x = chunk.x
     let ex = chunk.x + chunk.data.len
     var found = false
     for band in bands.mitems:
       if band[0].x > ex:
-        band.insert(unsafeAddr chunk, 0)
+        band.insert(chunk, 0)
         found = true
         break
       elif band[^1].x + band[^1].data.len <= x:
-        band.add(unsafeAddr chunk)
+        band.add(chunk)
         found = true
         break
     if not found:
-      bands.add(@[unsafeAddr chunk])
+      bands.add(@[chunk])
 
 proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
     halfdump: bool; bgcolor: ARGBColor; palette: int) =
@@ -356,10 +352,9 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
     let L = outs.len - 4 - preludeLenPos # subtract length field
     outs.setU32BE(uint32(L), preludeLenPos)
   let os = newPosixStream(STDOUT_FILENO)
-  let W = width
-  let H = W * height
+  let L = width * height
   let realw = cropw - offx
-  var n = offy * W
+  var n = offy * width
   var ymap = ""
   var totalLen = 0u32
   # add +2 so we don't have to bounds check
@@ -368,6 +363,7 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
     d2: newSeq[DitherDiff](realw + 2)
   )
   var chunkMap = newSeq[SixelChunk](palette)
+  var activeChunks: seq[ptr SixelChunk] = @[]
   var nrow = 1
   # buffer to 64k, just because.
   const MaxBuffer = 65546
@@ -375,7 +371,7 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
     if halfdump:
       ymap.putU32BE(totalLen)
     for i in 0 ..< 6:
-      if n >= H:
+      if n >= L:
         break
       let mask = 1u8 shl i
       var chunk: ptr SixelChunk = nil
@@ -392,6 +388,7 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
             chunk.nrow = nrow
             chunk.x = j
             chunk.data.setLen(0)
+            activeChunks.add(chunk)
           elif chunk.x > j:
             let diff = chunk.x - j
             chunk.x = j
@@ -406,19 +403,19 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
           chunk.data[k] = chunk.data[k] or mask
         else:
           chunk.data.add(mask)
-      n += W
+      n += width
       var tmp = move(dither.d1)
       dither.d1 = move(dither.d2)
       dither.d2 = move(tmp)
       zeroMem(addr dither.d2[0], dither.d2.len * sizeof(dither.d2[0]))
     var bands: seq[SixelBand] = @[]
-    bands.createBands(chunkMap, nrow)
+    bands.createBands(activeChunks, nrow)
     let olen = outs.len
     for i in 0 ..< bands.len:
       if i > 0:
         outs &= '$'
       outs.compressSixel(bands[i])
-    if n >= H:
+    if n >= L:
       outs &= ST
       totalLen += uint32(outs.len - olen)
       break
@@ -429,6 +426,7 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
         os.sendDataLoop(outs)
         outs.setLen(0)
     inc nrow
+    activeChunks.setLen(0)
   if halfdump:
     ymap.putU32BE(totalLen)
     ymap.putU32BE(uint32(ymap.len))
