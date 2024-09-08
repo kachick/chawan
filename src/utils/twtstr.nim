@@ -3,7 +3,6 @@ import std/math
 import std/options
 import std/os
 import std/strutils
-import std/unicode
 
 when defined(posix):
   import std/posix
@@ -11,14 +10,15 @@ when defined(posix):
 import types/opt
 import utils/charcategory
 import utils/map
+import utils/twtuni
 
 export charcategory
 
 func onlyWhitespace*(s: string): bool =
   return AllChars - AsciiWhitespace notin s
 
-func isControlChar*(r: Rune): bool =
-  return int(r) <= 0x1F or int(r) == 0x7F
+func isControlChar*(u: uint32): bool =
+  return u <= 0x1F or u == 0x7F
 
 func getControlChar*(c: char): char =
   if c == '?':
@@ -444,14 +444,13 @@ func matchNameProduction*(s: string): bool =
     return false
   # NameStartChar
   var i = 0
-  var r: Rune
   if s[i] in Ascii:
     if s[i] notin NameStartCharAscii:
       return false
     inc i
   else:
-    fastRuneAt(s, i, r)
-    if not NameStartCharRanges.isInRange(uint32(r)):
+    let u = s.nextUTF8(i)
+    if not NameStartCharRanges.isInRange(u):
       return false
   # NameChar
   while i < s.len:
@@ -460,9 +459,8 @@ func matchNameProduction*(s: string): bool =
         return false
       inc i
     else:
-      fastRuneAt(s, i, r)
-      if not NameStartCharRanges.isInRange(uint32(r)) and
-          not NameCharRanges.isInMap(uint32(r)):
+      let u = s.nextUTF8(i)
+      if not NameStartCharRanges.isInRange(u) and not NameCharRanges.isInMap(u):
         return false
   return true
 
@@ -483,8 +481,8 @@ func matchQNameProduction*(s: string): bool =
 
 func utf16Len*(s: string): int =
   result = 0
-  for r in s.runes:
-    if uint32(r) < 0x10000: # ucs-2
+  for u in s.points:
+    if u < 0x10000: # ucs-2
       result += 1
     else: # surrogate
       result += 2

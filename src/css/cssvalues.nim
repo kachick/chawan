@@ -3,7 +3,6 @@ import std/macros
 import std/options
 import std/strutils
 import std/tables
-import std/unicode
 
 import css/cssparser
 import css/selectorparser
@@ -13,6 +12,7 @@ import types/color
 import types/opt
 import types/winattrs
 import utils/twtstr
+import utils/twtuni
 
 export selectorparser.PseudoElem
 
@@ -605,34 +605,35 @@ func blockify*(display: CSSDisplay): CSSDisplay =
   of DisplayInlineFlex:
     return DisplayFlex
 
-const UpperAlphaMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toRunes()
-const LowerAlphaMap = "abcdefghijklmnopqrstuvwxyz".toRunes()
-const LowerGreekMap = "αβγδεζηθικλμνξοπρστυφχψω".toRunes()
+const UpperAlphaMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toPoints()
+const LowerAlphaMap = "abcdefghijklmnopqrstuvwxyz".toPoints()
+const LowerGreekMap = "αβγδεζηθικλμνξοπρστυφχψω".toPoints()
 const HiraganaMap = ("あいうえおかきくけこさしすせそたちつてとなにぬねの" &
-  "はひふへほまみむめもやゆよらりるれろわゐゑをん").toRunes()
+  "はひふへほまみむめもやゆよらりるれろわゐゑをん").toPoints()
 const HiraganaIrohaMap = ("いろはにほへとちりぬるをわかよたれそつねならむ" &
-  "うゐのおくやまけふこえてあさきゆめみしゑひもせす").toRunes()
+  "うゐのおくやまけふこえてあさきゆめみしゑひもせす").toPoints()
 const KatakanaMap = ("アイウエオカキクケコサシスセソタチツテトナニヌネノ" &
-  "ハヒフヘホマミムメモヤユヨラリルレロワヰヱヲン").toRunes()
+  "ハヒフヘホマミムメモヤユヨラリルレロワヰヱヲン").toPoints()
 const KatakanaIrohaMap = ("イロハニホヘトチリヌルヲワカヨタレソツネナラム" &
-  "ウヰノオクヤマケフコエテアサキユメミシヱヒモセス").toRunes()
-const EarthlyBranchMap = "子丑寅卯辰巳午未申酉戌亥".toRunes()
-const HeavenlyStemMap = "甲乙丙丁戊己庚辛壬癸".toRunes()
+  "ウヰノオクヤマケフコエテアサキユメミシヱヒモセス").toPoints()
+const EarthlyBranchMap = "子丑寅卯辰巳午未申酉戌亥".toPoints()
+const HeavenlyStemMap = "甲乙丙丁戊己庚辛壬癸".toPoints()
 
-func numToBase(n: int; map: openArray[Rune]): string =
+func numToBase(n: int; map: openArray[uint32]): string =
   if n <= 0:
     return $n
-  var tmp: seq[Rune]
+  var tmp: seq[uint32] = @[]
   var n = n
   while n != 0:
     n -= 1
     tmp &= map[n mod map.len]
     n = n div map.len
-  result = ""
+  var res = ""
   for i in countdown(tmp.high, 0):
-    result &= $tmp[i]
+    res.addUTF8(tmp[i])
+  return res
 
-func numToFixed(n: int; map: openArray[Rune]): string =
+func numToFixed(n: int; map: openArray[uint32]): string =
   let n = n - 1
   if n notin 0 .. map.high:
     return $n

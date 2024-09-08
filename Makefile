@@ -91,7 +91,7 @@ $(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(CC) $(GMIFETCH_CFLAGS) adapter/protocol/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch" $(GMIFETCH_LDFLAGS)
 
-twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim
+twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim src/utils/twtuni.nim
 dynstream = src/io/dynstream.nim src/io/serversocket.nim
 $(OUTDIR_CGI_BIN)/man: lib/monoucha/monoucha/jsregex.nim \
 		lib/monoucha/monoucha/libregexp.nim src/types/opt.nim $(twtstr)

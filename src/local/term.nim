@@ -4,7 +4,6 @@ import std/posix
 import std/strutils
 import std/tables
 import std/termios
-import std/unicode
 
 import bindings/termcap
 import chagashi/charset

@@ -3,7 +3,6 @@ import std/options
 import std/os
 import std/posix
 import std/tables
-import std/unicode
 
 import chagashi/charset
 import config/config
@@ -32,6 +31,7 @@ import utils/luwrap
 import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
+import utils/twtuni
 import utils/wordbreak
 
 type
@@ -369,12 +369,12 @@ proc popCursorPos(select: Select; nojump = false) =
   if not nojump:
     select.queueDraw()
 
-const HorizontalBar = $Rune(0x2500)
-const VerticalBar = $Rune(0x2502)
-const CornerTopLeft = $Rune(0x250C)
-const CornerTopRight = $Rune(0x2510)
-const CornerBottomLeft = $Rune(0x2514)
-const CornerBottomRight = $Rune(0x2518)
+const HorizontalBar = "\u2500"
+const VerticalBar = "\u2502"
+const CornerTopLeft = "\u250C"
+const CornerTopRight = "\u2510"
+const CornerBottomLeft = "\u2514"
+const CornerBottomRight = "\u2518"
 
 proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
     upmore, downmore: bool) =
@@ -446,7 +446,6 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
   # move inside border
   inc sy
   inc sx
-  var r: Rune
   var k = 0
   var format = Format()
   while k < select.selected.len and select.selected[k] < si:
@@ -462,13 +461,13 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
     else:
       format.flags.excl(ffReverse)
     while j < select.options[i].len:
-      fastRuneAt(select.options[i], j, r)
-      let rw = r.twidth(x)
+      let pj = j
+      let u = select.options[i].nextUTF8(j)
       let ox = x
-      x += rw
+      x += u.twidth(x)
       if x > ex:
         break
-      display[dls + ox].str = $r
+      display[dls + ox].str = select.options[i].substr(pj, j - 1)
       display[dls + ox].format = format
     while x < ex:
       display[dls + x].str = " "
@@ -578,9 +577,8 @@ func findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
   var w = startx
   var i = starti
   while i < s.len and w < endx:
-    var r: Rune
-    fastRuneAt(s, i, r)
-    w += r.twidth(w)
+    let u = s.nextUTF8(i)
+    w += u.twidth(w)
   return i
 
 func cursorBytes(container: Container; y: int; cc = container.cursorx): int =
@@ -596,11 +594,10 @@ func cursorFirstX(container: Container): int =
   let line = container.currentLine
   var w = 0
   var i = 0
-  var r: Rune
   let cc = container.cursorx
   while i < line.len:
-    fastRuneAt(line, i, r)
-    let tw = r.twidth(w)
+    let u = line.nextUTF8(i)
+    let tw = u.twidth(w)
     if w + tw > cc:
       return w
     w += tw
@@ -613,11 +610,10 @@ func cursorLastX(container: Container): int =
   let line = container.currentLine
   var w = 0
   var i = 0
-  var r: Rune
   let cc = container.cursorx
   while i < line.len and w <= cc:
-    fastRuneAt(line, i, r)
-    w += r.twidth(w)
+    let u = line.nextUTF8(i)
+    w += u.twidth(w)
   return max(w - 1, 0)
 
 # Last cell for tab, first cell for everything else (e.g. double width.)
@@ -630,16 +626,15 @@ func cursorDispX(container: Container): int =
   var w = 0
   var pw = 0
   var i = 0
-  var r: Rune
+  var u = 0u32
   let cc = container.cursorx
   while i < line.len and w <= cc:
-    fastRuneAt(line, i, r)
+    u = line.nextUTF8(i)
     pw = w
-    w += r.twidth(w)
-  if r == Rune('\t'):
+    w += u.twidth(w)
+  if u == uint32('\t'):
     return max(w - 1, 0)
-  else:
-    return pw
+  return pw
 
 func acursorx*(container: Container): int =
   max(0, container.cursorDispX() - container.fromx)
@@ -911,10 +906,10 @@ proc setCursorXY*(container: Container; x, y: int; refresh = true) {.jsfunc.} =
 proc cursorLineTextStart(container: Container) {.jsfunc.} =
   if container.numLines == 0: return
   var x = 0
-  for r in container.currentLine.runes:
-    if not container.luctx.isWhiteSpaceLU(r):
+  for u in container.currentLine.points:
+    if not container.luctx.isWhiteSpaceLU(u):
       break
-    x += r.twidth(x)
+    x += u.twidth(x)
   if x == 0:
     dec x
   container.setCursorX(x)
@@ -1020,45 +1015,62 @@ proc cursorLineBegin(container: Container) {.jsfunc.} =
 proc cursorLineEnd(container: Container) {.jsfunc.} =
   container.setCursorX(container.currentLineWidth() - 1)
 
-type BreakFunc = proc(ctx: LUContext; r: Rune): BreakCategory {.nimcall.}
+type BreakFunc = proc(ctx: LUContext; r: uint32): BreakCategory {.nimcall.}
 
-proc skipSpace(container: Container; b, x: var int; breakFunc: BreakFunc) =
+# move to first char that is not in this category
+proc skipCat(container: Container; b, x: var int; breakFunc: BreakFunc;
+    cat: BreakCategory) =
   while b < container.currentLine.len:
-    var r: Rune
     let pb = b
-    fastRuneAt(container.currentLine, b, r)
-    if container.luctx.breakFunc(r) != bcSpace:
+    let u = container.currentLine.nextUTF8(b)
+    if container.luctx.breakFunc(u) != cat:
       b = pb
       break
-    x += r.twidth(x)
+    x += u.twidth(x)
 
-proc skipSpaceRev(container: Container; b, x: var int; breakFunc: BreakFunc) =
-  while b >= 0:
-    let (r, o) = lastRune(container.currentLine, b)
-    if container.luctx.breakFunc(r) != bcSpace:
+proc skipSpace(container: Container; b, x: var int; breakFunc: BreakFunc) =
+  container.skipCat(b, x, breakFunc, bcSpace)
+
+# move to last char in category, backwards
+proc lastCatRev(container: Container; b, x: var int; breakFunc: BreakFunc;
+    cat: BreakCategory) =
+  while b > 0:
+    let pb = b
+    let u = container.currentLine.prevUTF8(b)
+    if container.luctx.breakFunc(u) != cat:
+      b = pb
       break
-    b -= o
-    x -= r.twidth(x)
+    x -= u.width()
+
+# move to first char that is not in this category, backwards
+proc skipCatRev(container: Container; b, x: var int; breakFunc: BreakFunc;
+    cat: BreakCategory): BreakCategory =
+  while b > 0:
+    let u = container.currentLine.prevUTF8(b)
+    x -= u.width()
+    let it = container.luctx.breakFunc(u)
+    if it != cat:
+      return it
+  b = -1
+  return cat
+
+proc skipSpaceRev(container: Container; b, x: var int; breakFunc: BreakFunc):
+    BreakCategory =
+  return container.skipCatRev(b, x, breakFunc, bcSpace)
 
 proc cursorNextWord(container: Container; breakFunc: BreakFunc) =
   if container.numLines == 0: return
-  var r: Rune
   var b = container.currentCursorBytes()
   var x = container.cursorx
   # meow
   let currentCat = if b < container.currentLine.len:
-    container.luctx.breakFunc(container.currentLine.runeAt(b))
+    var tmp = b
+    container.luctx.breakFunc(container.currentLine.nextUTF8(tmp))
   else:
     bcSpace
   if currentCat != bcSpace:
     # not in space, skip chars that have the same category
-    while b < container.currentLine.len:
-      let pb = b
-      fastRuneAt(container.currentLine, b, r)
-      if container.luctx.breakFunc(r) != currentCat:
-        b = pb
-        break
-      x += r.twidth(x)
+    container.skipCat(b, x, breakFunc, currentCat)
   container.skipSpace(b, x, breakFunc)
   if b < container.currentLine.len:
     container.setCursorX(x)
@@ -1084,19 +1096,16 @@ proc cursorPrevWord(container: Container; breakFunc: BreakFunc) =
   var x = container.cursorx
   if container.currentLine.len > 0:
     b = min(b, container.currentLine.len - 1)
-    let currentCat = if b >= 0:
-      container.luctx.breakFunc(container.currentLine.runeAt(b))
+    var currentCat = if b >= 0:
+      var tmp = b
+      container.luctx.breakFunc(container.currentLine.nextUTF8(tmp))
     else:
       bcSpace
     if currentCat != bcSpace:
       # not in space, skip chars that have the same category
-      while b >= 0:
-        let (r, o) = lastRune(container.currentLine, b)
-        if container.luctx.breakFunc(r) != currentCat:
-          break
-        b -= o
-        x -= r.twidth(x)
-    container.skipSpaceRev(b, x, breakFunc)
+      currentCat = container.skipCatRev(b, x, breakFunc, currentCat)
+    if currentCat == bcSpace:
+      discard container.skipSpaceRev(b, x, breakFunc)
   else:
     b = -1
   if b >= 0:
@@ -1119,32 +1128,33 @@ proc cursorPrevBigWord(container: Container) {.jsfunc.} =
 
 proc cursorWordEnd(container: Container; breakFunc: BreakFunc) =
   if container.numLines == 0: return
-  var r: Rune
   var b = container.currentCursorBytes()
   var x = container.cursorx
   var px = x
   # if not in space, move to the right by one
   if b < container.currentLine.len:
     let pb = b
-    fastRuneAt(container.currentLine, b, r)
-    if container.luctx.breakFunc(r) == bcSpace:
+    let u = container.currentLine.nextUTF8(b)
+    if container.luctx.breakFunc(u) == bcSpace:
       b = pb
     else:
       px = x
-      x += r.twidth(x)
+      x += u.twidth(x)
   container.skipSpace(b, x, breakFunc)
   # move to the last char in the current category
   let ob = b
   if b < container.currentLine.len:
-    let currentCat = container.luctx.breakFunc(container.currentLine.runeAt(b))
+    var tmp = b
+    let u = container.currentLine.nextUTF8(tmp)
+    let currentCat = container.luctx.breakFunc(u)
     while b < container.currentLine.len:
       let pb = b
-      fastRuneAt(container.currentLine, b, r)
-      if container.luctx.breakFunc(r) != currentCat:
+      let u = container.currentLine.nextUTF8(b)
+      if container.luctx.breakFunc(u) != currentCat:
         b = pb
         break
       px = x
-      x += r.twidth(x)
+      x += u.twidth(x)
     x = px
   if b < container.currentLine.len or ob != b:
     container.setCursorX(x)
@@ -1168,35 +1178,27 @@ proc cursorWordBegin(container: Container; breakFunc: BreakFunc) =
   if container.numLines == 0: return
   var b = container.currentCursorBytes()
   var x = container.cursorx
-  var px = x
-  var ob = b
   if container.currentLine.len > 0:
     b = min(b, container.currentLine.len - 1)
     if b >= 0:
-      let (r, o) = lastRune(container.currentLine, b)
+      var tmp = b
+      var u = container.currentLine.nextUTF8(tmp)
+      var currentCat = container.luctx.breakFunc(u)
       # if not in space, move to the left by one
-      if container.luctx.breakFunc(r) != bcSpace:
-        b -= o
-        px = x
-        x -= r.twidth(x)
-    container.skipSpaceRev(b, x, breakFunc)
-    # move to the first char in the current category
-    ob = b
-    if b >= 0:
-      let (r, _) = lastRune(container.currentLine, b)
-      let currentCat = container.luctx.breakFunc(r)
-      while b >= 0:
-        let (r, o) = lastRune(container.currentLine, b)
-        if container.luctx.breakFunc(r) != currentCat:
-          break
-        b -= o
-        px = x
-        x -= r.twidth(x)
-    x = px
+      if currentCat != bcSpace:
+        if b > 0:
+          u = container.currentLine.prevUTF8(b)
+          x -= u.width()
+          currentCat = container.luctx.breakFunc(u)
+        else:
+          b = -1
+      if container.luctx.breakFunc(u) == bcSpace:
+        currentCat = container.skipSpaceRev(b, x, breakFunc)
+      # move to the first char in the current category
+      container.lastCatRev(b, x, breakFunc, currentCat)
   else:
     b = -1
-    ob = -1
-  if b >= 0 or ob != b:
+  if b >= 0:
     container.setCursorX(x)
   else:
     if container.cursory > 0:
@@ -1994,7 +1996,6 @@ proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor
       cell.format = cf.format
     if bgcolor != defaultColor and cell.format.bgcolor == defaultColor:
       cell.format.bgcolor = bgcolor
-  var r: Rune
   var by = 0
   let endy = min(container.fromy + display.height, container.numLines)
   for line in container.ilines(container.fromy ..< endy):
@@ -2002,8 +2003,8 @@ proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor
     var i = 0 # byte in line.str
     # Skip cells till fromx.
     while w < container.fromx and i < line.str.len:
-      fastRuneAt(line.str, i, r)
-      w += r.twidth(w)
+      let u = line.str.nextUTF8(i)
+      w += u.twidth(w)
     let dls = by * display.width # starting position of row in display
     # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
     # we encountered a double-width character.)
@@ -2018,25 +2019,27 @@ proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor
     # Now fill in the visible part of the row.
     while i < line.str.len:
       let pw = w
-      fastRuneAt(line.str, i, r)
-      let rw = r.twidth(w)
-      w += rw
+      let pi = i
+      let u = line.str.nextUTF8(i)
+      let uw = u.twidth(w)
+      w += uw
       if w > container.fromx + display.width:
         break # die on exceeding the width limit
       if nf.pos != -1 and nf.pos <= pw:
         cf = nf
         nf = line.findNextFormat(pw)
-      if r == Rune('\t'):
+      if u == uint32('\t'):
         # Needs to be replaced with spaces, otherwise bgcolor isn't displayed.
-        let tk = k + rw
+        let tk = k + uw
         while k < tk:
           display[dls + k].str &= ' '
           set_fmt display[dls + k], cf
           inc k
       else:
-        display[dls + k].str &= r
+        for j in pi ..< i:
+          display[dls + k].str &= line.str[j]
         set_fmt display[dls + k], cf
-        k += rw
+        k += uw
     if bgcolor != defaultColor:
       # Fill the screen if bgcolor is not default.
       while k < display.width:

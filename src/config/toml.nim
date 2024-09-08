@@ -2,10 +2,10 @@ import std/options
 import std/streams
 import std/tables
 import std/times
-import std/unicode
 
 import types/opt
 import utils/twtstr
+import utils/twtuni
 
 type
   TomlValueType* = enum
@@ -144,7 +144,7 @@ proc reconsume(state: var TomlParser) =
 proc has(state: var TomlParser; i: int = 0): bool =
   return state.at + i < state.buf.len
 
-proc consumeEscape(state: var TomlParser; c: char): Result[Rune, TomlError] =
+proc consumeEscape(state: var TomlParser; c: char): Result[uint32, TomlError] =
   var len = 4
   if c == 'U':
     len = 8
@@ -166,7 +166,7 @@ proc consumeEscape(state: var TomlParser; c: char): Result[Rune, TomlError] =
     if num > 0x10FFFF or num in 0xD800..0xDFFF:
       return state.err("invalid escaped codepoint: " & $num)
     else:
-      return ok(Rune(num))
+      return ok(uint32(num))
   else:
     return state.err("invalid escaped codepoint: " & $c)
 
@@ -213,7 +213,7 @@ proc consumeString(state: var TomlParser; first: char): Result[string, string] =
       of 'r': res &= '\r'
       of '"': res &= '"'
       of '\\': res &= '\\'
-      of 'u', 'U': res &= ?state.consumeEscape(c)
+      of 'u', 'U': res.addUTF8(?state.consumeEscape(c))
       of '\n': ml_trim = true
       of '$': res &= "\\$" # special case for substitution in paths
       else: return state.err("invalid escape sequence \\" & c)

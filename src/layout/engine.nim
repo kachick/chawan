@@ -1,6 +1,5 @@
 import std/algorithm
 import std/math
-import std/unicode
 
 import css/cssvalues
 import css/stylednode
@@ -11,6 +10,7 @@ import types/winattrs
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr
+import utils/twtuni
 import utils/widthconv
 
 type
@@ -714,7 +714,7 @@ proc addWordEOL(ictx: var InlineContext; state: var InlineState): bool =
       let leftstr = ictx.word.str.substr(ictx.wrappos)
       ictx.word.str.setLen(ictx.wrappos)
       if ictx.hasshy:
-        const shy = $Rune(0xAD) # soft hyphen
+        const shy = "\u00AD" # soft hyphen
         ictx.word.str &= shy
         ictx.hasshy = false
       result = ictx.addWord(state)
@@ -723,34 +723,34 @@ proc addWordEOL(ictx: var InlineContext; state: var InlineState): bool =
     else:
       result = ictx.addWord(state)
 
-proc checkWrap(ictx: var InlineContext; state: var InlineState; r: Rune) =
+proc checkWrap(ictx: var InlineContext; state: var InlineState; u: uint32;
+    uw: int) =
   if state.fragment.computed.nowrap:
     return
   let shift = ictx.computeShift(state)
-  let rw = r.width()
-  state.prevrw = rw
+  state.prevrw = uw
   if ictx.word.str.len == 0:
-    state.firstrw = rw
-  if rw >= 2:
+    state.firstrw = uw
+  if uw >= 2:
     # remove wrap opportunity, so we wrap properly on the last CJK char (instead
     # of any dash inside CJK sentences)
     ictx.wrappos = -1
   case state.fragment.computed{"word-break"}
   of WordBreakNormal:
-    if rw == 2 or ictx.wrappos != -1: # break on cjk and wrap opportunities
-      let plusWidth = ictx.word.size.w + shift + rw * ictx.cellWidth
+    if uw == 2 or ictx.wrappos != -1: # break on cjk and wrap opportunities
+      let plusWidth = ictx.word.size.w + shift + uw * ictx.cellWidth
       if ictx.shouldWrap(plusWidth, nil):
         if not ictx.addWordEOL(state): # no line wrapping occured in addAtom
           ictx.finishLine(state, wrap = true)
           ictx.whitespacenum = 0
   of WordBreakBreakAll:
-    let plusWidth = ictx.word.size.w + shift + rw * ictx.cellWidth
+    let plusWidth = ictx.word.size.w + shift + uw * ictx.cellWidth
     if ictx.shouldWrap(plusWidth, nil):
       if not ictx.addWordEOL(state): # no line wrapping occured in addAtom
         ictx.finishLine(state, wrap = true)
         ictx.whitespacenum = 0
   of WordBreakKeepAll:
-    let plusWidth = ictx.word.size.w + shift + rw * ictx.cellWidth
+    let plusWidth = ictx.word.size.w + shift + uw * ictx.cellWidth
     if ictx.shouldWrap(plusWidth, nil):
       ictx.finishLine(state, wrap = true)
       ictx.whitespacenum = 0
@@ -814,10 +814,9 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
       if c in AsciiWhitespace:
         ictx.processWhitespace(state, c)
       else:
-        let r = Rune(c)
-        ictx.checkWrap(state, r)
+        let w = uint32(c).width()
+        ictx.checkWrap(state, uint32(c), w)
         ictx.word.str &= c
-        let w = r.width()
         ictx.word.size.w += w * ictx.cellWidth
         ictx.lbstate.charwidth += w
         if c == '-': # ascii dash
@@ -825,15 +824,16 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
           ictx.hasshy = false
       inc i
     else:
-      var r: Rune
-      fastRuneAt(str, i, r)
-      ictx.checkWrap(state, r)
-      if r == Rune(0xAD): # soft hyphen
+      let pi = i
+      let u = str.nextUTF8(i)
+      let w = u.width()
+      ictx.checkWrap(state, u, w)
+      if u == 0xAD: # soft hyphen
         ictx.wrappos = ictx.word.str.len
         ictx.hasshy = true
       else:
-        ictx.word.str &= r
-        let w = r.width()
+        for j in pi ..< i:
+          ictx.word.str &= str[j]
         ictx.word.size.w += w * ictx.cellWidth
         ictx.lbstate.charwidth += w
   discard ictx.addWord(state)

@@ -1,14 +1,14 @@
 import std/algorithm
 import std/strutils
-import std/unicode
 
 import monoucha/libunicode
 import utils/charcategory
+import utils/twtuni
 
 proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
 
-proc normalize*(rs: seq[Rune]; form = UNICODE_NFC): seq[Rune] =
+proc normalize*(rs: seq[uint32]; form = UNICODE_NFC): seq[uint32] =
   {.cast(noSideEffect).}:
     if rs.len == 0:
       return @[]
@@ -20,7 +20,7 @@ proc normalize*(rs: seq[Rune]; form = UNICODE_NFC): seq[Rune] =
       raise newException(Defect, "Unicode normalization failed")
     if out_len == 0:
       return
-    var rs = cast[seq[Rune]](newSeqUninitialized[uint32](out_len))
+    var rs = newSeqUninitialized[uint32](out_len)
     copyMem(addr rs[0], outbuf, out_len * sizeof(uint32))
     dealloc(outbuf)
     return rs
@@ -28,17 +28,15 @@ proc normalize*(rs: seq[Rune]; form = UNICODE_NFC): seq[Rune] =
 proc mnormalize*(s: var string) =
   if NonAscii notin s:
     return # no need to normalize ascii
-  s = $s.toRunes().normalize()
+  s = s.toPoints().normalize().toUTF8()
 
 # n == 0: upper, 1: lower, 2: case fold
 proc toUpperLU(s: string; n: cint): string =
   result = newStringOfCap(s.len)
-  for r in s.runes:
+  for u in s.points:
     var outa: array[LRE_CC_RES_LEN_MAX, uint32]
-    let n = lre_case_conv(cast[ptr UncheckedArray[uint32]](addr outa[0]),
-      uint32(r), n)
-    for i in 0 ..< n:
-      result &= $Rune(outa[i])
+    let n = lre_case_conv(cast[ptr UncheckedArray[uint32]](addr outa[0]), u, n)
+    result.addUTF8(outa.toOpenArray(0, n - 1))
 
 proc toUpperLU*(s: string): string =
   return s.toUpperLU(0)
@@ -49,19 +47,18 @@ proc toLowerLU*(s: string): string =
 proc capitalizeLU*(s: string): string =
   result = newStringOfCap(s.len)
   var wordStart = true
-  for r in s.runes:
-    if lre_is_space(uint32(r)) == 1:
+  for u in s.points:
+    if lre_is_space(u) == 1:
       wordStart = true
-      result &= $r
+      result.addUTF8(u)
     elif wordStart:
       var outa: array[LRE_CC_RES_LEN_MAX, uint32]
       let n = lre_case_conv(cast[ptr UncheckedArray[uint32]](addr outa[0]),
-        uint32(r), 0)
-      for i in 0 ..< n:
-        result &= $Rune(outa[i])
+        u, 0)
+      result.addUTF8(outa.toOpenArray(0, n - 1))
       wordStart = false
     else:
-      result &= $r
+      result.addUTF8(u)
 
 type u32pair* {.packed.} = object
   a: uint32
@@ -74,10 +71,10 @@ func cmpRange*(x: u32pair; y: uint32): int =
     return -1
   return 0
 
-func contains(cr: CharRange; r: Rune): bool =
+func contains(cr: CharRange; u: uint32): bool =
   let cps = cast[ptr UncheckedArray[u32pair]](cr.points)
   let L = cr.len div 2 - 1
-  return cps.toOpenArray(0, L).binarySearch(uint32(r), cmpRange) != -1
+  return cps.toOpenArray(0, L).binarySearch(u, cmpRange) != -1
 
 type
   LURangeType = enum
@@ -114,26 +111,26 @@ proc initScript(ctx: LUContext; lur: LURangeType) =
     doAssert unicode_script(p, cstring($lur), 0) == 0
     ctx.inited.incl(lur)
 
-proc isAlphaLU*(ctx: LUContext; r: Rune): bool =
+proc isAlphaLU*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurLetter)
-  return r in ctx.crs[lurLetter]
+  return u in ctx.crs[lurLetter]
 
-proc isWhiteSpaceLU*(ctx: LUContext; r: Rune): bool =
+proc isWhiteSpaceLU*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurSeparator)
-  return r in ctx.crs[lurSeparator]
+  return u in ctx.crs[lurSeparator]
 
-proc isHan*(ctx: LUContext; r: Rune): bool =
+proc isHan*(ctx: LUContext; u: uint32): bool =
   ctx.initScript(lurHan)
-  return r in ctx.crs[lurHan]
+  return u in ctx.crs[lurHan]
 
-proc isHiragana*(ctx: LUContext; r: Rune): bool =
+proc isHiragana*(ctx: LUContext; u: uint32): bool =
   ctx.initScript(lurHiragana)
-  return r in ctx.crs[lurHiragana]
+  return u in ctx.crs[lurHiragana]
 
-proc isKatakana*(ctx: LUContext; r: Rune): bool =
+proc isKatakana*(ctx: LUContext; u: uint32): bool =
   ctx.initScript(lurKatakana)
-  return r in ctx.crs[lurKatakana]
+  return u in ctx.crs[lurKatakana]
 
-proc isHangul*(ctx: LUContext; r: Rune): bool =
+proc isHangul*(ctx: LUContext; u: uint32): bool =
   ctx.initScript(lurHangul)
-  return r in ctx.crs[lurHangul]
+  return u in ctx.crs[lurHangul]

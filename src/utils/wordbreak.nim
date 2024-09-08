@@ -1,5 +1,3 @@
-import std/unicode
-
 import utils/charcategory
 import utils/luwrap
 import utils/strwidth
@@ -7,39 +5,39 @@ import utils/strwidth
 type BreakCategory* = enum
   bcAlpha, bcSpace, bcSymbol, bcHan, bcHiragana, bcKatakana, bcHangul
 
-func isDigitAscii(r: Rune): bool =
-  return uint32(r) < 128 and char(r) in AsciiDigit
+func isDigitAscii(u: uint32): bool =
+  return u < 128 and char(u) in AsciiDigit
 
-proc breaksWord*(ctx: LUContext; r: Rune): bool =
-  return not r.isDigitAscii() and r.width() != 0 and not ctx.isAlphaLU(r)
+proc breaksWord*(ctx: LUContext; u: uint32): bool =
+  return not u.isDigitAscii() and u.width() != 0 and not ctx.isAlphaLU(u)
 
-proc breaksViWordCat*(ctx: LUContext; r: Rune): BreakCategory =
-  if int32(r) < 0x80: # ASCII
-    let c = char(r)
+proc breaksViWordCat*(ctx: LUContext; u: uint32): BreakCategory =
+  if u < 0x80: # ASCII
+    let c = char(u)
     if c in AsciiAlphaNumeric + {'_'}:
       return bcAlpha
     elif c in AsciiWhitespace:
       return bcSpace
-  elif ctx.isWhiteSpaceLU(r):
+  elif ctx.isWhiteSpaceLU(u):
     return bcSpace
-  elif ctx.isAlphaLU(r):
-    if ctx.isHiragana(r):
+  elif ctx.isAlphaLU(u):
+    if ctx.isHiragana(u):
       return bcHiragana
-    elif ctx.isKatakana(r):
+    elif ctx.isKatakana(u):
       return bcKatakana
-    elif ctx.isHangul(r):
+    elif ctx.isHangul(u):
       return bcHangul
-    elif ctx.isHan(r):
+    elif ctx.isHan(u):
       return bcHan
     return bcAlpha
   return bcSymbol
 
-proc breaksWordCat*(ctx: LUContext; r: Rune): BreakCategory =
-  if not ctx.breaksWord(r):
+proc breaksWordCat*(ctx: LUContext; u: uint32): BreakCategory =
+  if not ctx.breaksWord(u):
     return bcAlpha
   return bcSpace
 
-proc breaksBigWordCat*(ctx: LUContext; r: Rune): BreakCategory =
-  if not ctx.isWhiteSpaceLU(r):
+proc breaksBigWordCat*(ctx: LUContext; u: uint32): BreakCategory =
+  if not ctx.isWhiteSpaceLU(u):
     return bcAlpha
   return bcSpace

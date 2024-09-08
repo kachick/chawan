@@ -1,66 +1,64 @@
 import std/strutils
-import std/unicode
+
 import utils/map
+import utils/twtuni
 
 const CanHaveDakuten = ("かきくけこさしすせそたちつてとはひふへほカキクケコ" &
-  "サシスセソタチツテトハヒフヘホ").toRunes()
+  "サシスセソタチツテトハヒフヘホ").toPoints()
 
-const CanHaveHanDakuten = "はひふへほハヒフヘホ".toRunes()
+const CanHaveHanDakuten = "はひふへほハヒフヘホ".toPoints()
 
 const HasDakuten = ("がぎぐげござじずぜぞだぢづでどばびぶべぼガギグゲゴ" &
-  "ザジズゼゾダヂヅデドバビブベボ").toRunes()
+  "ザジズゼゾダヂヅデドバビブベボ").toPoints()
 
-const HasHanDakuten = "ぱぴぷぺぽパピプペポ".toRunes()
+const HasHanDakuten = "ぱぴぷぺぽパピプペポ".toPoints()
 
 # Halfwidth to fullwidth & vice versa
-const halfFullMap = (func(): seq[tuple[half, full1, full2: Rune]] =
+const halfFullMap = (func(): seq[tuple[half, full1, full2: uint32]] =
   result = @[]
   const map = staticRead"res/widthconvmap.tab"
   for line in map.split('\n'):
     if line == "":
       break
     var i = 0
-    var half: Rune
-    fastRuneAt(line, i, half)
+    let half = line.nextUTF8(i)
     assert line[i] == '\t'
     inc i
-    var full1: Rune
-    fastRuneAt(line, i, full1)
-    var full2 = Rune(0)
+    let full1 = line.nextUTF8(i)
+    var full2 = 0u32
     if i < line.len:
       assert line[i] == '\t'
-      inc i
-      fastRuneAt(line, i, full2)
+      full2 = line.nextUTF8(i)
     result.add((half, full1, full2))
 )()
 
-func halfwidth(r: Rune): Rune =
-  if r != Rune(0): # special case to avoid comparison with f2
+func halfwidth(u: uint32): uint32 =
+  if u != 0: # special case to avoid comparison with f2
     for (h, f1, f2) in halfFullMap:
-      if f1 == r or f2 == r:
+      if f1 == u or f2 == u:
         return h
-  return r
+  return u
 
-const HalfDakuten = Rune(0xFF9E) # half-width dakuten
-const HalfHanDakuten = Rune(0xFF9F) # half-width handakuten
+const HalfDakuten = 0xFF9Eu32 # half-width dakuten
+const HalfHanDakuten = 0xFF9Fu32 # half-width handakuten
 
 # Note: in unicode, char + 1 is dakuten and char + 2 handakuten
 
 func halfwidth*(s: string): string =
   result = ""
-  for r in s.runes:
-    case r
+  for u in s.points:
+    case u
     of HasDakuten:
-      result &= halfwidth(Rune(uint32(r) - 1))
-      result &= HalfDakuten
+      result.addUTF8(halfwidth(u - 1))
+      result.addUTF8(HalfDakuten)
     of HasHanDakuten:
-      result &= halfwidth(Rune(uint32(r) - 2))
-      result &= HalfHanDakuten
+      result.addUTF8(halfwidth(u - 2))
+      result.addUTF8(HalfHanDakuten)
     else:
-      result &= halfwidth(r)
+      result.addUTF8(halfwidth(u))
 
-func fullwidth(r: Rune): Rune =
-  if r != Rune(0): # special case to avoid comparison with f2
+func fullwidth(r: uint32): uint32 =
+  if r != 0: # special case to avoid comparison with f2
     for (h, f1, f2) in halfFullMap:
       if h == r:
         return f1
@@ -68,45 +66,45 @@ func fullwidth(r: Rune): Rune =
 
 func fullwidth*(s: string): string =
   result = ""
-  var lastr = Rune(0)
-  for r in s.runes:
-    if lastr != Rune(0):
-      if r == HalfDakuten:
+  var lastu = 0u32
+  for u in s.points:
+    if lastu != 0:
+      if u == HalfDakuten:
         # flush with dakuten
-        result &= Rune(uint32(lastr) + 1)
-        lastr = Rune(0)
+        result.addUTF8(lastu + 1)
+        lastu = 0
         continue
-      elif r == HalfHanDakuten and lastr in CanHaveHanDakuten:
+      elif u == HalfHanDakuten and lastu in CanHaveHanDakuten:
         # flush with handakuten
-        result &= Rune(uint32(lastr) + 2)
-        lastr = Rune(0)
+        result.addUTF8(lastu + 2)
+        lastu = 0
         continue
-      result &= lastr
-      lastr = Rune(0)
-    let r = fullwidth(r)
-    if r in CanHaveDakuten:
-      lastr = r
+      result.addUTF8(lastu)
+      lastu = 0
+    let u = fullwidth(u)
+    if u in CanHaveDakuten:
+      lastu = u
     else:
-      result &= r
-  if lastr != Rune(0):
+      result.addUTF8(u)
+  if lastu != 0:
     # flush
-    result &= lastr
+    result.addUTF8(lastu)
 
 const kanamap = staticRead"res/kanamap.tab"
 func genFullSizeMap(): seq[(uint32, uint32)] =
   result = @[]
   for line in kanamap.split('\n'):
     if line.len == 0: break
-    let rs = line.toRunes()
-    assert rs[1] == Rune('\t')
-    result.add((uint32(rs[0]), uint32(rs[2])))
+    let rs = line.toPoints()
+    assert rs[1] == uint32('\t')
+    result.add((rs[0], rs[2]))
 const fullSizeMap = genFullSizeMap()
 
 proc fullsize*(s: string): string =
   result = ""
-  for r in s.runes:
-    let i = searchInMap(fullSizeMap, uint32(r))
+  for u in s.points:
+    let i = searchInMap(fullSizeMap, u)
     if i == -1:
-      result &= r
+      result.addUTF8(u)
     else:
-      result &= $Rune(fullSizeMap[i][1])
+      result.addUTF8(fullSizeMap[i][1])

@@ -1,5 +1,4 @@
 import std/strutils
-import std/unicode
 
 import chagashi/charset
 import chagashi/decoder
@@ -11,6 +10,7 @@ import types/winattrs
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr
+import utils/twtuni
 import utils/wordbreak
 
 type
@@ -37,6 +37,7 @@ type
     hist: LineHistory
     histindex: int
     histtmp: string
+    luctx: LUContext
     redraw*: bool
 
 jsDestructor(LineEdit)
@@ -48,10 +49,8 @@ func newLineHistory*(): LineHistory =
 func getDisplayWidth(edit: LineEdit): int =
   var dispw = 0
   var i = edit.shifti
-  var r: Rune
   while i < edit.news.len and dispw < edit.maxwidth:
-    fastRuneAt(edit.news, i, r)
-    dispw += r.width()
+    dispw += edit.news.nextUTF8(i).width()
   return dispw
 
 proc shiftView(edit: LineEdit) =
@@ -69,17 +68,14 @@ proc shiftView(edit: LineEdit) =
         edit.shifti = 0
       else:
         while edit.shiftx > targetx:
-          let (r, len) = edit.news.lastRune(edit.shifti - 1)
-          edit.shiftx -= r.width()
-          edit.shifti -= len
+          let u = edit.news.prevUTF8(edit.shifti)
+          edit.shiftx -= u.width()
   edit.padding = 0
   # Shift view so it contains the cursor. (act 2)
   if edit.shiftx < edit.cursorx - edit.maxwidth:
     while edit.shiftx < edit.cursorx - edit.maxwidth and
         edit.shifti < edit.news.len:
-      var r: Rune
-      fastRuneAt(edit.news, edit.shifti, r)
-      edit.shiftx += r.width()
+      edit.shiftx += edit.news.nextUTF8(edit.shifti).width()
     if edit.shiftx > edit.cursorx - edit.maxwidth:
       # skipped over a cell because of a double-width char
       edit.padding = 1
@@ -89,9 +85,9 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
   # Make the output grid +1 cell wide, so it covers the whole input area.
   result = newFixedGrid(edit.promptw + edit.maxwidth + 1)
   var x = 0
-  for r in edit.prompt.runes:
-    result[x].str &= $r
-    x += r.width()
+  for u in edit.prompt.points:
+    result[x].str.addUTF8(u)
+    x += u.width()
     if x >= result.width: break
   for i in 0 ..< edit.padding:
     if x < result.width:
@@ -99,18 +95,19 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
       inc x
   var i = edit.shifti
   while i < edit.news.len:
-    var r: Rune
-    fastRuneAt(edit.news, i, r)
+    let pi = i
+    let u = edit.news.nextUTF8(i)
     if not edit.hide:
-      let w = r.width()
+      let w = u.width()
       if x + w > result.width: break
-      if r.isControlChar():
+      if u.isControlChar():
         result[x].str &= '^'
         inc x
-        result[x].str &= char(r).getControlLetter()
+        result[x].str &= char(u).getControlLetter()
         inc x
       else:
-        result[x].str &= $r
+        for j in pi ..< i:
+          result[x].str &= edit.news[j]
         x += w
     else:
       if x + 1 > result.width: break
@@ -143,10 +140,10 @@ proc submit(edit: LineEdit) {.jsfunc.} =
 
 proc backspace(edit: LineEdit) {.jsfunc.} =
   if edit.cursori > 0:
-    let (r, len) = edit.news.lastRune(edit.cursori - 1)
-    edit.news.delete(edit.cursori - len .. edit.cursori - 1)
-    edit.cursori -= len
-    edit.cursorx -= r.width()
+    let pi = edit.cursori
+    let u = edit.news.prevUTF8(edit.cursori)
+    edit.news.delete(edit.cursori ..< pi)
+    edit.cursorx -= u.width()
     edit.redraw = true
  
 proc write*(edit: LineEdit; s: string; cs: Charset): bool =
@@ -171,7 +168,7 @@ proc write(edit: LineEdit; s: string): bool {.jsfunc.} =
 
 proc delete(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
-    let len = edit.news.runeLenAt(edit.cursori)
+    let len = edit.news.pointLenAt(edit.cursori)
     edit.news.delete(edit.cursori ..< edit.cursori + len)
     edit.redraw = true
 
@@ -192,55 +189,53 @@ proc kill(edit: LineEdit) {.jsfunc.} =
 
 proc backward(edit: LineEdit) {.jsfunc.} =
   if edit.cursori > 0:
-    let (r, len) = edit.news.lastRune(edit.cursori - 1)
-    edit.cursori -= len
-    edit.cursorx -= r.width()
+    let u = edit.news.prevUTF8(edit.cursori)
+    edit.cursorx -= u.width()
     if edit.cursorx < edit.shiftx:
       edit.redraw = true
 
 proc forward(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
-    var r: Rune
-    fastRuneAt(edit.news, edit.cursori, r)
-    edit.cursorx += r.width()
+    let u = edit.news.nextUTF8(edit.cursori)
+    edit.cursorx += u.width()
     if edit.cursorx >= edit.shiftx + edit.maxwidth:
       edit.redraw = true
 
 proc prevWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori == 0:
     return
-  let ctx = LUContext()
-  let (r, len) = edit.news.lastRune(edit.cursori - 1)
-  if ctx.breaksWord(r):
-    edit.cursori -= len
-    edit.cursorx -= r.width()
+  let pi = edit.cursori
+  let u = edit.news.prevUTF8(edit.cursori)
+  if edit.luctx.breaksWord(u):
+    edit.cursorx -= u.width()
+  else:
+    edit.cursori = pi
   while edit.cursori > 0:
-    let (r, len) = edit.news.lastRune(edit.cursori - 1)
-    if ctx.breaksWord(r):
+    let pi = edit.cursori
+    let u = edit.news.prevUTF8(edit.cursori)
+    if edit.luctx.breaksWord(u):
+      edit.cursori = pi
       break
-    edit.cursori -= len
-    edit.cursorx -= r.width()
+    edit.cursorx -= u.width()
   if edit.cursorx < edit.shiftx:
     edit.redraw = true
 
 proc nextWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori >= edit.news.len:
     return
-  let ctx = LUContext()
-  let oc = edit.cursori
-  var r: Rune
-  fastRuneAt(edit.news, edit.cursori, r)
-  if ctx.breaksWord(r):
-    edit.cursorx += r.width()
+  let pi = edit.cursori
+  let u = edit.news.nextUTF8(edit.cursori)
+  if edit.luctx.breaksWord(u):
+    edit.cursorx += u.width()
   else:
-    edit.cursori = oc
+    edit.cursori = pi
   while edit.cursori < edit.news.len:
-    let pc = edit.cursori
-    fastRuneAt(edit.news, edit.cursori, r)
-    if ctx.breaksWord(r):
-      edit.cursori = pc
+    let pi = edit.cursori
+    let u = edit.news.nextUTF8(edit.cursori)
+    if edit.luctx.breaksWord(u):
+      edit.cursori = pi
       break
-    edit.cursorx += r.width()
+    edit.cursorx += u.width()
   if edit.cursorx >= edit.shiftx + edit.maxwidth:
     edit.redraw = true
 
@@ -254,18 +249,17 @@ proc clearWord(edit: LineEdit) {.jsfunc.} =
 proc killWord(edit: LineEdit) {.jsfunc.} =
   if edit.cursori >= edit.news.len:
     return
-  let oc = edit.cursori
-  let ox = edit.cursorx
-  edit.nextWord()
-  if edit.cursori != oc:
-    if edit.cursori < edit.news.len:
-      let len = edit.news.runeLenAt(edit.cursori)
-      edit.news.delete(oc ..< edit.cursori + len)
-    else:
-      edit.news.delete(oc ..< edit.cursori)
-    edit.cursori = oc
-    edit.cursorx = ox
-    edit.redraw = true
+  var i = edit.cursori
+  var u = edit.news.nextUTF8(i)
+  if not edit.luctx.breaksWord(u):
+    while i < edit.news.len:
+      let pi = i
+      let u = edit.news.nextUTF8(i)
+      if edit.luctx.breaksWord(u):
+        i = pi
+        break
+  edit.news.delete(edit.cursori ..< i)
+  edit.redraw = true
 
 proc begin(edit: LineEdit) {.jsfunc.} =
   edit.cursori = 0
@@ -310,7 +304,7 @@ proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.maxwidth = attrs.width - edit.promptw - 1
 
 proc readLine*(prompt, current: string; termwidth: int; disallowed: set[char];
-    hide: bool; hist: LineHistory): LineEdit =
+    hide: bool; hist: LineHistory; luctx: LUContext): LineEdit =
   let promptw = prompt.width()
   return LineEdit(
     prompt: prompt,
@@ -324,7 +318,8 @@ proc readLine*(prompt, current: string; termwidth: int; disallowed: set[char];
     # - 1, so that the cursor always has place
     maxwidth: termwidth - promptw - 1,
     hist: hist,
-    histindex: hist.lines.len
+    histindex: hist.lines.len,
+    luctx: luctx
   )
 
 proc addLineEditModule*(ctx: JSContext) =

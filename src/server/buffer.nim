@@ -8,7 +8,6 @@ import std/os
 import std/posix
 import std/selectors
 import std/tables
-import std/unicode
 
 import chagashi/charset
 import chagashi/decoder
@@ -51,6 +50,7 @@ import types/url
 import types/winattrs
 import utils/strwidth
 import utils/twtstr
+import utils/twtuni
 
 type
   BufferCommand* = enum
@@ -412,9 +412,8 @@ func cursorBytes(buffer: Buffer; y, cc: int): int =
   var w = 0
   var i = 0
   while i < line.len and w < cc:
-    var r: Rune
-    fastRuneAt(line, i, r)
-    w += r.twidth(w)
+    let u = line.nextUTF8(i)
+    w += u.twidth(w)
   return i
 
 proc navigate(buffer: Buffer; url: URL) =

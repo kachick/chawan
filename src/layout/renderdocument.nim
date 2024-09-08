@@ -1,5 +1,4 @@
 import std/strutils
-import std/unicode
 
 import css/cssvalues
 import css/stylednode
@@ -11,6 +10,7 @@ import types/cell
 import types/color
 import types/winattrs
 import utils/strwidth
+import utils/twtuni
 
 type
   # A FormatCell *starts* a new terminal formatting context.
@@ -77,10 +77,9 @@ proc findFirstX(line: var FlexibleLine; x: int; outi: var int): int =
   var cx = 0
   var i = 0
   while cx < x and i < line.str.len:
-    var r: Rune
     let pi = i
-    fastRuneAt(line.str, i, r)
-    let w = r.twidth(cx)
+    let u = line.str.nextUTF8(i)
+    let w = u.twidth(cx)
     # we must ensure x is max(cx, x), otherwise our assumption of cx <= x
     # breaks down
     if cx + w > x:
@@ -203,9 +202,7 @@ proc setText(line: var FlexibleLine; linestr: string; x: int; format: Format;
   var j = i
   var nx = x # last x of new string
   while nx < targetX and j < line.str.len:
-    var r: Rune
-    fastRuneAt(line.str, j, r)
-    nx += r.twidth(nx)
+    nx += line.str.nextUTF8(j).twidth(nx)
   let ostr = line.str.substr(j)
   line.setTextStr(linestr, ostr, i, x, cx, nx, targetX)
   line.setTextFormat(x, cx, nx, ostr, format, node)
@@ -214,10 +211,8 @@ proc setText(grid: var FlexibleGrid; linestr: string; x, y: int; format: Format;
     node: StyledNode) =
   var x = x
   var i = 0
-  var r: Rune
   while x < 0 and i < linestr.len:
-    fastRuneAt(linestr, i, r)
-    x += r.twidth(x)
+    x += linestr.nextUTF8(i).twidth(x)
   if x < 0:
     # highest x is outside the canvas, no need to draw
     return

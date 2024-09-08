@@ -1,9 +1,9 @@
 import std/options
-import std/unicode
 
 import js/domexception
 import types/opt
 import utils/twtstr
+import utils/twtuni
 
 type
   CSSTokenType* = enum
@@ -156,10 +156,9 @@ proc consume(state: var CSSTokenizerState): char =
   return state.curr
 
 proc consumeRChar(state: var CSSTokenizerState): char =
-  var r: Rune
-  fastRuneAt(state.buf, state.at, r)
-  if int32(r) < 0x80:
-    return char(r)
+  let u = state.buf.nextUTF8(state.at)
+  if u < 0x80:
+    return char(u)
   return char(128)
 
 proc reconsume(state: var CSSTokenizerState) =
@@ -230,10 +229,10 @@ proc skipWhitespace(state: var CSSTokenizerState) =
 
 proc consumeEscape(state: var CSSTokenizerState): string =
   if not state.has():
-    return $Rune(0xFFFD)
+    return "\uFFFD"
   let c = state.consume()
   if c in AsciiHexDigit:
-    var num = hexValue(c)
+    var num = uint32(hexValue(c))
     var i = 0
     while i <= 5 and state.has():
       let c = state.consume()
@@ -241,14 +240,14 @@ proc consumeEscape(state: var CSSTokenizerState): string =
         state.reconsume()
         break
       num *= 0x10
-      num += hexValue(c)
+      num += uint32(hexValue(c))
       inc i
     if state.has() and state.peek() in AsciiWhitespace:
       discard state.consume()
-    if num == 0 or num > 0x10FFFF or num in 0xD800..0xDFFF:
-      return $Rune(0xFFFD)
+    if num == 0 or num > 0x10FFFF or num in 0xD800u32..0xDFFFu32:
+      return "\uFFFD"
     else:
-      return $Rune(num)
+      return num.toUTF8()
   else:
     return $c #NOTE this assumes the caller doesn't care about non-ascii
 

@@ -3,7 +3,6 @@ import std/algorithm
 import std/options
 import std/strutils
 import std/tables
-import std/unicode
 
 import io/bufreader
 import io/bufwriter
@@ -18,6 +17,7 @@ import types/opt
 import utils/luwrap
 import utils/map
 import utils/twtstr
+import utils/twtuni
 
 include res/map/idna_gen
 
@@ -291,10 +291,9 @@ type
   IDNATableStatus = enum
     itsValid, itsIgnored, itsMapped, itsDeviation, itsDisallowed
 
-func getIdnaTableStatus(r: Rune): IDNATableStatus =
-  let i = uint32(r)
-  if i <= high(uint16):
-    let u = uint16(i)
+func getIdnaTableStatus(u: uint32): IDNATableStatus =
+  if u <= high(uint16):
+    let u = uint16(u)
     if u in IgnoredLow:
       return itsIgnored
     if u in DisallowedLow or DisallowedRangesLow.isInRange(u):
@@ -302,16 +301,15 @@ func getIdnaTableStatus(r: Rune): IDNATableStatus =
     if MappedMapLow.isInMap(u):
       return itsMapped
   else:
-    if i in IgnoredHigh:
+    if u in IgnoredHigh:
       return itsIgnored
-    if i in DisallowedHigh or DisallowedRangesHigh.isInRange(i):
+    if u in DisallowedHigh or DisallowedRangesHigh.isInRange(u):
       return itsDisallowed
-    if MappedMapHigh.isInMap(uint32(i)):
+    if MappedMapHigh.isInMap(u):
       return itsMapped
   return itsValid
 
-func getIdnaMapped(r: Rune): string =
-  let u = uint32(r)
+func getIdnaMapped(u: uint32): string =
   if u <= high(uint16):
     let u = uint16(u)
     let n = MappedMapLow.searchInMap(u)
@@ -330,15 +328,15 @@ func processIdna(str: string; beStrict: bool): string =
   # UseSTD3ASCIIRules = beStrict (but STD3 is not implemented)
   # Transitional_Processing = false
   # VerifyDnsLength = beStrict
-  var mapped: seq[Rune] = @[]
-  for r in str.runes():
-    let status = getIdnaTableStatus(r)
+  var mapped: seq[uint32] = @[]
+  for u in str.points:
+    let status = getIdnaTableStatus(u)
     case status
     of itsDisallowed: return "" #error
     of itsIgnored: discard
-    of itsMapped: mapped &= getIdnaMapped(r).toRunes()
-    of itsDeviation: mapped &= r
-    of itsValid: mapped &= r
+    of itsMapped: mapped &= getIdnaMapped(u).toPoints()
+    of itsDeviation: mapped &= u
+    of itsValid: mapped &= u
   if mapped.len == 0: return
   mapped = mapped.normalize()
   var cr: CharRange
@@ -351,8 +349,8 @@ func processIdna(str: string; beStrict: bool): string =
     if label.startsWith("xn--"):
       try:
         let s = punycode.decode(label.substr("xn--".len))
-        let x0 = s.toRunes()
-        let x1 = normalize(x0)
+        let x0 = s.toPoints()
+        let x1 = x0.normalize()
         if x0 != x1:
           return "" #error
         # CheckHyphens is false
@@ -362,10 +360,10 @@ func processIdna(str: string; beStrict: bool): string =
           let L = cr.len div 2 - 1
           if cps.toOpenArray(0, L).binarySearch(c, cmpRange) != -1:
             return "" #error
-        for r in x0:
-          if r == Rune('.'):
+        for u in x0:
+          if u == uint32('.'):
             return "" #error
-          let status = getIdnaTableStatus(r)
+          let status = getIdnaTableStatus(u)
           if status in {itsDisallowed, itsIgnored, itsMapped}:
             return "" #error
           #TODO check joiners
@@ -396,7 +394,7 @@ func unicodeToAscii(s: string; beStrict: bool): string =
     else:
       s = label
     if beStrict: # VerifyDnsLength
-      let rl = s.runeLen()
+      let rl = s.pointLen()
       if rl notin 1..63:
         return ""
       all += rl

@@ -7,7 +7,6 @@ import std/posix
 import std/selectors
 import std/sets
 import std/tables
-import std/unicode
 
 import chagashi/charset
 import config/chapath
@@ -52,6 +51,7 @@ import utils/mimeguess
 import utils/regexutils
 import utils/strwidth
 import utils/twtstr
+import utils/twtuni
 
 type
   LineMode* = enum
@@ -284,7 +284,7 @@ proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
   if pager.term.isatty() and pager.config.input.use_mouse:
     pager.term.disableMouse()
   pager.lineedit = readLine($mode & extraPrompt, current, pager.attrs.width,
-    {}, hide, hist)
+    {}, hide, hist, pager.luctx)
   pager.linemode = mode
 
 proc clearLineEdit(pager: Pager) =
@@ -387,19 +387,19 @@ proc writeStatusMessage(pager: Pager; str: string; format = Format();
   if i >= e:
     return i
   pager.status.redraw = true
-  for r in str.runes:
-    let w = r.width()
+  for u in str.points:
+    let w = u.width()
     if i + w >= e:
       pager.status.grid[i].format = format
       pager.status.grid[i].str = $clip
       inc i # Note: we assume `clip' is 1 cell wide
       break
-    if r.isControlChar():
+    if u.isControlChar():
       pager.status.grid[i].str = "^"
-      pager.status.grid[i + 1].str = $getControlLetter(char(r))
+      pager.status.grid[i + 1].str = $getControlLetter(char(u))
       pager.status.grid[i + 1].format = format
     else:
-      pager.status.grid[i].str = $r
+      pager.status.grid[i].str = u.toUTF8()
     pager.status.grid[i].format = format
     i += w
   result = i
@@ -461,9 +461,8 @@ proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
       for f in line.formats:
         let si = i
         while x < f.pos:
-          var r: Rune
-          fastRuneAt(line.str, i, r)
-          x += r.width()
+          let u = line.str.nextUTF8(i)
+          x += u.width()
         let outstr = line.str.substr(si, i - 1)
         s &= pager.term.processOutputString(outstr, w)
         s &= pager.term.processFormat(format, f.format)
@@ -576,6 +575,8 @@ proc initImages(pager: Pager; container: Container) =
       dispw = min(width + xpx, maxwpx) - xpx
       let ypx = (image.y - container.fromy) * pager.attrs.ppl
       erry = -min(ypx, 0) mod 6
+    if dispw <= offx:
+      continue
     let cached = container.findCachedImage(image, offx, erry, dispw)
     let imageId = image.bmp.imageId
     if cached == nil:

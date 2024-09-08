@@ -1,11 +1,11 @@
 import std/algorithm
-import std/unicode
 
 import img/bitmap
 import img/path
 import types/color
 import types/line
 import types/vector
+import utils/twtuni
 
 type
   CanvasFillRule* = enum
@@ -191,8 +191,8 @@ proc fillText*(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
     textAlign: CanvasTextAlign) =
   var w = 0f64
   var glyphs: seq[Bitmap] = @[]
-  for r in text.runes:
-    let glyph = getCharBmp(uint32(r))
+  for u in text.points:
+    let glyph = getCharBmp(u)
     glyphs.add(glyph)
     w += float64(glyph.width)
   var x = x
