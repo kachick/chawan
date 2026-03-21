@@ -54,6 +54,7 @@ Known stable packages are:
 * Homebrew: <https://formulae.brew.sh/formula/chawan>
 * NixOS: <https://search.nixos.org/packages?show=chawan>
 * Slackware (SBo): <https://slackbuilds.org/repository/15.0/network/chawan/>
+* Fedora (Terra): <https://github.com/terrapkg/packages/tree/frawhide/anda/misc/chawan>
 
 Unstable packages (tip of the `master` branch):
 
